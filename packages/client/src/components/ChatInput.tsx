@@ -111,17 +111,17 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
   }, [text]);
 
   return (
-    <div className="shrink-0 border-t border-ink-800 bg-ink-900/50 px-5 py-4">
-      <div className="max-w-3xl mx-auto">
+    <div className="absolute bottom-4 left-4 right-4 z-10 flex justify-center pointer-events-none">
+      <div className="max-w-3xl w-full pointer-events-auto">
         {/* Image previews */}
         {pendingImages.length > 0 && (
-          <div className="flex gap-2 mb-2 flex-wrap">
+          <div className="flex gap-2 mb-2 flex-wrap px-2">
             {pendingImages.map((img, i) => (
               <div key={i} className="relative group">
                 <img
                   src={`data:${img.mimeType};base64,${img.data}`}
                   alt="Attachment"
-                  className="h-16 rounded-lg border border-ink-700 object-cover"
+                  className="h-12 rounded-lg border border-ink-700 object-cover"
                 />
                 <button
                   onClick={() => removeImage(i)}
@@ -145,23 +145,23 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
             />
           )}
 
-          <div className="flex items-end gap-3 bg-ink-950 border border-ink-750 rounded-2xl px-4 py-3 focus-within:border-amber-500 focus-within:shadow-[0_0_24px_rgba(192,141,14,0.10)] transition-all">
+          <div className="flex items-end gap-2 bg-ink-950/80 backdrop-blur-md border border-ink-800/60 rounded-2xl px-4 py-2.5 shadow-lg focus-within:border-amber-500/60 focus-within:shadow-[0_0_32px_rgba(192,141,14,0.08)] transition-all">
             <textarea
               ref={textareaRef}
               value={text}
               onChange={handleChange}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
-              placeholder={isStreaming ? "Steer the conversation..." : "Ask PI anything... (paste images, type / for commands)"}
+              placeholder={isStreaming ? "Steer..." : "Ask PI..."}
               disabled={disabled}
               rows={1}
-              className="flex-1 bg-transparent text-ink-100 text-sm placeholder-ink-600 resize-none outline-none max-h-[200px] leading-relaxed"
+              className="flex-1 bg-transparent text-ink-100 text-sm placeholder-ink-500 resize-none outline-none max-h-[200px] leading-relaxed"
             />
             
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1 shrink-0">
               {isStreaming ? (
-                <button onClick={onAbort} className="p-2 rounded-full bg-rose-600/20 text-rose-500 hover:bg-rose-600/30 transition-theme" title="Abort">
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <button onClick={onAbort} className="p-1.5 rounded-full bg-rose-600/20 text-rose-500 hover:bg-rose-600/30 transition-theme" title="Abort">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
                     <rect x="3" y="3" width="10" height="10" rx="1" />
                   </svg>
                 </button>
@@ -169,10 +169,10 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
                 <button
                   onClick={handleSend}
                   disabled={(!text.trim() && pendingImages.length === 0) || disabled}
-                  className="p-2 rounded-full bg-amber-600 text-ink-950 hover:bg-amber-500 disabled:opacity-30 disabled:cursor-not-allowed transition-theme"
+                  className="p-1.5 rounded-full bg-amber-600 text-ink-950 hover:bg-amber-500 disabled:opacity-30 disabled:cursor-not-allowed transition-theme"
                   title="Send"
                 >
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5">
                     <path d="M2 8 L12 8 M8 4 L13 8 L8 12" />
                   </svg>
                 </button>
@@ -181,10 +181,10 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
           </div>
         </div>
         
-        <p className="text-ink-600 text-[0.65rem] font-mono mt-2 text-center">
-          {isStreaming ? "PI is working — type to steer"
+        <p className="text-ink-600 text-[0.6rem] font-mono mt-1.5 text-center opacity-50">
+          {isStreaming ? "PI is working · type to steer"
             : disabled ? "Connecting..."
-            : "Enter to send · Shift+Enter for new line · Paste images · / for commands"}
+            : "Paste images · / for commands"}
         </p>
       </div>
     </div>

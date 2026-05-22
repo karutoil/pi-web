@@ -60,13 +60,13 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
   sessionDetail?.entries.forEach(e => { if (e.id && e.message?.role === "user") entryMap.set(e.id, e.id); });
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
+    <div className="flex-1 flex flex-col min-h-0 relative">
       <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} />
 
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto custom-scrollbar px-5 py-6"
+        className="flex-1 overflow-y-auto custom-scrollbar px-5 pt-6 pb-28"
       >
         <div className="max-w-3xl mx-auto space-y-5">
           {/* Historical messages */}
