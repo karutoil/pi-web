@@ -146,8 +146,8 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
       onKeyDown={handleKeyDown}
     >
       <div
-        className="relative z-70 bg-ink-950 border border-ink-800/60 rounded-2xl shadow-2xl w-full max-w-xl mx-4 overflow-hidden animate-fade-in-up"
-        style={{ maxHeight: "min(80vh, 600px)" }}
+        className="relative z-70 bg-ink-950 border border-ink-800/60 rounded-2xl shadow-2xl w-full max-w-xl mx-4 overflow-hidden animate-fade-in-up flex flex-col"
+        style={{ maxHeight: "80vh" }}
       >
         {/* ── Header ── */}
         <div className="px-5 pt-5 pb-3 flex items-center justify-between">
@@ -193,7 +193,7 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
         </form>
 
         {/* ── Directory listing ── */}
-        <div className="px-5 flex-1 overflow-hidden flex flex-col" style={{ maxHeight: "calc(80vh - 240px)" }}>
+        <div className="px-5 flex-1 min-h-0 flex flex-col">
           {/* Navigation breadcrumb */}
           <div className="flex items-center gap-1 mb-2 text-xs">
             {parentPath && (
@@ -212,7 +212,7 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
           {/* File list */}
           <div
             ref={listRef}
-            className="flex-1 overflow-y-auto custom-scrollbar rounded-lg border border-ink-800/30 bg-ink-900/40"
+            className="flex-1 min-h-0 overflow-y-auto custom-scrollbar rounded-lg border border-ink-800/30 bg-ink-900/40"
             tabIndex={0}
             role="listbox"
             aria-label="Directory contents"
