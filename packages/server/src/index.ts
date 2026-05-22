@@ -11,6 +11,7 @@ import { addProject, removeProject, listProjects, getProject, touchProject } fro
 import { listProjectSessions, getSessionDetail } from "./pi-sessions";
 import { getOrCreateAgent, stopAllAgents, getPoolStats, lookupAgent, detachFromAgent } from "./pi-agent";
 import { createTerminal, getTerminal, listTerminals, killTerminal } from "./pi-terminal";
+import { getGitStatus, getGitDiff, gitStage, gitUnstage, gitCommit, gitLog, gitCheckout, gitDiscard, gitBranches } from "./pi-git";
 import type { WSClientMessage, WSServerMessage } from "@pi-web/shared";
 
 const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>();
@@ -167,6 +168,72 @@ app.delete("/api/terminals/:id", (c) => {
   const { id } = c.req.param();
   const ok = killTerminal(id);
   return c.json({ success: ok }, ok ? 200 : 404);
+});
+
+// ── Git API ──
+app.get("/api/git/status", (c) => {
+  const cwd = c.req.query("cwd");
+  if (!cwd) return c.json({ error: "cwd required" }, 400);
+  const status = getGitStatus(cwd);
+  if (!status) return c.json({ error: "Not a git repository" }, 404);
+  return c.json(status);
+});
+
+app.get("/api/git/diff", (c) => {
+  const cwd = c.req.query("cwd");
+  const path = c.req.query("path");
+  const staged = c.req.query("staged") === "true";
+  if (!cwd || !path) return c.json({ error: "cwd and path required" }, 400);
+  return c.json({ diff: getGitDiff(cwd, path, staged) });
+});
+
+app.post("/api/git/stage", async (c) => {
+  const { cwd, path } = await c.req.json();
+  if (!cwd || !path) return c.json({ error: "cwd and path required" }, 400);
+  gitStage(cwd, path);
+  return c.json({ success: true });
+});
+
+app.post("/api/git/unstage", async (c) => {
+  const { cwd, path } = await c.req.json();
+  if (!cwd || !path) return c.json({ error: "cwd and path required" }, 400);
+  gitUnstage(cwd, path);
+  return c.json({ success: true });
+});
+
+app.post("/api/git/commit", async (c) => {
+  const { cwd, message } = await c.req.json();
+  if (!cwd || !message) return c.json({ error: "cwd and message required" }, 400);
+  const result = gitCommit(cwd, message);
+  if (!result) return c.json({ error: "Commit failed" }, 500);
+  return c.json({ success: true, result });
+});
+
+app.get("/api/git/log", (c) => {
+  const cwd = c.req.query("cwd");
+  if (!cwd) return c.json({ error: "cwd required" }, 400);
+  const count = parseInt(c.req.query("count") || "50");
+  return c.json({ log: gitLog(cwd, count) });
+});
+
+app.post("/api/git/checkout", async (c) => {
+  const { cwd, branch } = await c.req.json();
+  if (!cwd || !branch) return c.json({ error: "cwd and branch required" }, 400);
+  const result = gitCheckout(cwd, branch);
+  return c.json({ success: true, result });
+});
+
+app.post("/api/git/discard", async (c) => {
+  const { cwd, path } = await c.req.json();
+  if (!cwd || !path) return c.json({ error: "cwd and path required" }, 400);
+  const result = gitDiscard(cwd, path);
+  return c.json({ success: true, result });
+});
+
+app.get("/api/git/branches", (c) => {
+  const cwd = c.req.query("cwd");
+  if (!cwd) return c.json({ error: "cwd required" }, 400);
+  return c.json({ branches: gitBranches(cwd) });
 });
 
 // Health

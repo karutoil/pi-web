@@ -8,6 +8,7 @@ import { ChatHeader } from "./ChatHeader";
 import { ExtensionUIModal } from "./ExtensionUIModal";
 import { Icon } from "./Icon";
 import { TerminalPanel } from "./TerminalPanel";
+import { GitPanel } from "./GitPanel";
 
 interface ChatViewProps {
   ws: WSBridge;
@@ -35,6 +36,7 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
   const [autoScroll, setAutoScroll] = useState(true);
   const contentRef = useRef<HTMLDivElement>(null);
   const [showTerminal, setShowTerminal] = useState(false);
+  const [showGit, setShowGit] = useState(false);
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Virtualization: only render the last RENDER_LIMIT messages
@@ -174,14 +176,19 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
 
   return (
     <div className="flex-1 flex flex-col min-h-0 relative">
-      <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} />
+      <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} onToggleGit={() => setShowGit(v => !v)} showGit={showGit} />
 
       <div aria-live="polite" className="sr-only">{srAnnouncement}</div>
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="flex-1 overflow-y-auto custom-scrollbar px-5 pt-6 pb-4"
-      >
+
+      {/* Main content row: chat area + git panel */}
+      <div className="flex-1 flex min-h-0">
+        {/* Chat column */}
+        <div className="flex-1 flex flex-col min-h-0">
+          <div
+            ref={scrollRef}
+            onScroll={handleScroll}
+            className="flex-1 overflow-y-auto custom-scrollbar px-5 pt-6 pb-4"
+          >
         <div ref={contentRef} className="max-w-3xl mx-auto space-y-5">
           {/* Load earlier messages */}
           {hasMoreHistory && (
@@ -292,6 +299,15 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
         showTerminal={showTerminal}
         onToggleTerminal={() => setShowTerminal(v => !v)}
       />
+    </div>{/* end chat column */}
+
+    {/* Git panel */}
+    <GitPanel
+      cwd={cwd}
+      visible={showGit}
+      onClose={() => setShowGit(false)}
+    />
+  </div>{/* end main content row */}
 
       {/* Extension UI Modal — only for dialog methods */}
       {ws.pendingUI && ["select", "confirm", "input", "editor"].includes(ws.pendingUI.method) && (

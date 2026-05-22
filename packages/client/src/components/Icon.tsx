@@ -280,6 +280,51 @@ const SVG_PATHS: Record<string, IconDef> = {
       </>
     ),
   },
+
+  // ── Git branch (viewBox 0 0 16 16) ──
+  git: {
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.5",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    children: (
+      <>
+        <circle cx="5" cy="3" r="1.5" />
+        <circle cx="5" cy="13" r="1.5" />
+        <circle cx="12" cy="3" r="1.5" />
+        <line x1="5" y1="4.5" x2="5" y2="11.5" />
+        <path d="M12 4.5C12 7 5 8 5 11.5" />
+      </>
+    ),
+  },
+
+  // ── Minus (viewBox 0 0 16 16) ──
+  minus: {
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "2",
+    strokeLinecap: "round",
+    children: <line x1="3" y1="8" x2="13" y2="8" />,
+  },
+
+  // ── Undo (viewBox 0 0 16 16) ──
+  undo: {
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.5",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    children: (
+      <>
+        <path d="M3 7h6a4 4 0 110 8H7" />
+        <polyline points="5 5 3 7 5 9" />
+      </>
+    ),
+  },
 };
 
 /* ─── Component ─── */

@@ -1,14 +1,17 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import type { ModelInfo, SessionStats } from "@pi-web/shared";
 import type { WSBridge } from "../lib/types";
+import { Icon } from "./Icon";
 
 interface Props {
   ws: WSBridge;
   cwd: string;
   sessionName: string | null;
+  onToggleGit?: () => void;
+  showGit?: boolean;
 }
 
-export function ChatHeader({ ws, cwd, sessionName }: Props) {
+export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit }: Props) {
   const [modelOpen, setModelOpen] = useState(false);
   const [thinkingOpen, setThinkingOpen] = useState(false);
   const [editingName, setEditingName] = useState(false);
@@ -118,7 +121,22 @@ export function ChatHeader({ ws, cwd, sessionName }: Props) {
 
         {/* Thinking level */}
         <div ref={thinkingRef} className="relative">
+
+        {/* Git toggle */}
+        {onToggleGit && (
           <button
+            onClick={onToggleGit}
+            className={`text-xs font-mono px-2 py-1 rounded border transition-theme ${
+              showGit ? "bg-amber-600/20 border-amber-500/30 text-amber-500" : "bg-ink-850 border-ink-750 hover:border-ink-600 text-ink-400"
+            }`}
+            aria-label="Toggle git panel"
+            title="Source Control"
+          >
+            <Icon name="git" size={14} />
+          </button>
+        )}
+
+        <button
             onClick={() => { setThinkingOpen(o => !o); setModelOpen(false); }}
             className="text-xs font-mono px-2 py-1 rounded bg-ink-850 border border-ink-750 hover:border-ink-600 text-ink-400 transition-theme"
             aria-label="Thinking level"
