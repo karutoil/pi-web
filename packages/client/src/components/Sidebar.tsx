@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { createPortal } from "react-dom";
 import type { Project, SessionSummary } from "@pi-web/shared";
 import type { ViewState } from "../App";
 import type { Theme } from "../hooks/useTheme";
@@ -556,21 +557,10 @@ function SessionItem({
   onRename: (s: SessionSummary, name: string) => void;
   onFork: (entryId: string) => void;
 }) {
-  const [showMenu, setShowMenu] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(s.name || "");
-  const menuRef = useRef<HTMLDivElement>(null);
   const renameRef = useRef<HTMLInputElement>(null);
-
-  // Close menu on outside click
-  useEffect(() => {
-    if (!showMenu) return;
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setShowMenu(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [showMenu]);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
 
   // Focus rename input
   useEffect(() => {
@@ -591,9 +581,16 @@ function SessionItem({
   const displayName = s.name || s.lastMessage || "Untitled";
   const preview = s.firstMessage || s.lastMessage;
 
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setCtxMenu({ x: e.clientX, y: e.clientY });
+  };
+
   return (
     <div
       data-session-idx={idx}
+      onContextMenu={handleContextMenu}
       className={`relative group rounded-md transition-theme ${
         isActive
           ? "bg-ink-850 border border-ink-700"
@@ -608,7 +605,6 @@ function SessionItem({
         title={preview || undefined}
       >
         <div className="flex items-center gap-2">
-          {/* Active/recently active indicator */}
           {s.isRecentlyActive && (
             <span className="w-1.5 h-1.5 rounded-full bg-teal-400 shrink-0 animate-pulse" title="Active now" />
           )}
@@ -642,61 +638,124 @@ function SessionItem({
               {s.cost > 0 && <><span>·</span><span>{formatCost(s.cost)}</span></>}
             </div>
           </div>
-          {/* Context menu trigger */}
-          <button
-            onClick={(e) => { e.stopPropagation(); setShowMenu(v => !v); }}
-            className="opacity-0 group-hover:opacity-100 text-ink-600 hover:text-ink-300 transition-all p-0.5 shrink-0"
-            title="Session actions"
-          >
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-              <circle cx="8" cy="3" r="1.5" />
-              <circle cx="8" cy="8" r="1.5" />
-              <circle cx="8" cy="13" r="1.5" />
-            </svg>
-          </button>
         </div>
       </button>
 
-      {/* Context menu */}
-      {showMenu && (
-        <div
-          ref={menuRef}
-          className="absolute right-2 top-8 z-20 bg-ink-900 border border-ink-700 rounded-lg shadow-xl py-1 min-w-[140px] animate-fade-in-up"
+      {ctxMenu && (
+        <ContextMenuPortal
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          onClose={() => setCtxMenu(null)}
         >
-          <button
-            onClick={(e) => { e.stopPropagation(); setIsRenaming(true); setRenameValue(s.name || ""); setShowMenu(false); }}
-            className="w-full text-left px-3 py-1.5 text-xs text-ink-300 hover:bg-ink-800 hover:text-ink-100 transition-theme flex items-center gap-2"
-          >
-            <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M12 3 L5 13 M3 10 L5 13 L8 12" />
-            </svg>
-            Rename
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); onFork(s.id); setShowMenu(false); }}
-            className="w-full text-left px-3 py-1.5 text-xs text-ink-300 hover:bg-ink-800 hover:text-ink-100 transition-theme flex items-center gap-2"
-          >
-            <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M8 3 L8 8 L3 13 M8 8 L13 13" />
-            </svg>
-            Fork from here
-          </button>
-          <div className="border-t border-ink-800 my-0.5" />
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowMenu(false);
+          <ContextMenuItem
+            label="Rename"
+            icon={<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3 L5 13 M3 10 L5 13 L8 12" /></svg>}
+            onClick={() => { setCtxMenu(null); setIsRenaming(true); setRenameValue(s.name || ""); }}
+          />
+          <ContextMenuItem
+            label="Fork From Here"
+            icon={<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3 L8 8 L3 13 M8 8 L13 13" /></svg>}
+            onClick={() => { setCtxMenu(null); onFork(s.id); }}
+          />
+          <ContextMenuDivider />
+          <ContextMenuItem
+            label="Delete"
+            danger
+            icon={<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 5 L13 5 M6 5 L6 3 L10 3 L10 5 M5 5 L5 13 L11 13 L11 5" /></svg>}
+            onClick={() => {
+              setCtxMenu(null);
               if (confirm(`Delete "${displayName}"? This removes the session file.`)) onDelete(s);
             }}
-            className="w-full text-left px-3 py-1.5 text-xs text-rose-400 hover:bg-rose-600/10 hover:text-rose-300 transition-theme flex items-center gap-2"
-          >
-            <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M3 5 L13 5 M6 5 L6 3 L10 3 L10 5 M5 5 L5 13 L11 13 L11 5" />
-            </svg>
-            Delete
-          </button>
-        </div>
+          />
+        </ContextMenuPortal>
       )}
     </div>
   );
+}
+
+// ─── Right-click Context Menu (portal-rendered at cursor position) ───
+
+function ContextMenuPortal({
+  x,
+  y,
+  onClose,
+  children,
+}: {
+  x: number;
+  y: number;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const close = () => onClose();
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) close();
+    };
+    // Slight delay so the opening click doesn't immediately close
+    const timer = setTimeout(() => {
+      document.addEventListener("mousedown", handler);
+      document.addEventListener("contextmenu", handler);
+    }, 10);
+    const keyHandler = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    document.addEventListener("keydown", keyHandler);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("contextmenu", handler);
+      document.removeEventListener("keydown", keyHandler);
+    };
+  }, [onClose]);
+
+  // Clamp position so menu stays in viewport
+  const [pos, setPos] = useState({ x, y });
+  useEffect(() => {
+    if (!menuRef.current) return;
+    const rect = menuRef.current.getBoundingClientRect();
+    const cx = x + rect.width > window.innerWidth ? x - rect.width : x;
+    const cy = y + rect.height > window.innerHeight ? y - rect.height : y;
+    setPos({ x: Math.max(4, cx), y: Math.max(4, cy) });
+  }, [x, y]);
+
+  return createPortal(
+    <div
+      ref={menuRef}
+      style={{ position: "fixed", left: pos.x, top: pos.y, zIndex: 9999 }}
+      className="bg-ink-900 border border-ink-700 rounded-lg shadow-2xl py-1 min-w-[160px] animate-fade-in-up"
+    >
+      {children}
+    </div>,
+    document.body
+  );
+}
+
+function ContextMenuItem({
+  label,
+  icon,
+  danger,
+  onClick,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  danger?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={e => { e.stopPropagation(); onClick(); }}
+      className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2.5 transition-theme ${
+        danger
+          ? "text-rose-400 hover:bg-rose-600/10 hover:text-rose-300"
+          : "text-ink-300 hover:bg-ink-800 hover:text-ink-100"
+      }`}
+    >
+      <span className="shrink-0 w-3 flex justify-center">{icon}</span>
+      {label}
+    </button>
+  );
+}
+
+function ContextMenuDivider() {
+  return <div className="border-t border-ink-800 my-0.5" />;
 }
