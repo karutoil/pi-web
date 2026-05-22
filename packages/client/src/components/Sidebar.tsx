@@ -578,7 +578,7 @@ function SessionItem({
     setIsRenaming(false);
   };
 
-  const displayName = s.name || s.lastMessage || "Untitled";
+  const displayName = s.name || s.lastMessage || s.firstMessage || "Untitled";
   const preview = s.firstMessage || s.lastMessage;
 
   const handleContextMenu = (e: React.MouseEvent) => {
