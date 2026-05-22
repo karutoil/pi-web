@@ -1,11 +1,10 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import type { Project, SessionSummary, ChatMessage } from "@pi-web/shared";
-import type { WSBridge, ToolEvent } from "../hooks/useWebSocket";
+import type { WSBridge } from "../hooks/useWebSocket";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
 import { ChatHeader } from "./ChatHeader";
 import { ExtensionUIModal } from "./ExtensionUIModal";
-import { DiffRenderer } from "./DiffRenderer";
 
 interface ChatViewProps {
   ws: WSBridge;
@@ -132,7 +131,6 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
           {sessionDetail?.entries.map((entry, i) => {
             if (!entry.message) return null;
             if (entry.type === "compaction" || entry.type === "branch_summary") return null;
-            if (entry.message.role === "toolResult") return null;
             const isUser = entry.message.role === "user";
             const turn = getTurnForMsg(i);
             return (
@@ -148,15 +146,6 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
               />
             );
           })}
-
-          {/* Running tools */}
-          {ws.runningTools.size > 0 && (
-            <div className="space-y-1.5">
-              {Array.from(ws.runningTools.values()).map(tool => (
-                <ToolExecutionBubble key={tool.toolCallId} tool={tool} />
-              ))}
-            </div>
-          )}
 
           {/* Live messages */}
           {ws.messages.map((msg, i) => (
@@ -251,105 +240,4 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
   );
 }
 
-function ToolExecutionBubble({ tool }: { tool: ToolEvent }) {
-  const [expanded, setExpanded] = useState(false);
-  const colors: Record<string, string> = {
-    read: "border-tool-read-bdr bg-tool-read-bg text-tool-read",
-    bash: "border-tool-bash-bdr bg-tool-bash-bg text-tool-bash",
-    edit: "border-tool-edit-bdr bg-tool-edit-bg text-tool-edit",
-    write: "border-tool-write-bdr bg-tool-write-bg text-tool-write",
-    grep: "border-tool-grep-bdr bg-tool-grep-bg text-tool-grep",
-    find: "border-tool-find-bdr bg-tool-find-bg text-tool-find",
-    ls: "border-tool-ls-bdr bg-tool-ls-bg text-tool-ls",
-  };
-  const color = colors[tool.toolName] || "text-tool-default";
-  const isRunning = tool.status === "running";
-  const output = tool.partialResult?.content || tool.result?.content;
-  const outputText = output?.map((b: any) => b.text || "").join("\n") || "";
-  const lines = outputText.split("\n");
-  const previewLines = 4;
-  const needsExpansion = !isRunning && lines.length > previewLines;
-  const preview = needsExpansion ? lines.slice(0, previewLines).join("\n") + "\n…" : outputText;
 
-  // Use PI's native diff from details.diff (format: "-N content\n+N content\n N content")
-  const editArgs = tool.args as any;
-  const generatedDiff = useMemo(() => {
-    // PI's edit tool returns details.diff
-    if (tool.details?.diff && typeof tool.details.diff === "string") {
-      const rawDiff: string = tool.details.diff;
-      const filePath = editArgs?.path || editArgs?.filePath || "file";
-      const rawLines = rawDiff.split("\n");
-      const parts: string[] = [];
-      parts.push(`--- a${filePath}`);
-      parts.push(`+++ b${filePath}`);
-      parts.push(`@@ -1,${rawLines.length} +1,${rawLines.length} @@`);
-      for (const line of rawLines) {
-        const prefix = line.charAt(0);
-        const rest = line.slice(1).replace(/^\d+\s*/, "");
-        if (prefix === "-" || prefix === "+" || prefix === " ") {
-          parts.push(prefix + rest);
-        } else {
-          parts.push(" " + line);
-        }
-      }
-      return parts.join("\n");
-    }
-    // Fallback: generate from edit tool args (oldText/newText pairs)
-    if (tool.toolName === "edit" && editArgs?.edits && Array.isArray(editArgs.edits)) {
-      const parts: string[] = [];
-      const filePath = editArgs.path || editArgs.filePath || "file";
-      parts.push(`--- a${filePath}`);
-      parts.push(`+++ b${filePath}`);
-      for (const edit of editArgs.edits) {
-        if (edit.oldText && edit.newText) {
-          const oldLines = edit.oldText.split("\n");
-          const newLines = edit.newText.split("\n");
-          parts.push(`@@ -1,${oldLines.length} +1,${newLines.length} @@`);
-          for (const l of oldLines) parts.push(`-${l}`);
-          for (const l of newLines) parts.push(`+${l}`);
-        }
-      }
-      return parts.join("\n");
-    }
-    if (tool.toolName === "patch" && editArgs?.diff) {
-      return editArgs.diff;
-    }
-    return null;
-  }, [tool.toolName, editArgs, tool.details]);
-
-  // Render diffs with our custom renderer
-  if (generatedDiff && tool.status === "done") {
-    return (
-      <div className={`border rounded-lg overflow-hidden ${color} animate-fade-in-up`}>
-        <div className="flex items-center gap-2 px-3 py-2 text-xs font-mono border-b border-inherit/20">
-          <svg width="10" height="10" viewBox="0 0 10 10" className="text-amber-500" fill="currentColor">
-            <path d="M3 2 L7 5 L3 8" />
-          </svg>
-          <span className="font-medium">{tool.toolName}</span>
-          <span className="text-teal-500">done</span>
-        </div>
-        <DiffRenderer content={generatedDiff} collapsible={false} />
-      </div>
-    );
-  }
-
-  return (
-    <div className={`border rounded-lg overflow-hidden ${color} animate-fade-in-up`}>
-      <button onClick={() => setExpanded(e => !e)} className="w-full flex items-center gap-2 px-3 py-2 text-xs font-mono transition-theme">
-        <svg width="10" height="10" viewBox="0 0 10 10" className={`transition-transform ${expanded ? "rotate-90" : ""}`} fill="currentColor">
-          <path d="M3 1 L7 5 L3 9" />
-        </svg>
-        <span className="font-medium">{tool.toolName}</span>
-        {isRunning && <span className="flex items-center gap-1 text-amber-500"><span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />running</span>}
-        {tool.status === "done" && <span className="text-teal-500">done</span>}
-        {tool.status === "error" && <span className="text-rose-500">error</span>}
-        {needsExpansion && <span className="opacity-50 ml-1">({lines.length} lines)</span>}
-      </button>
-      {outputText && (
-        <pre className="px-3 pb-2 text-xs leading-relaxed whitespace-pre-wrap border-t border-inherit pt-2 max-h-20 overflow-hidden font-mono opacity-80">
-          {expanded ? outputText : preview}
-        </pre>
-      )}
-    </div>
-  );
-}
