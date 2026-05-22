@@ -30,7 +30,7 @@ export default function App() {
   // Re-evaluate on every render (forceUpdate from pool subscriptions triggers renders)
   const streamingSessionIds = new Set<string>();
   for (const conn of wsPool.pool.values()) {
-    if (conn.isStreaming && conn.state?.sessionId) {
+    if (conn.isActive && conn.state?.sessionId) {
       streamingSessionIds.add(conn.state.sessionId);
     }
   }

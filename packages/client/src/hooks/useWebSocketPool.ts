@@ -19,6 +19,7 @@ export interface WSConnection {
   state: AgentState | null;
   isConnected: boolean;
   isStreaming: boolean;
+  isActive: boolean;
   models: ModelInfo[]; commands: CommandInfo[];
   forkMessages: ForkEntry[]; sessionStats: SessionStats | null;
   pendingUI: ExtensionUIRequest | null;
@@ -53,6 +54,7 @@ function createConnection(
     state: null as AgentState | null,
     isConnected: false,
     isStreaming: false,
+    isActive: false,
     models: [] as ModelInfo[],
     commands: [] as CommandInfo[],
     forkMessages: [] as ForkEntry[],
@@ -81,11 +83,13 @@ function createConnection(
       case "state": if (msg.data) { data.state = msg.data as AgentState; data.isStreaming = (msg.data as AgentState).isStreaming; } break;
       case "agent_start":
         data.isStreaming = true;
+        data.isActive = true;
         preRunCountRef = messagesRef.length;
         data.runningTools = new Map();
         break;
       case "agent_end": {
         data.isStreaming = false;
+        data.isActive = false;
         const preMsgs = messagesRef.slice(0, preRunCountRef);
         const newMsgs: ChatMessage[] = [];
         if (msg.messages?.length) {
@@ -177,6 +181,7 @@ function createConnection(
     get state() { return data.state; },
     get isConnected() { return data.isConnected; },
     get isStreaming() { return data.isStreaming; },
+    get isActive() { return data.isActive; },
     get models() { return data.models; },
     get commands() { return data.commands; },
     get forkMessages() { return data.forkMessages; },

@@ -241,7 +241,7 @@ export function Sidebar({
 
       {/* Minimal footer */}
       <div className="px-4 py-2.5 flex items-center justify-between">
-        <span className="text-ink-700 text-[0.6rem] font-mono tracking-wide">PI WEB</span>
+        <span className="text-ink-500 text-[0.6rem] font-mono tracking-wide">PI WEB</span>
         <span className="w-1.5 h-1.5 rounded-full bg-teal-500/70" title="Connected" />
       </div>
     </aside>
@@ -270,7 +270,7 @@ function ProjectList({
   return (
     <div className="py-2">
       <div className="flex items-center justify-between mb-2 px-2">
-        <h2 className="text-[0.65rem] font-semibold text-ink-500 uppercase tracking-[0.12em]">Projects</h2>
+        <h2 className="text-[0.65rem] font-semibold text-ink-400 uppercase tracking-[0.12em]">Projects</h2>
         <button
           onClick={onToggleAdd}
           className="text-ink-600 hover:text-ink-300 transition-theme p-1 rounded-md hover:bg-ink-800/50"
@@ -305,13 +305,11 @@ function ProjectList({
           >
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <div className="text-ink-200 text-[0.8rem] font-medium truncate">{p.name}</div>
-                {/* Path — hover only */}
-                <div className="text-ink-600 text-[0.65rem] font-mono truncate mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                <div className="text-ink-100 text-[0.8rem] font-medium truncate">{p.name}</div>
+                <div className="text-ink-400 text-[0.65rem] font-mono truncate mt-0.5">
                   {p.path}
                 </div>
-                {/* Stats — hover only, minimal */}
-                <div className="flex items-center gap-1.5 mt-1 text-ink-700 text-[0.6rem] font-mono opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                <div className="flex items-center gap-1.5 mt-1 text-ink-500 text-[0.6rem] font-mono">
                   {p.sessionCount > 0 && <span>{p.sessionCount} sess</span>}
                   {p.lastActiveAt && <span>{formatTimeAgo(p.lastActiveAt)}</span>}
                   {p.totalCost > 0 && <span>{formatCost(p.totalCost)}</span>}
@@ -435,7 +433,7 @@ function SessionList({
     <div className="py-2">
       {/* Compact header */}
       <div className="flex items-center justify-between mb-2 px-2">
-        <h2 className="text-[0.65rem] font-semibold text-ink-500 uppercase tracking-[0.12em]">Sessions</h2>
+        <h2 className="text-[0.65rem] font-semibold text-ink-400 uppercase tracking-[0.12em]">Sessions</h2>
         <div className="flex items-center gap-0.5">
           <button
             onClick={onRefresh}
@@ -461,7 +459,7 @@ function SessionList({
 
       {/* Project name */}
       <div className="px-3 mb-2">
-        <span className="text-ink-300 text-xs font-medium">{projectName}</span>
+        <span className="text-ink-200 text-xs font-medium">{projectName}</span>
       </div>
 
       {/* Search — minimal */}
@@ -475,7 +473,7 @@ function SessionList({
           placeholder="Filter…"
           value={search}
           onChange={e => onSearch(e.target.value)}
-          className="w-full bg-ink-950/30 border border-ink-800/40 rounded-md pl-7 pr-2 py-1.5 text-ink-200 text-[0.68rem] font-mono placeholder-ink-600 focus:outline-none focus:border-amber-600/40 transition-theme"
+          className="w-full bg-ink-950/30 border border-ink-800/40 rounded-md pl-7 pr-2 py-1.5 text-ink-200 text-[0.68rem] font-mono placeholder-ink-500 focus:outline-none focus:border-amber-600/40 transition-theme"
         />
         {search && (
           <button
@@ -493,7 +491,7 @@ function SessionList({
       {sessions.length > 0 && !search && (
         <button
           onClick={onContinueLatest}
-          className="w-full text-left px-3 py-1.5 rounded-lg mb-2 mx-1 bg-amber-500/[0.06] text-amber-400/80 text-[0.68rem] hover:bg-amber-500/10 transition-theme"
+          className="w-full text-left px-3 py-1.5 rounded-lg mb-2 mx-1 bg-amber-500/[0.08] text-amber-400 text-[0.68rem] hover:bg-amber-500/15 transition-theme"
         >
           → Continue latest
         </button>
@@ -511,7 +509,7 @@ function SessionList({
         if (items.length === 0) return null;
         return (
           <div key={group} className="mb-1">
-            <div className="px-3 py-1.5 text-[0.55rem] font-semibold text-ink-600 uppercase tracking-[0.15em]">
+            <div className="px-3 py-1.5 text-[0.55rem] font-semibold text-ink-500 uppercase tracking-[0.15em]">
               {GROUP_LABELS[group]}
             </div>
             <div className="space-y-px">
@@ -639,8 +637,8 @@ function SessionItem({
             ) : (
               <div className="text-ink-200 text-[0.8rem] truncate leading-snug">{displayName}</div>
             )}
-            {/* Metadata — hover only, minimal */}
-            <div className="flex items-center gap-1.5 mt-0.5 text-ink-700 text-[0.6rem] font-mono opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            {/* Metadata */}
+            <div className="flex items-center gap-1.5 mt-0.5 text-ink-500 text-[0.6rem] font-mono">
               <span>{formatTimeAgo(s.lastActiveAt || s.timestamp)}</span>
               {s.messageCount > 0 && <span>{s.messageCount}m</span>}
               {s.cost > 0 && <span>{formatCost(s.cost)}</span>}
