@@ -27,15 +27,13 @@ export default function App() {
   );
 
   // Compute which sessions are actively streaming from the pool
-  const streamingSessionIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const conn of wsPool.pool.values()) {
-      if (conn.isStreaming && conn.state?.sessionId) {
-        ids.add(conn.state.sessionId);
-      }
+  // Re-evaluate on every render (forceUpdate from pool subscriptions triggers renders)
+  const streamingSessionIds = new Set<string>();
+  for (const conn of wsPool.pool.values()) {
+    if (conn.isStreaming && conn.state?.sessionId) {
+      streamingSessionIds.add(conn.state.sessionId);
     }
-    return ids;
-  }, [wsPool.pool]);
+  }
 
   const [theme, toggleTheme] = useTheme();
 

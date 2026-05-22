@@ -78,7 +78,7 @@ function createConnection(
 
   function handleMessage(msg: WSServerMessage) {
     switch (msg.type) {
-      case "state": if (msg.data) { data.state = msg.data as AgentState; } break;
+      case "state": if (msg.data) { data.state = msg.data as AgentState; data.isStreaming = (msg.data as AgentState).isStreaming; } break;
       case "agent_start":
         data.isStreaming = true;
         preRunCountRef = messagesRef.length;
