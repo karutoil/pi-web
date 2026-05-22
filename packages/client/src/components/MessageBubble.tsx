@@ -113,7 +113,7 @@ export function MessageBubble({ message, showThinking, isHistorical, isStreaming
           />
           <ContextMenuDivider />
           <ContextMenuItem
-            label="Copy message"
+            label="Copy raw markdown"
             icon={<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><rect x="4" y="4" width="8" height="8" rx="1" /></svg>}
             onClick={() => { setCtxMenu(null); navigator.clipboard.writeText(extractTextContent(message.content)); }}
           />

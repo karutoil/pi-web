@@ -21,7 +21,7 @@ function extractMsgText(msg: ChatMessage): string {
     return content
       .filter((b: any) => b.type === "text")
       .map((b: any) => b.text || "")
-      .join("");
+      .join("\n\n");
   }
   return "";
 }
