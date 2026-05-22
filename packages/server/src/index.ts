@@ -265,9 +265,12 @@ app.get(
 
 const CLIENT_DIST = join(import.meta.dir, "..", "..", "client", "dist");
 
-// Serve built client in production
-app.use("/assets/*", serveStatic({ root: CLIENT_DIST }));
-app.get("/*", async (c) => {
+// Serve static assets from client dist (favicon, icons, /assets/*, etc.)
+// serveStatic passes through if file not found, so API routes are unaffected
+app.use("/*", serveStatic({ root: CLIENT_DIST }));
+
+// SPA fallback — serve index.html for any unmatched route
+app.get("*", async (c) => {
   try {
     const indexPath = join(CLIENT_DIST, "index.html");
     const html = await readFile(indexPath, "utf-8");

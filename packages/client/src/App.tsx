@@ -88,8 +88,6 @@ export default function App() {
     setActiveSession(null);
     setSessionDetail(null);
     setView("chat");
-    // Clear after WS connects so future navigations don't reuse it
-    setTimeout(() => setNewSessionId(null), 500);
     // Refresh session list after PI creates the new session file
     setTimeout(() => fetchSessions(), 1500);
   }, [fetchSessions]);
