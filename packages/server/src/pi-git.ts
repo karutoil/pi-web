@@ -56,7 +56,9 @@ export interface GitRemote {
 
 function runGit(cwd: string, ...args: string[]): string {
   try {
-    return execSync(`git ${args.join(" ")}`, { cwd, encoding: "utf-8", maxBuffer: 5 * 1024 * 1024, stdio: ["pipe", "pipe", "pipe"] }).trim();
+    // Escape args that contain special shell characters
+    const escapedArgs = args.map(a => /[%|;&<>()$`\!]/.test(a) ? `'${a.replace(/'/g, "'\\''")}'`  : a);
+    return execSync(`git ${escapedArgs.join(" ")}`, { cwd, encoding: "utf-8", maxBuffer: 5 * 1024 * 1024, stdio: ["pipe", "pipe", "pipe"] }).trim();
   } catch (e: any) {
     return "";
   }
