@@ -119,9 +119,6 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit }: Props
           </div>
         )}
 
-        {/* Thinking level */}
-        <div ref={thinkingRef} className="relative">
-
         {/* Git toggle */}
         {onToggleGit && (
           <button
@@ -136,7 +133,9 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit }: Props
           </button>
         )}
 
-        <button
+        {/* Thinking level */}
+        <div ref={thinkingRef} className="relative">
+          <button
             onClick={() => { setThinkingOpen(o => !o); setModelOpen(false); }}
             className="text-xs font-mono px-2 py-1 rounded bg-ink-850 border border-ink-750 hover:border-ink-600 text-ink-400 transition-theme"
             aria-label="Thinking level"
