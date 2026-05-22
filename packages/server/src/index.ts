@@ -11,7 +11,7 @@ import { addProject, removeProject, listProjects, getProject, touchProject } fro
 import { listProjectSessions, getSessionDetail } from "./pi-sessions";
 import { getOrCreateAgent, stopAllAgents, getPoolStats, lookupAgent, detachFromAgent } from "./pi-agent";
 import { createTerminal, getTerminal, listTerminals, killTerminal } from "./pi-terminal";
-import { getGitStatus, getGitDiff, gitStage, gitUnstage, gitCommit, gitLog, gitCheckout, gitDiscard, gitBranches } from "./pi-git";
+import { getGitStatus, getGitDiff, gitStage, gitUnstage, gitCommit, gitLog, gitCheckout, gitDiscard, gitBranches, gitPush, gitPull, gitFetch, gitCreateBranch, gitDeleteBranch, gitRenameBranch, gitTags, gitCreateTag, gitDeleteTag, gitStashList, gitStashPush, gitStashPop, gitStashApply, gitStashDrop, gitAmend, gitCherryPick, gitRevert, gitResolveConflict, getGitDiffStats, gitDiffWithRef, gitShowCommit, gitLogSearch, gitBlame, gitRemotes, gitUnstageAll } from "./pi-git";
 import type { WSClientMessage, WSServerMessage } from "@pi-web/shared";
 
 const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>();
@@ -234,6 +234,195 @@ app.get("/api/git/branches", (c) => {
   const cwd = c.req.query("cwd");
   if (!cwd) return c.json({ error: "cwd required" }, 400);
   return c.json({ branches: gitBranches(cwd) });
+});
+
+// Push / Pull / Fetch
+app.post("/api/git/push", async (c) => {
+  const { cwd } = await c.req.json();
+  if (!cwd) return c.json({ error: "cwd required" }, 400);
+  const result = gitPush(cwd);
+  return c.json({ success: true, result });
+});
+
+app.post("/api/git/pull", async (c) => {
+  const { cwd } = await c.req.json();
+  if (!cwd) return c.json({ error: "cwd required" }, 400);
+  const result = gitPull(cwd);
+  return c.json({ success: true, result });
+});
+
+app.post("/api/git/fetch", async (c) => {
+  const { cwd } = await c.req.json();
+  if (!cwd) return c.json({ error: "cwd required" }, 400);
+  const result = gitFetch(cwd);
+  return c.json({ success: true, result });
+});
+
+// Create / Delete / Rename branch
+app.post("/api/git/branch/create", async (c) => {
+  const { cwd, name, checkout } = await c.req.json();
+  if (!cwd || !name) return c.json({ error: "cwd and name required" }, 400);
+  const result = gitCreateBranch(cwd, name, checkout !== false);
+  return c.json({ success: true, result });
+});
+
+app.post("/api/git/branch/delete", async (c) => {
+  const { cwd, name } = await c.req.json();
+  if (!cwd || !name) return c.json({ error: "cwd and name required" }, 400);
+  const result = gitDeleteBranch(cwd, name);
+  return c.json({ success: true, result });
+});
+
+app.post("/api/git/branch/rename", async (c) => {
+  const { cwd, oldName, newName } = await c.req.json();
+  if (!cwd || !oldName || !newName) return c.json({ error: "cwd, oldName, and newName required" }, 400);
+  const result = gitRenameBranch(cwd, oldName, newName);
+  return c.json({ success: true, result });
+});
+
+// Tags
+app.get("/api/git/tags", (c) => {
+  const cwd = c.req.query("cwd");
+  if (!cwd) return c.json({ error: "cwd required" }, 400);
+  return c.json({ tags: gitTags(cwd) });
+});
+
+app.post("/api/git/tag/create", async (c) => {
+  const { cwd, name, message } = await c.req.json();
+  if (!cwd || !name) return c.json({ error: "cwd and name required" }, 400);
+  const result = gitCreateTag(cwd, name, message);
+  return c.json({ success: true, result });
+});
+
+app.post("/api/git/tag/delete", async (c) => {
+  const { cwd, name } = await c.req.json();
+  if (!cwd || !name) return c.json({ error: "cwd and name required" }, 400);
+  const result = gitDeleteTag(cwd, name);
+  return c.json({ success: true, result });
+});
+
+// Stash
+app.get("/api/git/stash", (c) => {
+  const cwd = c.req.query("cwd");
+  if (!cwd) return c.json({ error: "cwd required" }, 400);
+  return c.json({ stash: gitStashList(cwd) });
+});
+
+app.post("/api/git/stash/push", async (c) => {
+  const { cwd, message } = await c.req.json();
+  if (!cwd) return c.json({ error: "cwd required" }, 400);
+  const result = gitStashPush(cwd, message);
+  return c.json({ success: true, result });
+});
+
+app.post("/api/git/stash/pop", async (c) => {
+  const { cwd, index } = await c.req.json();
+  if (!cwd) return c.json({ error: "cwd required" }, 400);
+  const result = gitStashPop(cwd, index);
+  return c.json({ success: true, result });
+});
+
+app.post("/api/git/stash/apply", async (c) => {
+  const { cwd, index } = await c.req.json();
+  if (!cwd) return c.json({ error: "cwd required" }, 400);
+  const result = gitStashApply(cwd, index);
+  return c.json({ success: true, result });
+});
+
+app.post("/api/git/stash/drop", async (c) => {
+  const { cwd, index } = await c.req.json();
+  if (!cwd || index === undefined) return c.json({ error: "cwd and index required" }, 400);
+  const result = gitStashDrop(cwd, index);
+  return c.json({ success: true, result });
+});
+
+// Amend commit
+app.post("/api/git/amend", async (c) => {
+  const { cwd, message } = await c.req.json();
+  if (!cwd) return c.json({ error: "cwd required" }, 400);
+  const result = gitAmend(cwd, message);
+  return c.json({ success: true, result });
+});
+
+// Cherry-pick / Revert
+app.post("/api/git/cherry-pick", async (c) => {
+  const { cwd, hash } = await c.req.json();
+  if (!cwd || !hash) return c.json({ error: "cwd and hash required" }, 400);
+  const result = gitCherryPick(cwd, hash);
+  return c.json({ success: true, result });
+});
+
+app.post("/api/git/revert", async (c) => {
+  const { cwd, hash, noCommit } = await c.req.json();
+  if (!cwd || !hash) return c.json({ error: "cwd and hash required" }, 400);
+  const result = gitRevert(cwd, hash, noCommit);
+  return c.json({ success: true, result });
+});
+
+// Merge conflict resolution
+app.post("/api/git/resolve-conflict", async (c) => {
+  const { cwd, path, strategy } = await c.req.json();
+  if (!cwd || !path || !strategy) return c.json({ error: "cwd, path, and strategy required" }, 400);
+  const result = gitResolveConflict(cwd, path, strategy);
+  return c.json({ success: true, result });
+});
+
+// Diff stats
+app.get("/api/git/diff-stats", (c) => {
+  const cwd = c.req.query("cwd");
+  const path = c.req.query("path");
+  const staged = c.req.query("staged") === "true";
+  if (!cwd || !path) return c.json({ error: "cwd and path required" }, 400);
+  return c.json(getGitDiffStats(cwd, path, staged));
+});
+
+// Compare with ref
+app.get("/api/git/diff-ref", (c) => {
+  const cwd = c.req.query("cwd");
+  const path = c.req.query("path");
+  const ref = c.req.query("ref");
+  if (!cwd || !path || !ref) return c.json({ error: "cwd, path, and ref required" }, 400);
+  return c.json({ diff: gitDiffWithRef(cwd, path, ref) });
+});
+
+// Show full commit
+app.get("/api/git/show", (c) => {
+  const cwd = c.req.query("cwd");
+  const hash = c.req.query("hash");
+  if (!cwd || !hash) return c.json({ error: "cwd and hash required" }, 400);
+  return c.json({ diff: gitShowCommit(cwd, hash) });
+});
+
+// Log search
+app.get("/api/git/log-search", (c) => {
+  const cwd = c.req.query("cwd");
+  const query = c.req.query("query");
+  if (!cwd || !query) return c.json({ error: "cwd and query required" }, 400);
+  const count = parseInt(c.req.query("count") || "50");
+  return c.json({ log: gitLogSearch(cwd, query, count) });
+});
+
+// Blame
+app.get("/api/git/blame", (c) => {
+  const cwd = c.req.query("cwd");
+  const path = c.req.query("path");
+  if (!cwd || !path) return c.json({ error: "cwd and path required" }, 400);
+  return c.json({ blame: gitBlame(cwd, path) });
+});
+
+// Remotes
+app.get("/api/git/remotes", (c) => {
+  const cwd = c.req.query("cwd");
+  if (!cwd) return c.json({ error: "cwd required" }, 400);
+  return c.json({ remotes: gitRemotes(cwd) });
+});
+
+// Unstage all
+app.post("/api/git/unstage-all", async (c) => {
+  const { cwd } = await c.req.json();
+  if (!cwd) return c.json({ error: "cwd required" }, 400);
+  const result = gitUnstageAll(cwd);
+  return c.json({ success: true, result });
 });
 
 // Health
