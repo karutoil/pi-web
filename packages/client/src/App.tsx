@@ -3,7 +3,7 @@ import type { Project, SessionSummary, SessionDetail } from "@pi-web/shared";
 import { Sidebar } from "./components/Sidebar";
 import { ChatView } from "./components/ChatView";
 import { EmptyState } from "./components/EmptyState";
-import { useWebSocket } from "./hooks/useWebSocket";
+import { useWebSocketPool } from "./hooks/useWebSocketPool";
 import { useTheme } from "./hooks/useTheme";
 
 export type ViewState = "projects" | "sessions" | "chat";
@@ -18,11 +18,12 @@ export default function App() {
   const [showAddProject, setShowAddProject] = useState(false);
   const [newSessionId, setNewSessionId] = useState<string | null>(null);
 
-  // WebSocket connection for active chat
-  const ws = useWebSocket(
+  // WebSocket pool — multiple concurrent connections, agents keep streaming when navigating away
+  const wsPool = useWebSocketPool();
+  const ws = wsPool.getOrConnect(
     selectedProject?.id || null,
     activeSession?.filePath || null,
-    newSessionId
+    newSessionId,
   );
 
   const [theme, toggleTheme] = useTheme();
