@@ -4,6 +4,7 @@ import type { ViewState } from "../App";
 import type { Theme } from "../hooks/useTheme";
 import { Icon } from "./Icon";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { AddProjectExplorer } from "./AddProjectExplorer";
 import { ContextMenuPortal, ContextMenuItem, ContextMenuDivider } from "./ContextMenu";
 
 interface SidebarProps {
@@ -254,6 +255,12 @@ export function Sidebar({
       onConfirm={() => { confirmDialog.onConfirm(); setConfirmDialog(s => ({...s, open: false})); }}
       onCancel={() => setConfirmDialog(s => ({...s, open: false}))}
     />
+    {showAddProject && (
+      <AddProjectExplorer
+        onAdd={(path, name) => { onAddProject(path, name); onToggleAddProject(); }}
+        onCancel={onToggleAddProject}
+      />
+    )}
     </>
   );
 }
@@ -292,10 +299,6 @@ function ProjectList({
           <Icon name="plus" size={14} />
         </button>
       </div>
-
-      {showAddProject && (
-        <AddProjectForm onAdd={onAdd} onCancel={onToggleAdd} />
-      )}
 
       {projects.length === 0 && !showAddProject && (
         <p className="text-ink-600 text-xs px-2 py-6 text-center">
@@ -346,59 +349,6 @@ function ProjectList({
 }
 
 // ─── Add Project Form ───
-
-function AddProjectForm({
-  onAdd,
-  onCancel,
-}: {
-  onAdd: (path: string, name: string) => void;
-  onCancel: () => void;
-}) {
-  const [path, setPath] = useState("");
-  const [name, setName] = useState("");
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (path.trim()) {
-      onAdd(path.trim(), name.trim() || "");
-    }
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="mb-2 mx-1 p-3 rounded-lg bg-ink-850/60 border border-ink-800/50 animate-fade-in-up">
-      <input
-        type="text"
-        placeholder="Directory path (e.g. /home/user/project)"
-        value={path}
-        onChange={e => setPath(e.target.value)}
-        className="w-full bg-ink-950/50 border border-ink-800 rounded-md px-2.5 py-1.5 text-ink-200 text-xs font-mono placeholder-ink-600 focus:outline-none focus:border-amber-600/60 mb-2 transition-theme"
-        autoFocus
-      />
-      <input
-        type="text"
-        placeholder="Display name (optional)"
-        value={name}
-        onChange={e => setName(e.target.value)}
-        className="w-full bg-ink-950/50 border border-ink-800 rounded-md px-2.5 py-1.5 text-ink-200 text-xs placeholder-ink-600 focus:outline-none focus:border-amber-600/60 mb-2.5 transition-theme"
-      />
-      <div className="flex gap-2">
-        <button
-          type="submit"
-          className="flex-1 bg-amber-600/90 hover:bg-amber-500 text-ink-950 text-xs font-medium py-1.5 rounded-md transition-theme"
-        >
-          Add
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="px-3 py-1.5 text-ink-500 hover:text-ink-300 text-xs transition-theme"
-        >
-          Cancel
-        </button>
-      </div>
-    </form>
-  );
-}
 
 // ─── Session List ───
 

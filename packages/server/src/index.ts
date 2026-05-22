@@ -3,8 +3,9 @@ import { serveStatic } from "hono/bun";
 import { createBunWebSocket } from "hono/bun";
 import type { ServerWebSocket } from "bun";
 import { join, basename } from "node:path";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, statSync, readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
 
 import { addProject, removeProject, listProjects, getProject, touchProject } from "./db";
 import { listProjectSessions, getSessionDetail } from "./pi-sessions";
@@ -106,6 +107,40 @@ app.patch("/api/sessions/rename", async (c) => {
     return c.json({ success: true, name });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
+  }
+});
+
+// Browse filesystem directories
+app.get("/api/fs/browse", async (c) => {
+  const dir = c.req.query("dir") || homedir();
+  try {
+    if (!existsSync(dir)) return c.json({ error: "Directory does not exist" }, 400);
+    const stat = statSync(dir);
+    if (!stat.isDirectory()) return c.json({ error: "Not a directory" }, 400);
+
+    const entries = readdirSync(dir, { withFileTypes: true })
+      .filter(e => !e.name.startsWith(".") && e.isDirectory())
+      .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+
+    const items = entries.map(e => ({
+      name: e.name,
+      path: join(dir, e.name),
+      isDirectory: true,
+    }));
+
+    return c.json({
+      currentPath: dir,
+      parentPath: dir === "/" ? null : join(dir, ".."),
+      items,
+    });
+  } catch (e: any) {
+    // If we can't read the dir (permissions), return empty with error
+    return c.json({
+      currentPath: dir,
+      parentPath: dir === "/" ? null : join(dir, ".."),
+      items: [],
+      error: e.code === "EACCES" ? "Permission denied" : e.message,
+    });
   }
 });
 

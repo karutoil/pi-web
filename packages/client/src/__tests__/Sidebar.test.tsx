@@ -176,9 +176,9 @@ describe('Sidebar', () => {
     expect(screen.getByText('Test Project')).toBeInTheDocument();
   });
 
-  it('shows add project form when toggled', () => {
+  it('shows add project explorer when toggled', () => {
     render(<Sidebar {...defaultProps} view="projects" selectedProject={null} showAddProject={true} />);
-    expect(screen.getByPlaceholderText('Directory path (e.g. /home/user/project)')).toBeInTheDocument();
+    expect(screen.getByText('Add Project')).toBeInTheDocument();
   });
 
   // ─── Theme toggle ───
