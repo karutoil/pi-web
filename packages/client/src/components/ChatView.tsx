@@ -29,24 +29,30 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showThinking, setShowThinking] = useState(true);
   const [autoScroll, setAutoScroll] = useState(true);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollAnchorRef = useRef<HTMLDivElement>(null);
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rafRef = useRef<number>(0);
 
-  // Auto-scroll: instant during streaming, smooth otherwise
+  // Virtualization: only render the last RENDER_LIMIT messages
+  const [renderLimit, setRenderLimit] = useState(200);
+  const allHistorical = (sessionDetail?.entries || [])
+    .filter((e: any) => e.message && e.type !== "compaction" && e.type !== "branch_summary");
+  const hasMoreHistory = allHistorical.length > renderLimit;
+  const historicalEntries = hasMoreHistory ? allHistorical.slice(-renderLimit) : allHistorical;
+
+  // Auto-scroll: use direct scrollTop (fast, no layout recalc) instead of scrollIntoView
   // Batch with rAF to avoid overwhelming browser during rapid updates
   useEffect(() => {
     if (!autoScroll) return;
     cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => {
-      if (messagesEndRef.current) {
-        messagesEndRef.current.scrollIntoView({
-          behavior: ws.isActive ? "instant" : "smooth",
-          block: "end",
-        });
+      const el = scrollRef.current;
+      if (el) {
+        // Direct scrollTop is O(1) — scrollIntoView is O(DOM size)
+        el.scrollTop = el.scrollHeight;
       }
     });
-  }, [ws.messages, ws.liveMessages, ws.runningTools, autoScroll, ws.isActive]);
+  }, [ws.messages, ws.liveMessages, ws.runningTools, autoScroll]);
 
   // Throttled scroll handler — check if user is near bottom
   const handleScroll = useCallback(() => {
@@ -144,10 +150,19 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
         className="flex-1 overflow-y-auto custom-scrollbar px-5 pt-6 pb-28"
       >
         <div className="max-w-3xl mx-auto space-y-5">
-          {/* Historical messages */}
-          {sessionDetail?.entries.map((entry, i) => {
+          {/* Load earlier messages */}
+          {hasMoreHistory && (
+            <button
+              onClick={() => setRenderLimit(n => n + 200)}
+              className="w-full text-center py-2 text-xs text-ink-500 hover:text-ink-300 font-mono transition-theme"
+            >
+              ↑ Load {Math.min(200, allHistorical.length - renderLimit)} earlier messages
+            </button>
+          )}
+
+          {/* Historical messages (virtualized) */}
+          {historicalEntries.map((entry: any, i: number) => {
             if (!entry.message) return null;
-            if (entry.type === "compaction" || entry.type === "branch_summary") return null;
             const isUser = entry.message.role === "user";
             const turn = getTurnForMsg(i);
             return (
@@ -189,7 +204,7 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
             <MessageBubble message={liveMsg} showThinking={showThinking} isStreaming={true} />
           )}
 
-          <div ref={messagesEndRef} />
+          <div ref={scrollAnchorRef} />
         </div>
 
         {ws.messages.length === 0 && !liveMsg && !hasHistoricalMessages && (
