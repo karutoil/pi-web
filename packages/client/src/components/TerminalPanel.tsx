@@ -73,6 +73,17 @@ function TerminalInstance({ tab, visible }: { tab: TerminalTab; visible: boolean
       termRef.current = term;
       fitAddonRef.current = fitAddon;
 
+      // Initial fit — may need multiple attempts as container might not have settled
+      const tryInitFit = (attempt: number) => {
+        if (attempt > 10) return;
+        try {
+          fitAddon.fit();
+        } catch {
+          setTimeout(() => tryInitFit(attempt + 1), 150);
+        }
+      };
+      requestAnimationFrame(() => tryInitFit(0));
+
       // Connect to terminal WS
       const protocol = location.protocol === "https:" ? "wss" : "ws";
       const ws = new WebSocket(`${protocol}://${location.host}/ws?type=terminal&id=${encodeURIComponent(tab.id)}`);
@@ -130,12 +141,7 @@ function TerminalInstance({ tab, visible }: { tab: TerminalTab; visible: boolean
           ws.send(JSON.stringify({ type: "term_resize", cols, rows }));
         }
       });
-
-      // Fit on first render
-      requestAnimationFrame(() => {
-        try { fitAddon.fit(); } catch {}
-      });
-    });
+    }); // end Promise.all().then()
 
     return () => {
       destroyed = true;
@@ -147,16 +153,23 @@ function TerminalInstance({ tab, visible }: { tab: TerminalTab; visible: boolean
   // Fit when visibility changes
   useEffect(() => {
     if (visible && fitAddonRef.current && termRef.current) {
-      requestAnimationFrame(() => {
-        try { fitAddonRef.current.fit(); } catch {}
-      });
+      // Multiple attempts — container might not have dimensions yet
+      const tryFit = (attempt: number) => {
+        if (attempt > 5) return;
+        try {
+          fitAddonRef.current.fit();
+        } catch {
+          setTimeout(() => tryFit(attempt + 1), 100);
+        }
+      };
+      requestAnimationFrame(() => tryFit(0));
     }
   }, [visible]);
 
   return (
     <div
       ref={containerRef}
-      className={`w-full h-full ${visible ? "" : "hidden"}`}
+      className={`w-full h-full ${visible ? "" : "invisible absolute"}`}
       style={{ padding: "4px 4px 0" }}
     />
   );
@@ -318,7 +331,7 @@ export function TerminalPanel({ projectId, projectPath, visible, onClose }: Term
       </div>
 
       {/* ── Terminal content ── */}
-      <div className="flex-1 min-h-0 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-hidden relative">
         {tabs.map(tab => (
           <TerminalInstance
             key={tab.id}
