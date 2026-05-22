@@ -30,18 +30,35 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
   const [showThinking, setShowThinking] = useState(true);
   const [autoScroll, setAutoScroll] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rafRef = useRef<number>(0);
 
+  // Auto-scroll: instant during streaming, smooth otherwise
+  // Batch with rAF to avoid overwhelming browser during rapid updates
   useEffect(() => {
-    if (autoScroll && messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [ws.messages, ws.liveMessages, ws.runningTools, autoScroll]);
+    if (!autoScroll) return;
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => {
+      if (messagesEndRef.current) {
+        messagesEndRef.current.scrollIntoView({
+          behavior: ws.isActive ? "instant" : "smooth",
+          block: "end",
+        });
+      }
+    });
+  }, [ws.messages, ws.liveMessages, ws.runningTools, autoScroll, ws.isActive]);
 
+  // Throttled scroll handler — check if user is near bottom
   const handleScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const { scrollTop, scrollHeight, clientHeight } = el;
-    setAutoScroll(scrollHeight - scrollTop - clientHeight < 80);
+    if (scrollTimerRef.current) return; // throttle: skip if pending
+    scrollTimerRef.current = setTimeout(() => {
+      scrollTimerRef.current = null;
+      const el = scrollRef.current;
+      if (!el) return;
+      const { scrollTop, scrollHeight, clientHeight } = el;
+      const nearBottom = scrollHeight - scrollTop - clientHeight < 120;
+      setAutoScroll(nearBottom);
+    }, 100);
   }, []);
 
   const handleSend = useCallback((text: string, images?: { data: string; mimeType: string }[]) => {

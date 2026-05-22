@@ -18,6 +18,7 @@ export interface WSBridge {
   state: AgentState | null;
   isConnected: boolean;
   isStreaming: boolean;
+  isActive: boolean;
   // New features
   models: ModelInfo[]; commands: CommandInfo[];
   forkMessages: ForkEntry[]; sessionStats: SessionStats | null;
@@ -174,7 +175,7 @@ export function useWebSocket(projectId: string | null, sessionPath: string | nul
 
   return {
     send, sendPrompt, messages, liveMessages, runningTools, state,
-    isConnected, isStreaming, models, commands, forkMessages, sessionStats,
+    isConnected, isStreaming, isActive: isStreaming, models, commands, forkMessages, sessionStats,
     pendingUI, respondToUI,
     setOnSessionLoaded: (cb) => { onSessionLoadedRef.current = cb; },
     setOnSessionEvent: (cb) => { onSessionEventRef.current = cb; },
