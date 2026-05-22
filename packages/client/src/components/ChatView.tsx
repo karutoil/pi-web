@@ -15,6 +15,8 @@ interface ChatViewProps {
   sessionDetail: { entries: SessionEntry[]; cwd: string } | null;
   project: Project | null;
   session: SessionSummary | null;
+  onToggleSidebar?: () => void;
+  showSidebar?: boolean;
 }
 
 function extractMsgText(msg: ChatMessage): string {
@@ -29,7 +31,7 @@ function extractMsgText(msg: ChatMessage): string {
   return "";
 }
 
-export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps) {
+export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar, showSidebar }: ChatViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showThinking, setShowThinking] = useState(true);
   const [srAnnouncement, setSrAnnouncement] = useState('');
@@ -176,7 +178,7 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
 
   return (
     <div className="flex-1 flex flex-col min-h-0 relative">
-      <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} onToggleGit={() => setShowGit(v => !v)} showGit={showGit} />
+      <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} onToggleGit={() => setShowGit(v => !v)} showGit={showGit} onToggleSidebar={onToggleSidebar} showSidebar={showSidebar} />
 
       <div aria-live="polite" className="sr-only">{srAnnouncement}</div>
 

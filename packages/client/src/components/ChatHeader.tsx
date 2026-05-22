@@ -9,9 +9,11 @@ interface Props {
   sessionName: string | null;
   onToggleGit?: () => void;
   showGit?: boolean;
+  onToggleSidebar?: () => void;
+  showSidebar?: boolean;
 }
 
-export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit }: Props) {
+export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggleSidebar, showSidebar }: Props) {
   const [modelOpen, setModelOpen] = useState(false);
   const [thinkingOpen, setThinkingOpen] = useState(false);
   const [editingName, setEditingName] = useState(false);
@@ -117,6 +119,18 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit }: Props
             )}
             <span>${stats.cost.toFixed(2)}</span>
           </div>
+        )}
+
+        {/* Sidebar toggle */}
+        {onToggleSidebar && !showSidebar && (
+          <button
+            onClick={onToggleSidebar}
+            className="text-xs font-mono px-2 py-1 rounded border bg-ink-850 border-ink-750 hover:border-ink-600 text-ink-400 hover:text-ink-200 transition-theme"
+            aria-label="Show sidebar"
+            title="Show sidebar (⌘B)"
+          >
+            <Icon name="chevron-right" size={14} />
+          </button>
         )}
 
         {/* Git toggle */}

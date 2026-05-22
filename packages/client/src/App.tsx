@@ -331,22 +331,8 @@ export default function App() {
         onToggleSidebar={() => setShowSidebar(false)}
       />
       )}
-      {!showSidebar && (
-        <button
-          onClick={() => setShowSidebar(true)}
-          className="absolute left-0 top-0 z-20 p-2 m-2 rounded-lg bg-ink-900/80 hover:bg-ink-800 text-ink-500 hover:text-amber-500 border border-ink-800/50 hover:border-ink-700 transition-theme backdrop-blur-sm"
-          aria-label="Show sidebar"
-          title="Show sidebar (⌘B)"
-        >
-          <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-            <line x1="3" y1="2" x2="3" y2="14" />
-            <line x1="7" y1="5" x2="13" y2="5" />
-            <line x1="7" y1="8" x2="11" y2="8" />
-            <line x1="7" y1="11" x2="13" y2="11" />
-          </svg>
-        </button>
-      )}
       
+
       <main id="main-content" className="flex-1 flex flex-col min-w-0">
         {view === "chat" && ws ? (
           <ChatView
@@ -354,6 +340,8 @@ export default function App() {
             sessionDetail={sessionDetail}
             project={selectedProject}
             session={activeSession}
+            onToggleSidebar={() => setShowSidebar(true)}
+            showSidebar={showSidebar}
           />
         ) : view === "sessions" ? (
           <SessionWelcome
