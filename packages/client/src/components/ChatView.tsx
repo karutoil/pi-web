@@ -29,9 +29,8 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showThinking, setShowThinking] = useState(true);
   const [autoScroll, setAutoScroll] = useState(true);
-  const scrollAnchorRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const rafRef = useRef<number>(0);
 
   // Virtualization: only render the last RENDER_LIMIT messages
   const [renderLimit, setRenderLimit] = useState(200);
@@ -40,23 +39,26 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
   const hasMoreHistory = allHistorical.length > renderLimit;
   const historicalEntries = hasMoreHistory ? allHistorical.slice(-renderLimit) : allHistorical;
 
-  // Auto-scroll: use direct scrollTop (fast, no layout recalc) instead of scrollIntoView
-  // Batch with rAF to avoid overwhelming browser during rapid updates
+  // Auto-scroll via ResizeObserver — fires after DOM commit, always in sync
+  // This is more reliable than useEffect deps for rapid streaming updates
   useEffect(() => {
-    if (!autoScroll) return;
-    cancelAnimationFrame(rafRef.current);
-    rafRef.current = requestAnimationFrame(() => {
-      const el = scrollRef.current;
-      if (el) {
-        // Direct scrollTop is O(1) — scrollIntoView is O(DOM size)
-        el.scrollTop = el.scrollHeight;
-      }
+    const el = scrollRef.current;
+    if (!el) return;
+    const content = contentRef.current;
+    if (!content) return;
+
+    const observer = new ResizeObserver(() => {
+      if (!autoScroll || !el) return;
+      // Direct scrollTop — O(1), no layout recalculation
+      el.scrollTop = el.scrollHeight;
     });
-  }, [ws.messages, ws.liveMessages, ws.runningTools, autoScroll]);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [autoScroll]);
 
   // Throttled scroll handler — check if user is near bottom
   const handleScroll = useCallback(() => {
-    if (scrollTimerRef.current) return; // throttle: skip if pending
+    if (scrollTimerRef.current) return;
     scrollTimerRef.current = setTimeout(() => {
       scrollTimerRef.current = null;
       const el = scrollRef.current;
@@ -64,7 +66,7 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
       const { scrollTop, scrollHeight, clientHeight } = el;
       const nearBottom = scrollHeight - scrollTop - clientHeight < 120;
       setAutoScroll(nearBottom);
-    }, 100);
+    }, 150);
   }, []);
 
   const handleSend = useCallback((text: string, images?: { data: string; mimeType: string }[]) => {
@@ -149,7 +151,7 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto custom-scrollbar px-5 pt-6 pb-28"
       >
-        <div className="max-w-3xl mx-auto space-y-5">
+        <div ref={contentRef} className="max-w-3xl mx-auto space-y-5">
           {/* Load earlier messages */}
           {hasMoreHistory && (
             <button
@@ -204,7 +206,7 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
             <MessageBubble message={liveMsg} showThinking={showThinking} isStreaming={true} />
           )}
 
-          <div ref={scrollAnchorRef} />
+
         </div>
 
         {ws.messages.length === 0 && !liveMsg && !hasHistoricalMessages && (

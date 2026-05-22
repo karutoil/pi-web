@@ -65,18 +65,47 @@ function createConnection(
 
   const notify = () => listeners.forEach(l => l());
 
-  // Connect
-  const params = new URLSearchParams();
-  if (projectId) params.set("projectId", projectId);
-  if (sessionPath) params.set("sessionPath", sessionPath);
-  if (newSessionId) params.set("newSessionId", newSessionId);
-  const protocol = location.protocol === "https:" ? "wss" : "ws";
-  ws = new WebSocket(`${protocol}://${location.host}/ws/chat?${params}`);
-  ws.onopen = () => { data.isConnected = true; notify(); };
-  ws.onclose = () => { data.isConnected = false; data.isStreaming = false; notify(); };
-  ws.onmessage = (event) => {
-    try { handleMessage(JSON.parse(event.data)); } catch (e) { console.error("WS parse error:", e); }
-  };
+  // Auto-reconnect with exponential backoff
+  let reconnectAttempts = 0;
+  const MAX_RECONNECT = 10;
+  const BASE_DELAY = 1000;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let intentionallyClosed = false;
+
+  function connect() {
+    const params = new URLSearchParams();
+    if (projectId) params.set("projectId", projectId);
+    if (sessionPath) params.set("sessionPath", sessionPath);
+    if (newSessionId) params.set("newSessionId", newSessionId);
+    const protocol = location.protocol === "https:" ? "wss" : "ws";
+    ws = new WebSocket(`${protocol}://${location.host}/ws/chat?${params}`);
+    ws.onopen = () => {
+      data.isConnected = true;
+      reconnectAttempts = 0;
+      notify();
+      // Request current state on reconnect to sync up
+      setTimeout(() => send({ type: "get_state" } as any), 200);
+    };
+    ws.onclose = () => {
+      data.isConnected = false;
+      data.isStreaming = false;
+      notify();
+      // Auto-reconnect unless intentionally closed
+      if (!intentionallyClosed && reconnectAttempts < MAX_RECONNECT) {
+        const delay = BASE_DELAY * Math.pow(1.5, reconnectAttempts);
+        console.log(`[ws] reconnecting in ${Math.round(delay)}ms (attempt ${reconnectAttempts + 1})`);
+        reconnectTimer = setTimeout(() => {
+          reconnectAttempts++;
+          connect();
+        }, delay);
+      }
+    };
+    ws.onmessage = (event) => {
+      try { handleMessage(JSON.parse(event.data)); } catch (e) { console.error("WS parse error:", e); }
+    };
+  }
+
+  connect();
 
   function handleMessage(msg: WSServerMessage) {
     switch (msg.type) {
@@ -198,7 +227,7 @@ function createConnection(
     },
     setOnSessionLoaded: (cb) => { onSessionLoadedRef.current = cb; },
     setOnSessionEvent: (cb) => { onSessionEventRef.current = cb; },
-    close: () => { ws?.close(); ws = null; },
+    close: () => { intentionallyClosed = true; if (reconnectTimer) clearTimeout(reconnectTimer); ws?.close(); ws = null; },
     subscribe: (l) => listeners.add(l),
     unsubscribe: (l) => listeners.delete(l),
   };
