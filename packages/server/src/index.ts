@@ -112,7 +112,9 @@ app.patch("/api/sessions/rename", async (c) => {
 
 // Browse filesystem directories
 app.get("/api/fs/browse", async (c) => {
-  const dir = c.req.query("dir") || homedir();
+  let dir = c.req.query("dir") || homedir();
+  // Expand ~ to home directory
+  if (dir.startsWith("~")) dir = homedir() + dir.slice(1);
   try {
     if (!existsSync(dir)) return c.json({ error: "Directory does not exist" }, 400);
     const stat = statSync(dir);

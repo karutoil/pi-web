@@ -21,7 +21,7 @@ interface Props {
 }
 
 export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
-  const [currentPath, setCurrentPath] = useState(initialPath || "~");
+  const [currentPath, setCurrentPath] = useState(initialPath || "");
   const [items, setItems] = useState<FsItem[]>([]);
   const [parentPath, setParentPath] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
