@@ -269,3 +269,37 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   position: static; width: auto; height: auto; padding: 0; margin: 0;
   overflow: visible; clip: auto; white-space: normal;
 }
+
+/* ========== xterm overrides ========== */
+
+.xterm {
+  padding: 0 4px;
+}
+.xterm-viewport {
+  background-color: #0d0c0a !important;
+}
+.xterm-viewport::-webkit-scrollbar {
+  width: 6px;
+}
+.xterm-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+.xterm-viewport::-webkit-scrollbar-thumb {
+  background: #3a3630;
+  border-radius: 3px;
+}
+.xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: #524c44;
+}
+
+/* Horizontal scrollbar for tab bar */
+.custom-scrollbar-x::-webkit-scrollbar {
+  height: 3px;
+}
+.custom-scrollbar-x::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar-x::-webkit-scrollbar-thumb {
+  background: #3a3630;
+  border-radius: 2px;
+}

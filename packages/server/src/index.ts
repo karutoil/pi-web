@@ -10,6 +10,7 @@ import { homedir } from "node:os";
 import { addProject, removeProject, listProjects, getProject, touchProject } from "./db";
 import { listProjectSessions, getSessionDetail } from "./pi-sessions";
 import { getOrCreateAgent, stopAllAgents, getPoolStats, lookupAgent, detachFromAgent } from "./pi-agent";
+import { createTerminal, getTerminal, listTerminals, killTerminal } from "./pi-terminal";
 import type { WSClientMessage, WSServerMessage } from "@pi-web/shared";
 
 const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>();
@@ -146,6 +147,28 @@ app.get("/api/fs/browse", async (c) => {
   }
 });
 
+// List terminals for a project
+app.get("/api/terminals", (c) => {
+  const projectId = c.req.query("projectId");
+  if (!projectId) return c.json({ error: "projectId required" }, 400);
+  return c.json({ terminals: listTerminals(projectId) });
+});
+
+// Create a new terminal
+app.post("/api/terminals", (c) => {
+  const { id, projectId, cwd, name } = c.req.json() as any;
+  if (!id || !projectId || !cwd) return c.json({ error: "id, projectId, and cwd required" }, 400);
+  const info = createTerminal(id, projectId, cwd, name || "Terminal");
+  return c.json({ terminal: info }, 201);
+});
+
+// Kill a terminal
+app.delete("/api/terminals/:id", (c) => {
+  const { id } = c.req.param();
+  const ok = killTerminal(id);
+  return c.json({ success: ok }, ok ? 200 : 404);
+});
+
 // Health
 app.get("/api/health", (c) => c.json({ status: "ok", time: Date.now(), pool: getPoolStats() }));
 
@@ -153,6 +176,58 @@ app.get("/api/health", (c) => c.json({ status: "ok", time: Date.now(), pool: get
 
 // Map: raw ServerWebSocket -> agentKey (for routing messages)
 const wsToAgent = new Map<ServerWebSocket, string>();
+// Map: raw ServerWebSocket -> terminalId (for terminal WS routing)
+const wsToTerminal = new Map<ServerWebSocket, string>();
+
+// ── Terminal WebSocket ──
+app.get(
+  "/ws/terminal",
+  upgradeWebSocket((c) => {
+    const terminalId = c.req.query("id");
+
+    return {
+      onOpen(_event, ws) {
+        if (!terminalId) { ws.close(); return; }
+        const term = getTerminal(terminalId);
+        if (!term) {
+          try { ws.send(JSON.stringify({ type: "term_exit", id: terminalId, exitCode: 1 })); } catch {}
+          ws.close();
+          return;
+        }
+        const raw = (ws as any).raw as ServerWebSocket;
+        wsToTerminal.set(raw, terminalId);
+        term.attach(raw);
+        // Send buffer for scrollback on reattach
+        if (term.buffer) {
+          try { ws.send(JSON.stringify({ type: "term_output", id: terminalId, data: term.buffer })); } catch {}
+        }
+      },
+      onMessage(event, ws) {
+        const raw = (ws as any).raw as ServerWebSocket;
+        const tid = wsToTerminal.get(raw);
+        if (!tid) return;
+        const term = getTerminal(tid);
+        if (!term) return;
+        try {
+          const msg = JSON.parse(event.data as string);
+          switch (msg.type) {
+            case "term_input": term.write(msg.data); break;
+            case "term_resize": term.resize(msg.cols, msg.rows); break;
+          }
+        } catch {}
+      },
+      onClose(_event, ws) {
+        const raw = (ws as any).raw as ServerWebSocket;
+        const tid = wsToTerminal.get(raw);
+        wsToTerminal.delete(raw);
+        if (tid) {
+          const term = getTerminal(tid);
+          if (term) term.detach(raw);
+        }
+      },
+    };
+  })
+);
 
 app.get(
   "/ws/chat",

@@ -7,6 +7,7 @@ import { ChatInput } from "./ChatInput";
 import { ChatHeader } from "./ChatHeader";
 import { ExtensionUIModal } from "./ExtensionUIModal";
 import { Icon } from "./Icon";
+import { TerminalPanel } from "./TerminalPanel";
 
 interface ChatViewProps {
   ws: WSBridge;
@@ -33,6 +34,7 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
   const [srAnnouncement, setSrAnnouncement] = useState('');
   const [autoScroll, setAutoScroll] = useState(true);
   const contentRef = useRef<HTMLDivElement>(null);
+  const [showTerminal, setShowTerminal] = useState(false);
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Virtualization: only render the last RENDER_LIMIT messages
@@ -272,6 +274,14 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
         )}
       </div>
 
+      {/* Terminal panel */}
+      <TerminalPanel
+        projectId={project?.id || null}
+        projectPath={project?.path || null}
+        visible={showTerminal}
+        onClose={() => setShowTerminal(false)}
+      />
+
       <ChatInput
         onSend={handleSend}
         onAbort={handleAbort}
@@ -279,6 +289,8 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
         disabled={!ws.isConnected}
         commands={ws.commands}
         onRequestCommands={handleRequestCommands}
+        showTerminal={showTerminal}
+        onToggleTerminal={() => setShowTerminal(v => !v)}
       />
 
       {/* Extension UI Modal — only for dialog methods */}

@@ -263,6 +263,23 @@ const SVG_PATHS: Record<string, IconDef> = {
       </>
     ),
   },
+
+  // ── Terminal (viewBox 0 0 16 16) ──
+  terminal: {
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.5",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    children: (
+      <>
+        <rect x="1" y="2" width="14" height="12" rx="2" />
+        <polyline points="4 6 6 8 4 10" />
+        <line x1="8" y1="10" x2="12" y2="10" />
+      </>
+    ),
+  },
 };
 
 /* ─── Component ─── */

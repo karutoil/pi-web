@@ -11,11 +11,13 @@ interface ChatInputProps {
   disabled: boolean;
   commands: CommandInfo[];
   onRequestCommands: () => void;
+  showTerminal?: boolean;
+  onToggleTerminal?: () => void;
 }
 
 interface PendingImage { data: string; mimeType: string; }
 
-export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, onRequestCommands }: ChatInputProps) {
+export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, onRequestCommands, showTerminal, onToggleTerminal }: ChatInputProps) {
   const [text, setText] = useState("");
   const [showCommands, setShowCommands] = useState(false);
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
@@ -168,6 +170,17 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
             />
             
             <div className="flex items-center gap-1 shrink-0">
+              {/* Terminal toggle */}
+              {onToggleTerminal && (
+                <button
+                  onClick={onToggleTerminal}
+                  className={`p-1.5 rounded-full transition-theme ${showTerminal ? "bg-amber-600/20 text-amber-500" : "text-ink-600 hover:text-ink-400 hover:bg-ink-800/40"}`}
+                  title="Toggle terminal"
+                  aria-label="Toggle terminal"
+                >
+                  <Icon name="terminal" size={14} />
+                </button>
+              )}
               {isStreaming ? (
                 <button onClick={onAbort} className="p-1.5 rounded-full bg-rose-600/20 text-rose-500 hover:bg-rose-600/30 transition-theme" title="Abort" aria-label="Abort">
                   <Icon name="abort" size={14} />
