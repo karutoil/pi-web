@@ -315,12 +315,12 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
 
   return (
     <div
-      className="flex flex-col bg-ink-950 border-l border-ink-800/60 shrink-0 select-none h-full"
+      className="flex flex-col bg-ink-950 border-l border-ink-800/60 shrink-0 select-none h-full relative"
       style={{ width: `${width}px` }}
     >
       {/* ── Resize handle ── */}
       <div
-        className="w-1 cursor-ew-resize absolute left-0 top-0 bottom-0 z-10 hover:bg-amber-500/20 transition-theme"
+        className="w-2 -ml-1 cursor-ew-resize absolute left-0 top-0 bottom-0 z-10 hover:bg-amber-500/30 active:bg-amber-500/20 transition-theme"
         onMouseDown={handleResizeMouseDown}
       />
 
