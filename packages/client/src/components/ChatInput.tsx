@@ -1,0 +1,192 @@
+import { useState, useRef, useCallback, type KeyboardEvent, type ClipboardEvent } from "react";
+import type { CommandInfo } from "@pi-web/shared";
+import { CommandCompleter } from "./CommandCompleter";
+
+interface ChatInputProps {
+  onSend: (text: string, images?: { data: string; mimeType: string }[]) => void;
+  onAbort: () => void;
+  isStreaming: boolean;
+  disabled: boolean;
+  commands: CommandInfo[];
+  onRequestCommands: () => void;
+}
+
+interface PendingImage { data: string; mimeType: string; }
+
+export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, onRequestCommands }: ChatInputProps) {
+  const [text, setText] = useState("");
+  const [showCommands, setShowCommands] = useState(false);
+  const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const inputContainerRef = useRef<HTMLDivElement>(null);
+
+  // Check if cursor is after a "/"
+  const slashIndex = text.lastIndexOf("/");
+  const commandFilter = (showCommands && slashIndex >= 0) ? text.slice(slashIndex + 1) : "";
+
+  const handleSend = useCallback(() => {
+    const trimmed = text.trim();
+    if ((!trimmed && pendingImages.length === 0) || disabled) return;
+    
+    // If it's a slash command, send as-is
+    onSend(trimmed, pendingImages.length > 0 ? pendingImages : undefined);
+    setText("");
+    setPendingImages([]);
+    setShowCommands(false);
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
+  }, [text, disabled, onSend, pendingImages]);
+
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+    if (e.key === "Escape") {
+      setShowCommands(false);
+    }
+    if (e.key === "Backspace" && showCommands && slashIndex === text.length - 1) {
+      setShowCommands(false);
+    }
+  }, [handleSend, showCommands, slashIndex, text.length]);
+
+  const handleInput = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 200) + "px";
+  }, []);
+
+  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setText(val);
+    handleInput();
+    
+    // Trigger command completion on "/"
+    if (val.endsWith("/")) {
+      setShowCommands(true);
+      if (commands.length === 0) onRequestCommands();
+    }
+    // Keep showing if still typing command
+    const lastSlash = val.lastIndexOf("/");
+    if (showCommands && lastSlash >= 0) {
+      const afterSlash = val.slice(lastSlash + 1);
+      if (afterSlash.includes(" ")) setShowCommands(false);
+    }
+  }, [handleInput, showCommands, commands.length, onRequestCommands]);
+
+  // Image paste handler
+  const handlePaste = useCallback((e: ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith("image/")) {
+        e.preventDefault();
+        const blob = item.getAsFile();
+        if (!blob) continue;
+        
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result as string;
+          const base64 = dataUrl.split(",")[1];
+          setPendingImages(prev => [...prev, { data: base64, mimeType: item.type }]);
+        };
+        reader.readAsDataURL(blob);
+      }
+    }
+  }, []);
+
+  const removeImage = (idx: number) => {
+    setPendingImages(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleSelectCommand = useCallback((name: string) => {
+    // Replace the "/" and everything after it with "/name "
+    const lastSlash = text.lastIndexOf("/");
+    const before = text.slice(0, lastSlash);
+    setText(before + "/" + name + " ");
+    setShowCommands(false);
+    textareaRef.current?.focus();
+  }, [text]);
+
+  return (
+    <div className="shrink-0 border-t border-ink-800 bg-ink-900/50 px-5 py-4">
+      <div className="max-w-3xl mx-auto">
+        {/* Image previews */}
+        {pendingImages.length > 0 && (
+          <div className="flex gap-2 mb-2 flex-wrap">
+            {pendingImages.map((img, i) => (
+              <div key={i} className="relative group">
+                <img
+                  src={`data:${img.mimeType};base64,${img.data}`}
+                  alt="Attachment"
+                  className="h-16 rounded-lg border border-ink-700 object-cover"
+                />
+                <button
+                  onClick={() => removeImage(i)}
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-600 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div ref={inputContainerRef} className="relative">
+          {/* Command completer */}
+          {showCommands && (
+            <CommandCompleter
+              commands={commands}
+              filter={commandFilter}
+              onSelect={handleSelectCommand}
+              onClose={() => setShowCommands(false)}
+            />
+          )}
+
+          <div className="flex items-end gap-3 bg-ink-950 border border-ink-750 rounded-2xl px-4 py-3 focus-within:border-amber-500 focus-within:shadow-[0_0_24px_rgba(192,141,14,0.10)] transition-all">
+            <textarea
+              ref={textareaRef}
+              value={text}
+              onChange={handleChange}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              placeholder={isStreaming ? "Steer the conversation..." : "Ask PI anything... (paste images, type / for commands)"}
+              disabled={disabled}
+              rows={1}
+              className="flex-1 bg-transparent text-ink-100 text-sm placeholder-ink-600 resize-none outline-none max-h-[200px] leading-relaxed"
+            />
+            
+            <div className="flex items-center gap-2 shrink-0">
+              {isStreaming ? (
+                <button onClick={onAbort} className="p-2 rounded-full bg-rose-600/20 text-rose-500 hover:bg-rose-600/30 transition-theme" title="Abort">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                    <rect x="3" y="3" width="10" height="10" rx="1" />
+                  </svg>
+                </button>
+              ) : (
+                <button
+                  onClick={handleSend}
+                  disabled={(!text.trim() && pendingImages.length === 0) || disabled}
+                  className="p-2 rounded-full bg-amber-600 text-ink-950 hover:bg-amber-500 disabled:opacity-30 disabled:cursor-not-allowed transition-theme"
+                  title="Send"
+                >
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path d="M2 8 L12 8 M8 4 L13 8 L8 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+        
+        <p className="text-ink-600 text-[0.65rem] font-mono mt-2 text-center">
+          {isStreaming ? "PI is working — type to steer"
+            : disabled ? "Connecting..."
+            : "Enter to send · Shift+Enter for new line · Paste images · / for commands"}
+        </p>
+      </div>
+    </div>
+  );
+}

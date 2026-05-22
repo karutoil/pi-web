@@ -1,0 +1,241 @@
+@import "tailwindcss";
+
+@theme {
+  /* ── Light mode defaults (ink tokens adapt via data-theme) ── */
+  --color-ink-950: #fcfaf6;
+  --color-ink-900: #f5f1eb;
+  --color-ink-850: #ede7df;
+  --color-ink-800: #e4ddd3;
+  --color-ink-750: #d8d0c5;
+  --color-ink-700: #c8bfb2;
+  --color-ink-600: #a0988b;
+  --color-ink-500: #80776b;
+  --color-ink-400: #60584e;
+  --color-ink-300: #423b33;
+  --color-ink-200: #2a241e;
+  --color-ink-100: #17120e;
+  --color-ink-50:  #0d0a07;
+
+  /* Amber */
+  --color-amber-300: #f0b820;
+  --color-amber-400: #d9a316;
+  --color-amber-500: #c08d0e;
+  --color-amber-600: #a07508;
+
+  /* Semantic */
+  --color-rose-400: #e0434c;
+  --color-rose-500: #cd2b35;
+  --color-teal-400: #4db5a0;
+  --color-teal-500: #359e88;
+
+  /* Tool tokens — refer to CSS vars swapped by theme */
+  --color-tool-read:     var(--t-read);
+  --color-tool-read-bg:   var(--t-read-bg);
+  --color-tool-read-bdr:  var(--t-read-border);
+  --color-tool-bash:     var(--t-bash);
+  --color-tool-bash-bg:   var(--t-bash-bg);
+  --color-tool-bash-bdr:  var(--t-bash-border);
+  --color-tool-edit:     var(--t-edit);
+  --color-tool-edit-bg:   var(--t-edit-bg);
+  --color-tool-edit-bdr:  var(--t-edit-border);
+  --color-tool-write:    var(--t-write);
+  --color-tool-write-bg:  var(--t-write-bg);
+  --color-tool-write-bdr: var(--t-write-border);
+  --color-tool-grep:     var(--t-grep);
+  --color-tool-grep-bg:   var(--t-grep-bg);
+  --color-tool-grep-bdr:  var(--t-grep-border);
+  --color-tool-find:     var(--t-find);
+  --color-tool-find-bg:   var(--t-find-bg);
+  --color-tool-find-bdr:  var(--t-find-border);
+  --color-tool-ls:       var(--t-ls);
+  --color-tool-ls-bg:     var(--t-ls-bg);
+  --color-tool-ls-bdr:    var(--t-ls-border);
+  --color-tool-default:  var(--t-default);
+
+  --font-serif: "Newsreader", Georgia, serif;
+  --font-mono: "Geist Mono", "JetBrains Mono", monospace;
+}
+
+/* ── Tool token assignments (light) ── */
+:root,
+[data-theme="light"] {  
+  --t-read:     #1d4ed8;  --t-read-bg: #eff6ff;  --t-read-border: #bfdbfe;
+  --t-bash:     #0f766e;  --t-bash-bg: #f0fdfa;  --t-bash-border: #99f6e4;
+  --t-edit:     #b45309;  --t-edit-bg: #fffbeb;  --t-edit-border: #fde68a;
+  --t-write:    #7e22ce;  --t-write-bg:#faf5ff;  --t-write-border:#e9d5ff;
+  --t-grep:     #047857;  --t-grep-bg: #ecfdf5;  --t-grep-border: #a7f3d0;
+  --t-find:     #0e7490;  --t-find-bg: #ecfeff;  --t-find-border: #a5f3fc;
+  --t-ls:       #be185d;  --t-ls-bg:   #fdf2f8;  --t-ls-border:  #fbcfe8;
+  --t-default:  #60584e;  --t-default-bg:#f5f1eb;--t-default-border:#e4ddd3;
+}
+
+/* ── Dark mode – warm charcoal, never pitch black ── */
+[data-theme="dark"] {
+  --color-ink-950: #1c1a16;
+  --color-ink-900: #24221d;
+  --color-ink-850: #2c2924;
+  --color-ink-800: #35322b;
+  --color-ink-750: #403c35;
+  --color-ink-700: #4e4941;
+  --color-ink-600: #6e685d;
+  --color-ink-500: #90897c;
+  --color-ink-400: #b0a798;
+  --color-ink-300: #cbc3b4;
+  --color-ink-200: #e0d9cb;
+  --color-ink-100: #f0eadd;
+  --color-ink-50:  #faf6ed;
+
+  --color-amber-300: #f5c842;
+  --color-amber-400: #e8b830;
+  --color-amber-500: #d4a020;
+  --color-amber-600: #c08d0e;
+
+  --color-rose-400: #f2636e;
+  --color-rose-500: #e8515c;
+  --color-teal-400: #5ec4b0;
+  --color-teal-500: #3dab94;
+
+  /* Tool tokens – brighter for dark bg */
+  --t-read:     #93c5fd;  --t-read-bg: #1e3a5f;  --t-read-border: #1d4ed8;
+  --t-bash:     #5eead4;  --t-bash-bg: #134e4a;  --t-bash-border: #0f766e;
+  --t-edit:     #fcd34d;  --t-edit-bg: #4a3200;  --t-edit-border: #b45309;
+  --t-write:    #c4b5fd;  --t-write-bg:#2e1065;  --t-write-border:#7e22ce;
+  --t-grep:     #6ee7b7;  --t-grep-bg: #064e3b;  --t-grep-border: #047857;
+  --t-find:     #67e8f9;  --t-find-bg: #164e63;  --t-find-border: #0e7490;
+  --t-ls:       #fda4af;  --t-ls-bg:   #500724;  --t-ls-border:  #be185d;
+  --t-default:  #8b8477;  --t-default-bg:#24221d;--t-default-border:#35322b;
+}
+
+/* ========== Base ========== */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-ink-700) transparent;
+}
+
+body {
+  background: var(--color-ink-950);
+  color: var(--color-ink-400);
+  font-family: var(--font-serif);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Subtle grain */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ========== Scrollbar ========== */
+
+.custom-scrollbar::-webkit-scrollbar { width: 5px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--color-ink-700);
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--color-ink-600);
+}
+
+/* ========== Code Blocks ========== */
+
+pre {
+  font-family: var(--font-mono) !important;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+  overflow-x: auto;
+  background: var(--color-ink-900) !important;
+  border: 1px solid var(--color-ink-800);
+  color: var(--color-ink-200);
+}
+
+code { font-family: var(--font-mono); font-size: 0.875em; }
+
+:not(pre) > code {
+  background: var(--color-ink-900);
+  color: var(--color-ink-300);
+  padding: 0.15em 0.4em;
+  border-radius: 0.25em;
+  border: 1px solid var(--color-ink-800);
+}
+
+/* ========== Markdown Content ========== */
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3 {
+  font-weight: 600;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  letter-spacing: -0.01em;
+  color: var(--color-ink-100);
+}
+.markdown-content h1 { font-size: 1.4em; }
+.markdown-content h2 { font-size: 1.2em; }
+.markdown-content h3 { font-size: 1.05em; }
+.markdown-content p  { margin-bottom: 0.75em; line-height: 1.7; color: var(--color-ink-400); }
+.markdown-content ul,
+.markdown-content ol { padding-left: 1.5em; margin-bottom: 0.75em; }
+.markdown-content li { margin-bottom: 0.25em; }
+.markdown-content blockquote {
+  border-left: 3px solid var(--color-amber-500);
+  padding-left: 1em; margin: 0.75em 0;
+  color: var(--color-ink-500); font-style: italic;
+}
+.markdown-content a {
+  color: var(--color-amber-600);
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.markdown-content table { width: 100%; border-collapse: collapse; margin: 0.75em 0; }
+.markdown-content th, .markdown-content td {
+  border: 1px solid var(--color-ink-800);
+  padding: 0.5em 0.75em; text-align: left;
+}
+.markdown-content th {
+  background: var(--color-ink-900);
+  color: var(--color-ink-200); font-weight: 600;
+}
+
+/* ========== Animations ========== */
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(212, 160, 32, 0); }
+  50%      { box-shadow: 0 0 12px 2px rgba(212, 160, 32, 0.15); }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes typewriter-cursor {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0; }
+}
+.animate-fade-in-up  { animation: fade-in-up 0.4s ease-out both; }
+.animate-pulse-glow  { animation: pulse-glow 2s ease-in-out infinite; }
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent 0%, rgba(212, 160, 32, 0.08) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+}
+.cursor-blink::after {
+  content: "▊";
+  animation: typewriter-cursor 1s step-end infinite;
+  color: var(--color-amber-500);
+  margin-left: 1px;
+}
+.transition-theme {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}

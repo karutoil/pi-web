@@ -1,0 +1,119 @@
+# PI Web
+
+A beautiful, real-time web interface for the [PI coding agent](https://pi.dev).
+
+Built with **Bun + Hono + React 19 + Tailwind CSS v4** and PI's native RPC mode for first-class streaming support.
+
+## Features
+
+- **Project Management** — Add local directories as projects
+- **Session Browser** — View all PI sessions for a project, see message count, model, timestamps
+- **Real-time Chat** — Full streaming support via PI's RPC mode over WebSocket
+- **Tool Execution** — Live tool call display (read, bash, edit, write, grep, find, ls)
+- **Thinking Display** — Toggle thinking/reasoning visibility
+- **Markdown Rendering** — Full GFM with code highlighting
+- **Steer & Abort** — Steer conversations mid-stream or abort long operations
+- **Historical Sessions** — Load and browse past sessions with full message history
+
+## Tech Stack
+
+| Layer    | Technology                    |
+|----------|-------------------------------|
+| Runtime  | Bun                           |
+| Server   | Hono (HTTP + WebSocket)       |
+| Frontend | React 19 + Vite + Tailwind v4 |
+| Agent    | PI Coding Agent (RPC mode)    |
+| Storage  | SQLite (project metadata)     |
+
+## Quick Start
+
+```bash
+# Install dependencies
+bun install
+cd client && bun install && cd ..
+
+# Start the server (port 3069)
+bun run server/index.ts
+
+# In another terminal, start the Vite dev server (port 3070)
+cd client && bun run dev
+```
+
+Open **http://localhost:3070** in your browser.
+
+### Production
+
+```bash
+# Build the client
+cd client && bun run build && cd ..
+
+# Start the server (serves built client at http://localhost:3069)
+bun run server/index.ts
+```
+
+## Architecture
+
+```
+Browser (React) ←── HTTP/WS ──→ Bun + Hono Server ←── stdin/stdout (JSONL) ──→ pi --mode rpc
+     │                                    │                                              │
+     │  /api/projects                    │  SQLite (.pi-web.db)                         │
+     │  /api/projects/:id/sessions       │  PI session files (~/.pi/agent/sessions/)   │
+     │  /api/sessions/detail             │                                              │
+     │  /ws/chat (WebSocket)             │  PIAgent (spawns pi process)                │
+```
+
+## API Endpoints
+
+| Method | Path                            | Description                  |
+|--------|---------------------------------|------------------------------|
+| GET    | `/api/health`                   | Health check                 |
+| GET    | `/api/projects`                 | List all projects            |
+| POST   | `/api/projects`                 | Add a project directory      |
+| DELETE | `/api/projects/:id`             | Remove a project             |
+| GET    | `/api/projects/:id/sessions`    | List sessions for a project  |
+| GET    | `/api/sessions/detail?path=...` | Get session detail (entries) |
+| WS     | `/ws/chat`                      | Real-time chat WebSocket     |
+
+### WebSocket Protocol
+
+The WebSocket uses the same event types as PI's RPC mode:
+
+**Client → Server**: `prompt`, `steer`, `follow_up`, `abort`, `new_session`, `get_state`
+
+**Server → Client**: `agent_start`, `agent_end`, `message_start`, `message_update` (streaming deltas), `message_end`, `tool_start`, `tool_update`, `tool_end`, `turn_start`, `turn_end`, `compaction_start`, `compaction_end`, `state`, `error`
+
+## Project Structure
+
+```
+pi-web/
+├── server/
+│   ├── index.ts           # Hono server + WebSocket
+│   ├── db.ts              # SQLite project storage
+│   ├── pi-sessions.ts     # Session listing/parsing
+│   └── pi-agent.ts        # PI RPC process manager
+├── client/
+│   ├── src/
+│   │   ├── App.tsx        # Main app with routing state
+│   │   ├── styles.css     # Tailwind + custom styles
+│   │   ├── hooks/
+│   │   │   └── useWebSocket.ts  # WebSocket hook
+│   │   └── components/
+│   │       ├── Sidebar.tsx      # Project/session sidebar
+│   │       ├── ChatView.tsx     # Chat interface
+│   │       ├── MessageBubble.tsx # Markdown + tool rendering
+│   │       ├── ChatInput.tsx    # Input with steer/abort
+│   │       └── EmptyState.tsx   # Welcome screen
+│   └── public/
+│       └── pi-logo.svg
+├── src/shared/
+│   └── types.ts           # Shared TypeScript types
+└── package.json
+```
+
+## Design
+
+**"Warm Developer"** — deep espresso backgrounds, amber glow accents, newsprint typography, subtle film grain texture. Editorial yet functional. Ink-like depth with warm highlights.
+
+- Fonts: **Newsreader** (body/serif) + **Geist Mono** (code/mono)
+- Palette: Ink blacks (#0A0908 → #2A2520), warm amber (#D4A020), muted paper (#E2D9CD)
+- Subtle CSS animations for message reveals and status indicators

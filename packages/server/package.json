@@ -1,0 +1,16 @@
+{
+  "name": "@pi-web/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "start": "bun run src/index.ts"
+  },
+  "dependencies": {
+    "@pi-web/shared": "workspace:*",
+    "@earendil-works/pi-coding-agent": "latest",
+    "hono": "^4.7.0",
+    "zod": "^3.24.0"
+  }
+}
