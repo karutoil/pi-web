@@ -94,7 +94,7 @@ function createConnection(
         const newMsgs: ChatMessage[] = [];
         if (msg.messages?.length) {
           for (const m of msg.messages) {
-            if (m.role === "assistant" || m.role === "toolResult") newMsgs.push(m);
+            if (m.role === "assistant") newMsgs.push(m);
           }
         }
         messagesRef = [...preMsgs, ...newMsgs];
@@ -105,7 +105,7 @@ function createConnection(
       case "message_start": data.liveMessages = new Map(data.liveMessages); data.liveMessages.set("current", msg.message); break;
       case "message_update": data.liveMessages = new Map(data.liveMessages); data.liveMessages.set("current", msg.message); break;
       case "message_end":
-        if (msg.message.role === "assistant" || msg.message.role === "toolResult") {
+        if (msg.message.role === "assistant") {
           messagesRef = [...messagesRef, msg.message];
           data.messages = [...messagesRef];
         }

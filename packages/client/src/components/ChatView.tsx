@@ -132,6 +132,7 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
           {sessionDetail?.entries.map((entry, i) => {
             if (!entry.message) return null;
             if (entry.type === "compaction" || entry.type === "branch_summary") return null;
+            if (entry.message.role === "toolResult") return null;
             const isUser = entry.message.role === "user";
             const turn = getTurnForMsg(i);
             return (
