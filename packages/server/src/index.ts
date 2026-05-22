@@ -8,7 +8,7 @@ import { readFile } from "node:fs/promises";
 
 import { addProject, removeProject, listProjects, getProject, touchProject } from "./db";
 import { listProjectSessions, getSessionDetail } from "./pi-sessions";
-import { PIAgent } from "./pi-agent";
+import { getOrCreateAgent, stopAllAgents, getPoolStats, lookupAgent, detachFromAgent } from "./pi-agent";
 import type { WSClientMessage, WSServerMessage } from "@pi-web/shared";
 
 const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>();
@@ -110,12 +110,12 @@ app.patch("/api/sessions/rename", async (c) => {
 });
 
 // Health
-app.get("/api/health", (c) => c.json({ status: "ok", time: Date.now() }));
+app.get("/api/health", (c) => c.json({ status: "ok", time: Date.now(), pool: getPoolStats() }));
 
 // ==================== WebSocket ====================
 
-// Map of active agent sessions: ws -> PIAgent
-const activeAgents = new Map<ServerWebSocket, PIAgent>();
+// Map: raw ServerWebSocket -> agentKey (for routing messages)
+const wsToAgent = new Map<ServerWebSocket, string>();
 
 app.get(
   "/ws/chat",
@@ -128,52 +128,30 @@ app.get(
     return {
       async onOpen(_event, ws) {
         try {
-        const project = projectId ? getProject(projectId) : null;
-        const cwd = project?.path || process.cwd();
-        
-        if (project) touchProject(project.id);
+          const project = projectId ? getProject(projectId) : null;
+          const cwd = project?.path || process.cwd();
 
-        const agent = new PIAgent({
-          cwd,
-          sessionPath: sessionPath || undefined,
-          provider: provider || undefined,
-          model: model || undefined,
-        });
+          if (project) touchProject(project.id);
 
-        agent.setHandler((msg) => {
-          try {
-            if (ws.readyState === 1) ws.send(JSON.stringify(msg));
-          } catch (e) {
-            console.error("Failed to send WS message:", e);
-          }
-        });
-
-        // When PI exits unexpectedly, notify client and clean up
-        agent.setExitHandler((code) => {
+          const { agent, isNew } = getOrCreateAgent(cwd, sessionPath || null, provider || undefined, model || undefined);
           const raw = (ws as any).raw as ServerWebSocket;
-          if (raw && activeAgents.has(raw)) {
-            try {
-              if (raw.readyState === 1) {
-                raw.send(JSON.stringify({
-                  type: "error",
-                  message: `PI agent exited (code ${code}). Reconnect to restore.`,
-                }));
-              }
-            } catch {}
-            activeAgents.delete(raw);
-          }
-        });
 
-        try {
-          await agent.start();
-          activeAgents.set((ws as any).raw as ServerWebSocket, agent);
-          
-          // Send initial state
-          setTimeout(() => agent.getState(), 300);
-        } catch (err: any) {
-          console.error("Failed to start agent:", err);
-          try { ws.send(JSON.stringify({ type: "error", message: `Failed to start agent: ${err.message}` })); } catch {}
-        }
+          // Track which agent this WS belongs to
+          const agentKey = `${cwd}:${sessionPath || "__new__"}`;
+          wsToAgent.set(raw, agentKey);
+
+          // Attach this client to the pooled agent
+          agent.attach(raw);
+
+          // If agent is new, start it
+          if (isNew) {
+            try {
+              await agent.start();
+            } catch (err: any) {
+              console.error("Failed to start agent:", err);
+              try { ws.send(JSON.stringify({ type: "error", message: `Failed to start agent: ${err.message}` })); } catch {}
+            }
+          }
         } catch (fatalErr: any) {
           console.error("Fatal onOpen error:", fatalErr);
           try { ws.send(JSON.stringify({ type: "error", message: "Internal server error" })); } catch {}
@@ -181,69 +159,45 @@ app.get(
       },
 
       onMessage(event, ws) {
-        const agent = activeAgents.get((ws as any).raw as ServerWebSocket);
+        const raw = (ws as any).raw as ServerWebSocket;
+        const agentKey = wsToAgent.get(raw);
+        if (!agentKey) return;
+
+        // Find the pooled agent
+        const agent = lookupAgent(agentKey);
         if (!agent) return;
 
         try {
           const msg: WSClientMessage = JSON.parse(event.data as string);
-          
+
+          // Forward most commands directly to the agent
           switch (msg.type) {
-            case "prompt":
-              agent.prompt(msg.message, msg.images);
-              break;
-            case "abort":
-              agent.abort();
-              break;
-            case "steer":
-              agent.steer(msg.message);
-              break;
-            case "follow_up":
-              agent.followUp(msg.message);
-              break;
-            case "new_session":
-              agent.newSession();
-              break;
-            case "set_model":
-              agent.setModel(msg.provider, msg.modelId);
-              break;
-            case "set_thinking":
-              agent.setThinking(msg.level);
-              break;
-            case "fork":
-              agent.fork(msg.entryId);
-              break;
-            case "compact":
-              agent.compact();
-              break;
-            case "get_state":
-              agent.getState();
-              break;
-            case "get_available_models":
-              agent.getAvailableModels();
-              break;
-            case "get_commands":
-              agent.getCommands();
-              break;
-            case "get_fork_messages":
-              agent.getForkMessages();
-              break;
-            case "get_session_stats":
-              agent.getSessionStats();
-              break;
-            case "set_session_name":
-              agent.setSessionName(msg.name);
-              break;
+            case "prompt": agent.send({ type: "prompt", message: msg.message, images: msg.images }); break;
+            case "abort": agent.send({ type: "abort" }); break;
+            case "steer": agent.send({ type: "steer", message: msg.message }); break;
+            case "follow_up": agent.send({ type: "follow_up", message: msg.message }); break;
+            case "new_session": agent.send({ type: "new_session" }); break;
+            case "set_model": agent.send({ type: "set_model", provider: msg.provider, modelId: msg.modelId }); break;
+            case "set_thinking": agent.send({ type: "set_thinking_level", level: msg.level }); break;
+            case "fork": agent.send({ type: "fork", entryId: msg.entryId }); break;
+            case "compact": agent.send({ type: "compact" }); break;
+            case "get_state": agent.send({ type: "get_state" }); break;
+            case "get_available_models": agent.send({ type: "get_available_models" }); break;
+            case "get_commands": agent.send({ type: "get_commands" }); break;
+            case "get_fork_messages": agent.send({ type: "get_fork_messages" }); break;
+            case "get_session_stats": agent.send({ type: "get_session_stats" }); break;
+            case "set_session_name": agent.send({ type: "set_session_name", name: msg.name }); break;
+            case "extension_ui_response": agent.send({ type: "extension_ui_response", id: msg.id, value: msg.value, confirmed: msg.confirmed, cancelled: msg.cancelled }); break;
             case "delete_session": {
               const sessionId = msg.sessionId;
-              const rawWs = (ws as any).raw as ServerWebSocket;
               const proj = projectId ? getProject(projectId) : null;
               if (proj) {
                 listProjectSessions(proj.path).then(list => {
                   const target = list.find(s => s.id === sessionId);
                   if (target) {
                     import("node:fs/promises").then(({ unlink }) => unlink(target.filePath))
-                      .then(() => { if (rawWs.readyState === 1) rawWs.send(JSON.stringify({ type: "session_deleted", sessionId })); })
-                      .catch((e: any) => { if (rawWs.readyState === 1) rawWs.send(JSON.stringify({ type: "error", message: `Failed to delete: ${e.message}` })); });
+                      .then(() => { if (raw.readyState === 1) raw.send(JSON.stringify({ type: "session_deleted", sessionId })); })
+                      .catch((e: any) => { if (raw.readyState === 1) raw.send(JSON.stringify({ type: "error", message: `Failed to delete: ${e.message}` })); });
                   }
                 });
               }
@@ -251,7 +205,6 @@ app.get(
             }
             case "rename_session": {
               const { sessionId, name } = msg;
-              const rawWs2 = (ws as any).raw as ServerWebSocket;
               const proj2 = projectId ? getProject(projectId) : null;
               if (proj2) {
                 listProjectSessions(proj2.path).then(list => {
@@ -263,9 +216,9 @@ app.get(
                         return wf(target.filePath, content.trim() + "\n" + renameEntry + "\n");
                       })
                     ).then(() => {
-                      if (rawWs2.readyState === 1) rawWs2.send(JSON.stringify({ type: "session_renamed", sessionId, name }));
+                      if (raw.readyState === 1) raw.send(JSON.stringify({ type: "session_renamed", sessionId, name }));
                     }).catch((e: any) => {
-                      if (rawWs2.readyState === 1) rawWs2.send(JSON.stringify({ type: "error", message: `Failed to rename: ${e.message}` }));
+                      if (raw.readyState === 1) raw.send(JSON.stringify({ type: "error", message: `Failed to rename: ${e.message}` }));
                     });
                   }
                 });
@@ -273,22 +226,14 @@ app.get(
               break;
             }
             case "refresh_sessions": {
-              const rawWs3 = (ws as any).raw as ServerWebSocket;
               const proj3 = msg.projectId ? getProject(msg.projectId) : null;
               if (proj3) {
                 listProjectSessions(proj3.path).then(refreshed => {
-                  if (rawWs3.readyState === 1) rawWs3.send(JSON.stringify({ type: "sessions_refreshed", sessions: refreshed }));
+                  if (raw.readyState === 1) raw.send(JSON.stringify({ type: "sessions_refreshed", sessions: refreshed }));
                 });
               }
               break;
             }
-            case "extension_ui_response":
-              agent.extensionUIResponse(msg.id, {
-                value: msg.value,
-                confirmed: msg.confirmed,
-                cancelled: msg.cancelled,
-              });
-              break;
             default:
               console.warn("Unknown WS message type:", (msg as any).type);
           }
@@ -300,10 +245,12 @@ app.get(
       onClose(_event, ws) {
         try {
           const raw = (ws as any).raw as ServerWebSocket;
-          const agent = activeAgents.get(raw);
-          if (agent) {
-            agent.stop();
-            activeAgents.delete(raw);
+          const agentKey = wsToAgent.get(raw);
+          wsToAgent.delete(raw);
+
+          if (agentKey) {
+            // Detach client — agent stays alive with idle timeout
+            detachFromAgent(agentKey, raw);
           }
         } catch (e) {
           console.error("Error in onClose:", e);

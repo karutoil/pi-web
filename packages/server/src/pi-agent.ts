@@ -1,5 +1,161 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import type { WSServerMessage } from "@pi-web/shared";
+import type { ServerWebSocket } from "bun";
+
+// ─── Pooled Agent ───
+// Wraps a PIAgent with multi-client broadcast + idle cleanup.
+// Survives WebSocket disconnects — agents keep running until idle timeout.
+
+const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+export class PooledAgent {
+  private agent: PIAgent;
+  private clients = new Set<ServerWebSocket>();
+  private idleTimer: Timer | null = null;
+  private agentKey: string;
+
+  constructor(
+    agentKey: string,
+    options: PIAgentOptions,
+  ) {
+    this.agentKey = agentKey;
+    this.agent = new PIAgent(options);
+
+    // Broadcast all agent messages to attached clients
+    this.agent.setHandler((msg) => this.broadcast(msg));
+
+    // Handle unexpected PI exit
+    this.agent.setExitHandler((code) => {
+      console.log(`[pool] agent ${agentKey} exited (code ${code})`);
+      this.broadcast({ type: "error", message: `PI agent exited (code ${code}).` });
+      // Remove from pool — will be recreated if someone reconnects
+      agentPool.delete(agentKey);
+    });
+  }
+
+  async start(): Promise<void> {
+    await this.agent.start();
+    // Send initial state to any already-attached clients
+    setTimeout(() => this.agent.getState(), 300);
+  }
+
+  /** Attach a WebSocket client. Cancels idle timer if running. */
+  attach(ws: ServerWebSocket) {
+    this.clients.add(ws);
+    this.cancelIdleTimer();
+    // Send current state to the newly attached client
+    setTimeout(() => this.agent.getState(), 100);
+  }
+
+  /** Detach a WebSocket client. Starts idle timer if no clients remain. */
+  detach(ws: ServerWebSocket) {
+    this.clients.delete(ws);
+    if (this.clients.size === 0) {
+      this.startIdleTimer();
+    }
+  }
+
+  /** Get number of attached clients */
+  get clientCount() { return this.clients.size; }
+
+  /** Forward a command to the underlying agent */
+  send(msg: unknown) {
+    this.agent.doSend(msg);
+  }
+
+  /** Explicitly stop the agent (e.g., server shutdown) */
+  async stop() {
+    this.cancelIdleTimer();
+    await this.agent.stop();
+    agentPool.delete(this.agentKey);
+  }
+
+  private broadcast(msg: WSServerMessage) {
+    const data = JSON.stringify(msg);
+    for (const ws of this.clients) {
+      try {
+        if (ws.readyState === 1) ws.send(data);
+      } catch {}
+    }
+  }
+
+  private startIdleTimer() {
+    this.cancelIdleTimer();
+    console.log(`[pool] agent ${this.agentKey} idle, starting ${IDLE_TIMEOUT_MS / 1000}s timeout`);
+    this.idleTimer = setTimeout(async () => {
+      if (this.clients.size === 0) {
+        console.log(`[pool] agent ${this.agentKey} idle timeout, stopping`);
+        await this.agent.stop();
+        agentPool.delete(this.agentKey);
+      }
+    }, IDLE_TIMEOUT_MS);
+  }
+
+  private cancelIdleTimer() {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+  }
+}
+
+// ─── Agent Pool ───
+// Global singleton. Keys are `${cwd}:${sessionPath}`.
+
+const agentPool = new Map<string, PooledAgent>();
+
+export function getOrCreateAgent(
+  cwd: string,
+  sessionPath: string | null,
+  provider?: string,
+  model?: string,
+): { agent: PooledAgent; isNew: boolean } {
+  const key = `${cwd}:${sessionPath || "__new__"}`;
+  const existing = agentPool.get(key);
+  if (existing) {
+    console.log(`[pool] reusing existing agent ${key} (${existing.clientCount} clients)`);
+    return { agent: existing, isNew: false };
+  }
+
+  console.log(`[pool] creating new agent ${key}`);
+  const pooled = new PooledAgent(key, {
+    cwd,
+    sessionPath: sessionPath || undefined,
+    provider: provider || undefined,
+    model: model || undefined,
+  });
+  agentPool.set(key, pooled);
+  return { agent: pooled, isNew: true };
+}
+
+/** Lookup an existing agent by key (returns null if not found) */
+export function lookupAgent(agentKey: string): PooledAgent | null {
+  return agentPool.get(agentKey) || null;
+}
+
+/** Detach a client from an agent by key */
+export function detachFromAgent(agentKey: string, ws: ServerWebSocket) {
+  const agent = agentPool.get(agentKey);
+  if (agent) agent.detach(ws);
+}
+
+export function getPoolStats() {
+  return {
+    agents: agentPool.size,
+    details: Array.from(agentPool.entries()).map(([key, a]) => ({
+      key,
+      clients: a.clientCount,
+    })),
+  };
+}
+
+/** Stop all agents (for graceful shutdown) */
+export async function stopAllAgents() {
+  const promises = Array.from(agentPool.values()).map(a => a.stop());
+  await Promise.all(promises);
+}
+
+// ─── PIAgent (internal, wraps PI RPC process) ───
 
 function createJsonlReader(stream: NodeJS.ReadableStream, onLine: (line: string) => void) {
   let buffer = "";
@@ -30,12 +186,11 @@ export interface PIAgentOptions {
   provider?: string;
 }
 
-export class PIAgent {
+class PIAgent {
   private proc: ChildProcess | null = null;
   private sendFn: (msg: unknown) => void = () => {};
   private onMessage: ((msg: WSServerMessage) => void) | null = null;
   private onExit: ((code: number | null) => void) | null = null;
-  private isRunning = false;
   private messageQueue: unknown[] = [];
   private ready = false;
   private explicitlyStopped = false;
@@ -46,7 +201,6 @@ export class PIAgent {
     this.onMessage = handler;
   }
 
-  /** Called when PI exits unexpectedly (not from stop()). Server can reconnect. */
   setExitHandler(handler: (code: number | null) => void) {
     this.onExit = handler;
   }
@@ -73,7 +227,6 @@ export class PIAgent {
           cwd: this.options.cwd,
           stdio: ["pipe", "pipe", "pipe"],
           env: { ...process.env, PATH: envPath },
-          // Don't let PI child keep the server alive
           detached: false,
         });
       } catch (err: any) {
@@ -95,7 +248,6 @@ export class PIAgent {
       for (const msg of this.messageQueue) this.sendFn(msg);
       this.messageQueue = [];
 
-      // Handle stdout
       if (this.proc.stdout) {
         this.proc.stdout.on("error", (err) => {
           console.error("[pi stdout error]", err.message);
@@ -104,13 +256,10 @@ export class PIAgent {
           try {
             const event = JSON.parse(line);
             this.handleRPCEvent(event);
-          } catch {
-            // skip malformed lines
-          }
+          } catch {}
         });
       }
 
-      // Handle stderr
       if (this.proc.stderr) {
         this.proc.stderr.on("error", (err) => {
           console.error("[pi stderr error]", err.message);
@@ -121,7 +270,6 @@ export class PIAgent {
         });
       }
 
-      // Handle process errors (spawn failure, etc.)
       this.proc.on("error", (err: NodeJS.ErrnoException) => {
         console.error("[pi] process error:", err.message);
         if (err.code === "ENOENT") {
@@ -133,14 +281,12 @@ export class PIAgent {
         reject(err);
       });
 
-      // Handle process exit
       this.proc.on("exit", (code, signal) => {
         console.log(`[pi] exited code=${code} signal=${signal} explicitStop=${this.explicitlyStopped}`);
         const wasExplicit = this.explicitlyStopped;
         this.cleanup();
-        
+
         if (!wasExplicit && code !== 0 && code !== null) {
-          // Unexpected exit — notify client and exit handler
           this.onMessage?.({ type: "error", message: `PI process exited with code ${code}.` });
         }
         if (!wasExplicit && this.onExit) {
@@ -148,7 +294,6 @@ export class PIAgent {
         }
       });
 
-      this.isRunning = true;
       resolve();
     });
   }
@@ -156,14 +301,13 @@ export class PIAgent {
   private cleanup() {
     this.proc = null;
     this.ready = false;
-    this.isRunning = false;
     this.sendFn = () => {};
   }
 
   private handleRPCEvent(event: any) {
     const handler = this.onMessage;
     if (!handler) return;
-    
+
     try {
       switch (event.type) {
         case "agent_start":
@@ -273,7 +417,6 @@ export class PIAgent {
     }
   }
 
-  // Commands
   getAvailableModels() { this.doSend({ type: "get_available_models" }); }
   getCommands() { this.doSend({ type: "get_commands" }); }
   getForkMessages() { this.doSend({ type: "get_fork_messages" }); }
@@ -290,7 +433,7 @@ export class PIAgent {
   compact() { this.doSend({ type: "compact" }); }
   getState() { this.doSend({ type: "get_state" }); }
 
-  private doSend(msg: unknown) {
+  doSend(msg: unknown) {
     if (this.ready) {
       this.sendFn(msg);
     } else {
@@ -317,6 +460,5 @@ export class PIAgent {
       } catch {}
       this.proc = null;
     }
-    this.isRunning = false;
   }
 }
