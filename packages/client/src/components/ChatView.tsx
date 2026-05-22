@@ -1,14 +1,16 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import type { Project, SessionSummary, ChatMessage } from "@pi-web/shared";
-import type { WSBridge } from "../hooks/useWebSocket";
+import type { Project, SessionSummary, ChatMessage, SessionEntry, ContentBlock } from "@pi-web/shared";
+import type { WSBridge } from "../lib/types";
+import { SCROLL_THRESHOLD, SCROLL_THROTTLE_MS } from "../lib/constants";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
 import { ChatHeader } from "./ChatHeader";
 import { ExtensionUIModal } from "./ExtensionUIModal";
+import { Icon } from "./Icon";
 
 interface ChatViewProps {
   ws: WSBridge;
-  sessionDetail: { entries: any[]; cwd: string } | null;
+  sessionDetail: { entries: SessionEntry[]; cwd: string } | null;
   project: Project | null;
   session: SessionSummary | null;
 }
@@ -18,8 +20,8 @@ function extractMsgText(msg: ChatMessage): string {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
     return content
-      .filter((b: any) => b.type === "text")
-      .map((b: any) => b.text || "")
+      .filter((b): b is ContentBlock & { type: "text"; text: string } => b.type === "text")
+      .map((b) => b.text || "")
       .join("\n\n");
   }
   return "";
@@ -28,6 +30,7 @@ function extractMsgText(msg: ChatMessage): string {
 export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showThinking, setShowThinking] = useState(true);
+  const [srAnnouncement, setSrAnnouncement] = useState('');
   const [autoScroll, setAutoScroll] = useState(true);
   const contentRef = useRef<HTMLDivElement>(null);
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -35,7 +38,7 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
   // Virtualization: only render the last RENDER_LIMIT messages
   const [renderLimit, setRenderLimit] = useState(200);
   const allHistorical = (sessionDetail?.entries || [])
-    .filter((e: any) => e.message && e.type !== "compaction" && e.type !== "branch_summary");
+    .filter((e: SessionEntry) => e.message && e.type !== "compaction" && e.type !== "branch_summary");
   const hasMoreHistory = allHistorical.length > renderLimit;
   const historicalEntries = hasMoreHistory ? allHistorical.slice(-renderLimit) : allHistorical;
 
@@ -64,9 +67,9 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
       const el = scrollRef.current;
       if (!el) return;
       const { scrollTop, scrollHeight, clientHeight } = el;
-      const nearBottom = scrollHeight - scrollTop - clientHeight < 120;
+      const nearBottom = scrollHeight - scrollTop - clientHeight < SCROLL_THRESHOLD;
       setAutoScroll(nearBottom);
-    }, 150);
+    }, SCROLL_THROTTLE_MS);
   }, []);
 
   const handleSend = useCallback((text: string, images?: { data: string; mimeType: string }[]) => {
@@ -85,6 +88,31 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
     ws.send({ type: "get_commands" });
   }, [ws]);
   const handleCompact = useCallback(() => ws.send({ type: "compact" }), [ws]);
+
+  // Compact feedback state
+  const [isCompacting, setIsCompacting] = useState(false);
+  const [compactDone, setCompactDone] = useState(false);
+  const handleCompactClick = useCallback(() => {
+    setIsCompacting(true);
+    ws.send({ type: "compact" });
+  }, [ws]);
+  useEffect(() => {
+    if (isCompacting && !ws.isStreaming) {
+      setIsCompacting(false);
+      setCompactDone(true);
+      const t = setTimeout(() => setCompactDone(false), 2000);
+      return () => clearTimeout(t);
+    }
+  }, [ws.isStreaming, isCompacting]);
+
+  // Screen reader announcements for streaming state
+  useEffect(() => {
+    if (ws.isStreaming) {
+      setSrAnnouncement('PI is thinking...');
+    } else if (srAnnouncement) {
+      setSrAnnouncement('PI responded');
+    }
+  }, [ws.isStreaming]);
 
   const liveMsg = ws.liveMessages.get("current");
   const cwd = sessionDetail?.cwd || project?.path || "";
@@ -146,6 +174,7 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
     <div className="flex-1 flex flex-col min-h-0 relative">
       <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} />
 
+      <div aria-live="polite" className="sr-only">{srAnnouncement}</div>
       <div
         ref={scrollRef}
         onScroll={handleScroll}
@@ -163,7 +192,7 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
           )}
 
           {/* Historical messages (virtualized) */}
-          {historicalEntries.map((entry: any, i: number) => {
+          {historicalEntries.map((entry: SessionEntry, i: number) => {
             if (!entry.message) return null;
             const isUser = entry.message.role === "user";
             const turn = getTurnForMsg(i);
@@ -211,12 +240,7 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
 
         {ws.messages.length === 0 && !liveMsg && !hasHistoricalMessages && (
           <div className="flex flex-col items-center justify-center py-20 text-center animate-fade-in-up">
-            <svg width="48" height="48" viewBox="0 0 128 128" fill="none" className="mb-6 opacity-40">
-              <circle cx="64" cy="64" r="60" stroke="currentColor" strokeWidth="6" className="text-amber-600" />
-              <path d="M44 52 L64 32 L84 52" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" className="text-amber-500" />
-              <path d="M64 32 L64 88" stroke="currentColor" strokeWidth="4" strokeLinecap="round" className="text-amber-500" />
-              <circle cx="64" cy="88" r="4" className="fill-amber-500" />
-            </svg>
+            <Icon name="pi-logo" size={48} className="mb-6 opacity-40" />
             <h3 className="text-ink-300 text-lg font-medium mb-2">Start a conversation</h3>
             <p className="text-ink-500 text-sm max-w-sm italic">
               Ask PI to read, write, edit, or run commands. Streaming responses appear in real time.
@@ -236,11 +260,13 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
         {ws.messages.length > 0 && !ws.isStreaming && (
           <div className="max-w-3xl mx-auto flex justify-center pb-2">
             <button
-              onClick={handleCompact}
-              className="text-ink-600 hover:text-amber-500 text-xs font-mono transition-theme"
+              onClick={handleCompactClick}
+              disabled={isCompacting}
+              className={`text-xs font-mono transition-theme ${isCompacting ? 'text-ink-500 cursor-not-allowed' : compactDone ? 'text-teal-400' : 'text-ink-600 hover:text-amber-500'}`}
               title="Compact conversation context"
+              aria-label="Compact conversation context"
             >
-              Compact context
+              {isCompacting ? 'Compacting…' : compactDone ? '✓ Compacted' : 'Compact context'}
             </button>
           </div>
         )}

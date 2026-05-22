@@ -1,8 +1,11 @@
 import { useState, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { ChatMessage, ContentBlock } from "@pi-web/shared";
+import rehypeSanitize from "rehype-sanitize";
+import type { ChatMessage, ContentBlock, ToolDetails } from "@pi-web/shared";
+import { formatTokens } from "../lib/utils";
 import { DiffRenderer, isDiffContent } from "./DiffRenderer";
+import { Icon } from "./Icon";
 import { ContextMenuPortal, ContextMenuItem, ContextMenuDivider } from "./ContextMenu";
 
 interface MessageBubbleProps {
@@ -42,10 +45,7 @@ export function MessageBubble({ message, showThinking, isHistorical, isStreaming
     <div onContextMenu={handleContextMenu} className={`animate-fade-in-up ${isUser ? "flex justify-end" : "flex gap-3"}`}>
       {!isUser && (
         <div className="shrink-0 w-7 h-7 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center mt-1">
-          <svg width="14" height="14" viewBox="0 0 128 128" fill="none">
-            <circle cx="64" cy="64" r="56" stroke="currentColor" strokeWidth="8" className="text-amber-500" />
-            <path d="M48 56 L64 36 L80 56" stroke="currentColor" strokeWidth="4" strokeLinecap="round" className="text-amber-400" />
-          </svg>
+          <Icon name="pi-avatar" size={14} />
         </div>
       )}
       
@@ -103,18 +103,18 @@ export function MessageBubble({ message, showThinking, isHistorical, isStreaming
         >
           <ContextMenuItem
             label="Copy final response"
-            icon={<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><rect x="5" y="5" width="8" height="8" rx="1" /><path d="M3 11 L3 3 L11 3" /></svg>}
+            icon={<Icon name="copy-offset" size={10} />}
             onClick={() => { setCtxMenu(null); onCopyResponse?.(); }}
           />
           <ContextMenuItem
             label="Copy entire turn"
-            icon={<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 4 L2 12 L6 12 M6 4 L14 4 L14 12 L6 12" /></svg>}
+            icon={<Icon name="copy-join" size={10} />}
             onClick={() => { setCtxMenu(null); onCopyTurn?.(); }}
           />
           <ContextMenuDivider />
           <ContextMenuItem
             label="Copy raw markdown"
-            icon={<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><rect x="4" y="4" width="8" height="8" rx="1" /></svg>}
+            icon={<Icon name="copy-plain" size={10} />}
             onClick={() => { setCtxMenu(null); navigator.clipboard.writeText(extractTextContent(message.content)); }}
           />
         </ContextMenuPortal>
@@ -136,10 +136,9 @@ function UserBubble({ message, entryId, onFork }: { message: ChatMessage; entryI
           onClick={() => onFork(entryId)}
           className="absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-ink-600 hover:text-amber-500 transition-all p-1"
           title="Fork from here"
+          aria-label="Fork from here"
         >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M3 5 L3 13 M3 8 L8 3 M3 8 L8 13" />
-          </svg>
+          <Icon name="fork-left" size={14} />
         </button>
       )}
     </div>
@@ -197,6 +196,7 @@ function AssistantBubble({
           >
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
+              rehypePlugins={[rehypeSanitize]}
               components={{
                 pre: CodeBlock,
               }}
@@ -232,14 +232,9 @@ function ThinkingBlock({ thinking }: { thinking: string }) {
       <button
         onClick={() => setCollapsed(c => !c)}
         className="w-full flex items-center gap-2 px-3 py-1.5 text-amber-500 hover:text-amber-400 text-xs font-mono transition-theme"
+        aria-label="Toggle thinking"
       >
-        <svg
-          width="10" height="10" viewBox="0 0 10 10"
-          className={`transition-transform ${collapsed ? "" : "rotate-90"}`}
-          fill="currentColor"
-        >
-          <path d="M3 1 L7 5 L3 9" />
-        </svg>
+        <Icon name="chevron-right-sm" size={10} className={`transition-transform ${collapsed ? "" : "rotate-90"}`} />
         Reasoning
         {collapsed && <span className="text-ink-600 ml-1">({clean.split("\n").length} lines)</span>}
       </button>
@@ -282,10 +277,9 @@ function ToolCallIndicator({
     <button
       onClick={onToggle}
       className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-mono transition-theme w-full text-left ${color}`}
+      aria-label="Toggle tool details"
     >
-      <svg width="10" height="10" viewBox="0 0 10 10" className={`transition-transform ${expanded ? "rotate-90" : ""}`} fill="currentColor">
-        <path d="M3 1 L7 5 L3 9" />
-      </svg>
+      <Icon name="chevron-right-sm" size={10} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
       <span className="font-medium">{name}</span>
       <span className="opacity-60 truncate">{argsPreview}</span>
     </button>
@@ -328,9 +322,7 @@ function ToolResultBubble({ message }: { message: ChatMessage }) {
     return (
       <div className="border border-ink-800 rounded-lg overflow-hidden bg-ink-900/30">
         <div className="flex items-center gap-2 px-3 py-1.5 text-xs font-mono border-b border-ink-800">
-          <svg width="10" height="10" viewBox="0 0 10 10" className="text-amber-500" fill="currentColor">
-            <path d="M3 2 L7 5 L3 8" />
-          </svg>
+          <Icon name="chevron-right-sm-amber" size={10} className="text-amber-500" />
           <span className="text-ink-400">{message.toolName || "tool"} result</span>
           <span className="text-amber-500">(diff)</span>
         </div>
@@ -344,9 +336,7 @@ function ToolResultBubble({ message }: { message: ChatMessage }) {
     return (
       <div className="border border-ink-800 rounded-lg overflow-hidden bg-ink-900/30">
         <div className="flex items-center gap-2 px-3 py-1.5 text-xs font-mono border-b border-ink-800">
-          <svg width="10" height="10" viewBox="0 0 10 10" className="text-amber-500" fill="currentColor">
-            <path d="M3 2 L7 5 L3 8" />
-          </svg>
+          <Icon name="chevron-right-sm-amber" size={10} className="text-amber-500" />
           <span className="text-ink-400">{message.toolName || "tool"} result</span>
           {message.toolName && ["edit", "patch", "refactor", "write"].includes(message.toolName) && (
             <span className="text-amber-500">(diff)</span>
@@ -364,10 +354,9 @@ function ToolResultBubble({ message }: { message: ChatMessage }) {
       <button
         onClick={() => setExpanded(e => !e)}
         className="w-full flex items-center gap-2 px-3 py-1.5 text-xs font-mono transition-theme"
+        aria-label="Toggle result"
       >
-        <svg width="10" height="10" viewBox="0 0 10 10" className={`transition-transform ${expanded ? "rotate-90" : ""}`} fill="currentColor">
-          <path d="M3 1 L7 5 L3 9" />
-        </svg>
+        <Icon name="chevron-right-sm" size={10} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
         <span className={isError ? "text-rose-400" : "text-ink-400"}>
           {message.toolName || "tool"} result
         </span>
@@ -408,10 +397,9 @@ function BashResultBubble({ message }: { message: ChatMessage }) {
       <button
         onClick={() => setExpanded(e => !e)}
         className="w-full flex items-center gap-2 px-3 py-1.5 text-xs font-mono"
+        aria-label="Toggle output"
       >
-        <svg width="10" height="10" viewBox="0 0 10 10" className={`transition-transform ${expanded ? "rotate-90" : ""}`} fill="currentColor">
-          <path d="M3 1 L7 5 L3 9" />
-        </svg>
+        <Icon name="chevron-right-sm" size={10} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
         <span className="text-teal-400 font-medium">$ {message.command}</span>
         {exitCode !== undefined && (
           <span className={isError ? "text-rose-500" : "text-ink-600"}>
@@ -444,14 +432,19 @@ function extractTextContent(content: ChatMessage["content"]): string {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
     return content
-      .filter((b: any) => b.type === "text")
-      .map((b: any) => b.text)
+      .filter((b): b is ContentBlock & { type: "text"; text: string } => b.type === "text")
+      .map((b) => b.text)
       .join("\n");
   }
   return "";
 }
 
-function CodeBlock({ children, className, ...props }: any) {
+interface CodeBlockProps extends React.HTMLAttributes<HTMLPreElement> {
+  children?: React.ReactNode;
+  className?: string;
+}
+
+function CodeBlock({ children, className, ...props }: CodeBlockProps) {
   const [copied, setCopied] = useState(false);
   
   // Extract language from className (react-markdown adds "language-xxx" class)
@@ -472,6 +465,7 @@ function CodeBlock({ children, className, ...props }: any) {
         <button
           onClick={handleCopy}
           className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity px-2 py-1 rounded bg-ink-800 hover:bg-ink-700 text-ink-400 text-xs font-mono"
+          aria-label="Copy code"
         >
           {copied ? "Copied!" : "Copy"}
         </button>
@@ -485,6 +479,7 @@ function CodeBlock({ children, className, ...props }: any) {
       <button
         onClick={handleCopy}
         className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity px-2 py-1 rounded bg-ink-800 hover:bg-ink-700 text-ink-400 text-xs font-mono"
+        aria-label="Copy code"
       >
         {copied ? "Copied!" : "Copy"}
       </button>
@@ -493,14 +488,14 @@ function CodeBlock({ children, className, ...props }: any) {
   );
 }
 
-function extractTextFromNode(node: any): string {
+interface ReactNodeLike { props: { children?: unknown } }
+
+function extractTextFromNode(node: unknown): string {
   if (typeof node === "string") return node;
   if (Array.isArray(node)) return node.map(extractTextFromNode).join("");
-  if (node?.props?.children) return extractTextFromNode(node.props.children);
+  if (typeof node === "object" && node !== null && "props" in node) {
+    const el = node as ReactNodeLike;
+    if (typeof el.props === "object" && el.props.children !== undefined) return extractTextFromNode(el.props.children);
+  }
   return "";
-}
-
-function formatTokens(n: number): string {
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return String(n);
 }

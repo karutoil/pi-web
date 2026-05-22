@@ -1,5 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import type { Project, SessionSummary, SessionDetail } from "@pi-web/shared";
+import { formatTimeAgo } from "./lib/utils";
+import { SESSION_CACHE_TTL, SESSION_FETCH_DELAY_MS } from "./lib/constants";
 import { Sidebar } from "./components/Sidebar";
 import { ChatView } from "./components/ChatView";
 import { EmptyState } from "./components/EmptyState";
@@ -17,6 +19,10 @@ export default function App() {
   const [view, setView] = useState<ViewState>("projects");
   const [showAddProject, setShowAddProject] = useState(false);
   const [newSessionId, setNewSessionId] = useState<string | null>(null);
+  const [isAddingProject, setIsAddingProject] = useState(false);
+
+  // Session detail cache with 30s TTL
+  const sessionCacheRef = useRef<Map<string, { data: SessionDetail; timestamp: number }>>(new Map());
 
   // WebSocket pool — multiple concurrent connections, agents keep streaming when navigating away
   const wsPool = useWebSocketPool();
@@ -27,13 +33,62 @@ export default function App() {
   );
 
   // Compute which sessions are actively streaming from the pool
-  // Re-evaluate on every render (forceUpdate from pool subscriptions triggers renders)
+  // Must be inline (not useMemo) — pool is a ref Map, its identity never changes,
+  // but pool subscriptions trigger forceUpdate so we recompute on every render
   const streamingSessionIds = new Set<string>();
   for (const conn of wsPool.pool.values()) {
     if (conn.isActive && conn.state?.sessionId) {
       streamingSessionIds.add(conn.state.sessionId);
     }
   }
+
+  // When the WS connection reports session info (from get_state or session_loaded),
+  // stabilize the active session by updating filePath and clearing newSessionId
+  useEffect(() => {
+    if (!ws) return;
+    const handleSessionLoaded = (session: SessionDetail) => {
+      setActiveSession(prev => prev ? { ...prev, filePath: session.filePath } : prev);
+      setSessionDetail(session);
+      setNewSessionId(null);
+    };
+    ws.setOnSessionLoaded(handleSessionLoaded);
+
+    // Also watch state changes — if sessionFile arrives via get_state, stabilize
+    const listener = () => {
+      const st = ws.state;
+      if (st?.sessionFile && newSessionId) {
+        setActiveSession(prev => {
+          if (prev && prev.filePath !== st.sessionFile) {
+            return { ...prev, filePath: st.sessionFile! };
+          }
+          if (!prev && st.sessionFile) {
+            return {
+              id: st.sessionId,
+              name: st.sessionName || "New Session",
+              filePath: st.sessionFile,
+              cwd: selectedProject?.path || "",
+              timestamp: new Date().toISOString(),
+              createdAt: new Date().toISOString(),
+              lastActiveAt: new Date().toISOString(),
+              lastMessage: null,
+              model: null,
+              messageCount: 0,
+              firstMessage: null,
+              totalCost: 0,
+              totalTokens: 0,
+              tokenCount: 0,
+              cost: 0,
+              isRecentlyActive: true,
+            };
+          }
+          return prev;
+        });
+        setNewSessionId(null);
+      }
+    };
+    ws.subscribe(listener);
+    return () => { ws.unsubscribe(listener); ws.setOnSessionLoaded(null); };
+  }, [ws, newSessionId, selectedProject?.path]);
 
   const [theme, toggleTheme] = useTheme();
 
@@ -54,6 +109,15 @@ export default function App() {
     }
     prevStreaming.current = ws?.isStreaming || false;
   }, [ws?.isStreaming, fetchSessions]);
+
+  // Invalidate session cache when streaming ends (agent_end)
+  const prevWsStreaming = useRef(false);
+  useEffect(() => {
+    if (prevWsStreaming.current && !ws?.isStreaming && activeSession) {
+      sessionCacheRef.current.delete(activeSession.filePath);
+    }
+    prevWsStreaming.current = ws?.isStreaming || false;
+  }, [ws?.isStreaming, activeSession]);
 
   // Load projects on mount
   useEffect(() => {
@@ -79,14 +143,26 @@ export default function App() {
   const handleSelectSession = useCallback(async (session: SessionSummary) => {
     setActiveSession(session);
     setView("chat");
-    
-    // Load session detail
-    try {
-      const r = await fetch(`/api/sessions/detail?path=${encodeURIComponent(session.filePath)}`);
-      const d = await r.json();
-      setSessionDetail(d.session || null);
-    } catch (e) {
-      console.error("Failed to load session detail:", e);
+
+    // Load session detail — check cache first
+    const cached = sessionCacheRef.current.get(session.filePath);
+    if (cached && Date.now() - cached.timestamp < SESSION_CACHE_TTL) {
+      setSessionDetail(cached.data);
+    } else {
+      try {
+        const r = await fetch(`/api/sessions/detail?path=${encodeURIComponent(session.filePath)}`);
+        const d = await r.json();
+        const detail = d.session || null;
+        setSessionDetail(detail);
+        if (detail) {
+          sessionCacheRef.current.set(session.filePath, {
+            data: detail,
+            timestamp: Date.now(),
+          });
+        }
+      } catch (e) {
+        console.error("Failed to load session detail:", e);
+      }
     }
   }, []);
 
@@ -98,7 +174,7 @@ export default function App() {
     setSessionDetail(null);
     setView("chat");
     // Refresh session list after PI creates the new session file
-    setTimeout(() => fetchSessions(), 1500);
+    setTimeout(() => fetchSessions(), SESSION_FETCH_DELAY_MS);
   }, [fetchSessions]);
 
   const handleBack = useCallback(() => {
@@ -114,6 +190,7 @@ export default function App() {
   }, [view]);
 
   const handleAddProject = useCallback(async (path: string, name: string) => {
+    setIsAddingProject(true);
     try {
       const r = await fetch("/api/projects", {
         method: "POST",
@@ -130,6 +207,8 @@ export default function App() {
       }
     } catch (e) {
       console.error(e);
+    } finally {
+      setIsAddingProject(false);
     }
   }, []);
 
@@ -179,7 +258,7 @@ export default function App() {
   const handleForkSession = useCallback((entryId: string) => {
     if (ws) {
       ws.send({ type: "fork", entryId });
-      setTimeout(() => fetchSessions(), 1500);
+      setTimeout(() => fetchSessions(), SESSION_FETCH_DELAY_MS);
     }
   }, [ws, fetchSessions]);
 
@@ -205,8 +284,21 @@ export default function App() {
     });
   }, [ws]);
 
+  // Cmd/Ctrl+N shortcut — new session
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "n") {
+        e.preventDefault();
+        handleNewSession();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [handleNewSession]);
+
   return (
     <div className="flex h-screen overflow-hidden bg-ink-950">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-0 focus:left-0 focus:z-80 focus:bg-ink-900 focus:p-4 focus:text-amber-500">Skip to chat</a>
       <Sidebar
         projects={projects}
         sessions={sessions}
@@ -220,6 +312,7 @@ export default function App() {
         onBack={handleBack}
         onNewSession={handleNewSession}
         onAddProject={handleAddProject}
+        isAddingProject={isAddingProject}
         onDeleteProject={handleDeleteProject}
         onToggleAddProject={() => setShowAddProject(v => !v)}
         onToggleTheme={toggleTheme}
@@ -231,7 +324,7 @@ export default function App() {
         streamingSessionIds={streamingSessionIds}
       />
       
-      <main className="flex-1 flex flex-col min-w-0">
+      <main id="main-content" className="flex-1 flex flex-col min-w-0">
         {view === "chat" && ws ? (
           <ChatView
             ws={ws}
@@ -305,14 +398,4 @@ function SessionWelcome({ project, sessions, onSelectSession }: {
   );
 }
 
-function formatTimeAgo(ts: string): string {
-  const d = new Date(ts);
-  const now = Date.now();
-  const diff = now - d.getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return d.toLocaleDateString();
-}
+

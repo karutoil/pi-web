@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { ExtensionUIRequest } from "@pi-web/shared";
+import { Icon } from "./Icon";
 
 interface Props {
   request: ExtensionUIRequest;
@@ -9,7 +10,8 @@ interface Props {
 export function ExtensionUIModal({ request, onRespond }: Props) {
   const [value, setValue] = useState(request.prefill || "");
   const [selected, setSelected] = useState<string | undefined>(undefined);
-  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // Auto-cancel on timeout
@@ -20,9 +22,10 @@ export function ExtensionUIModal({ request, onRespond }: Props) {
     }
   }, [request.timeout, onRespond]);
 
-  // Auto-focus
+  // Auto-focus: focus the appropriate ref based on method
   useEffect(() => {
-    inputRef.current?.focus();
+    if (request.method === "editor") textareaRef.current?.focus();
+    else inputRef.current?.focus();
   }, []);
 
   const handleCancel = useCallback(() => onRespond({ cancelled: true }), [onRespond]);
@@ -75,7 +78,7 @@ export function ExtensionUIModal({ request, onRespond }: Props) {
         return (
           <div className="space-y-3">
             <input
-              ref={inputRef as any}
+              ref={inputRef}
               value={value}
               onChange={e => setValue(e.target.value)}
               onKeyDown={e => {
@@ -106,7 +109,7 @@ export function ExtensionUIModal({ request, onRespond }: Props) {
         return (
           <div className="space-y-3">
             <textarea
-              ref={inputRef as any}
+              ref={textareaRef}
               value={value}
               onChange={e => setValue(e.target.value)}
               onKeyDown={e => {
@@ -134,35 +137,67 @@ export function ExtensionUIModal({ request, onRespond }: Props) {
         );
     }
   };
+  // Auto-focus: focus the appropriate ref based on method
+  useEffect(() => {
+    if (request.method === "editor") textareaRef.current?.focus();
+    else inputRef.current?.focus();
+  }, []);
 
   if (request.method === "notify") {
     return (
-      <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg border animate-fade-in-up max-w-sm ${
-        request.notifyType === "error"
-          ? "bg-rose-500/10 border-rose-500/30 text-rose-400"
-          : request.notifyType === "warning"
-          ? "bg-amber-500/10 border-amber-500/30 text-amber-400"
-          : "bg-ink-900 border-ink-700 text-ink-300"
-      }`}>
-        <div className="flex items-start gap-2">
-          <span className="text-sm">{request.message || request.title}</span>
-          <button onClick={() => onRespond({})} className="shrink-0 text-ink-600 hover:text-ink-400 ml-2">×</button>
+      <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-80 min-w-[280px] max-w-lg animate-fade-in-up`}>
+        <div className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl border backdrop-blur-md ${
+          request.notifyType === "error"
+            ? "bg-rose-500/15 border-rose-500/30 text-rose-300"
+            : request.notifyType === "warning"
+            ? "bg-amber-500/15 border-amber-500/30 text-amber-300"
+            : "bg-ink-900/90 border-ink-700/60 text-ink-300"
+        }`}>
+          {/* Icon */}
+          <div className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center ${
+            request.notifyType === "error"
+              ? "bg-rose-500/20"
+              : request.notifyType === "warning"
+              ? "bg-amber-500/20"
+              : "bg-ink-700/50"
+          }`}>
+            <Icon name={
+              request.notifyType === "error" ? "close" :
+              request.notifyType === "warning" ? "check" :
+              "check"
+            } size={14} />
+          </div>
+          {/* Content */}
+          <div className="flex-1 min-w-0">
+            {request.title && (
+              <p className="text-sm font-medium leading-snug">{request.title}</p>
+            )}
+            <p className={`text-sm leading-snug ${request.title ? "text-ink-400 mt-0.5" : ""}`}>
+              {request.message || request.title}
+            </p>
+          </div>
+          {/* Dismiss button */}
+          <button
+            onClick={() => onRespond({ cancelled: true })}
+            className="shrink-0 w-6 h-6 rounded-md flex items-center justify-center text-ink-600 hover:text-ink-300 hover:bg-ink-800/50 transition-theme"
+            aria-label="Dismiss notification"
+          >
+            <Icon name="close" size={12} />
+          </button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/60 backdrop-blur-sm animate-fade-in-up">
-      <div className="bg-ink-900 border border-ink-700 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+    <div className="fixed inset-0 z-60 flex items-center justify-center bg-ink-950/60 backdrop-blur-sm animate-fade-in-up">
+      <div className="relative z-70 bg-ink-900 border border-ink-700 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
         {/* Header */}
         <div className="px-5 py-4 border-b border-ink-800 flex items-center justify-between">
           <h3 className="text-ink-200 font-medium text-sm">{request.title || "Extension"}</h3>
           {!request.timeout && (
-            <button onClick={handleCancel} className="text-ink-600 hover:text-ink-400 transition-theme">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M4 4 L12 12 M12 4 L4 12" />
-              </svg>
+            <button onClick={handleCancel} className="text-ink-600 hover:text-ink-400 transition-theme" aria-label="Close">
+              <Icon name="close" size={16} />
             </button>
           )}
         </div>

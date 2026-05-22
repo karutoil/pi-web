@@ -1,6 +1,8 @@
-import { useState, useRef, useCallback, type KeyboardEvent, type ClipboardEvent } from "react";
+import { useState, useRef, useCallback, useEffect, type KeyboardEvent, type ClipboardEvent } from "react";
 import type { CommandInfo } from "@pi-web/shared";
 import { CommandCompleter } from "./CommandCompleter";
+import { Icon } from "./Icon";
+import { compressImage } from "../lib/imageUtils";
 
 interface ChatInputProps {
   onSend: (text: string, images?: { data: string; mimeType: string }[]) => void;
@@ -19,22 +21,26 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inputContainerRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef(text);
+  useEffect(() => { textRef.current = text; }, [text]);
+  const pendingImagesRef = useRef(pendingImages);
+  useEffect(() => { pendingImagesRef.current = pendingImages; }, [pendingImages]);
 
   // Check if cursor is after a "/"
   const slashIndex = text.lastIndexOf("/");
   const commandFilter = (showCommands && slashIndex >= 0) ? text.slice(slashIndex + 1) : "";
 
   const handleSend = useCallback(() => {
-    const trimmed = text.trim();
-    if ((!trimmed && pendingImages.length === 0) || disabled) return;
+    const trimmed = textRef.current.trim();
+    if ((!trimmed && pendingImagesRef.current.length === 0) || disabled) return;
     
     // If it's a slash command, send as-is
-    onSend(trimmed, pendingImages.length > 0 ? pendingImages : undefined);
+    onSend(trimmed, pendingImagesRef.current.length > 0 ? pendingImagesRef.current : undefined);
     setText("");
     setPendingImages([]);
     setShowCommands(false);
     if (textareaRef.current) textareaRef.current.style.height = "auto";
-  }, [text, disabled, onSend, pendingImages]);
+  }, [disabled, onSend]);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -86,13 +92,15 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
         const blob = item.getAsFile();
         if (!blob) continue;
         
+        compressImage(blob).then((compressed) => {
         const reader = new FileReader();
         reader.onload = () => {
           const dataUrl = reader.result as string;
           const base64 = dataUrl.split(",")[1];
-          setPendingImages(prev => [...prev, { data: base64, mimeType: item.type }]);
+          setPendingImages(prev => [...prev, { data: base64, mimeType: compressed.type || "image/jpeg" }]);
         };
-        reader.readAsDataURL(blob);
+        reader.readAsDataURL(compressed);
+        });
       }
     }
   }, []);
@@ -126,6 +134,7 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
                 <button
                   onClick={() => removeImage(i)}
                   className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-600 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  aria-label="Remove image"
                 >
                   ×
                 </button>
@@ -160,10 +169,8 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
             
             <div className="flex items-center gap-1 shrink-0">
               {isStreaming ? (
-                <button onClick={onAbort} className="p-1.5 rounded-full bg-rose-600/20 text-rose-500 hover:bg-rose-600/30 transition-theme" title="Abort">
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-                    <rect x="3" y="3" width="10" height="10" rx="1" />
-                  </svg>
+                <button onClick={onAbort} className="p-1.5 rounded-full bg-rose-600/20 text-rose-500 hover:bg-rose-600/30 transition-theme" title="Abort" aria-label="Abort">
+                  <Icon name="abort" size={14} />
                 </button>
               ) : (
                 <button
@@ -171,17 +178,16 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
                   disabled={(!text.trim() && pendingImages.length === 0) || disabled}
                   className="p-1.5 rounded-full bg-amber-600 text-ink-950 hover:bg-amber-500 disabled:opacity-30 disabled:cursor-not-allowed transition-theme"
                   title="Send"
+                  aria-label="Send message"
                 >
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <path d="M2 8 L12 8 M8 4 L13 8 L8 12" />
-                  </svg>
+                  <Icon name="send" size={14} />
                 </button>
               )}
             </div>
           </div>
         </div>
         
-        <p className="text-ink-600 text-[0.6rem] font-mono mt-1.5 text-center opacity-50">
+        <p className="text-ink-600 text-[0.65rem] font-mono mt-1.5 text-center opacity-50">
           {isStreaming ? "PI is working · type to steer"
             : disabled ? "Connecting..."
             : "Paste images · / for commands"}

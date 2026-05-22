@@ -2,6 +2,8 @@ import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import type { Project, SessionSummary } from "@pi-web/shared";
 import type { ViewState } from "../App";
 import type { Theme } from "../hooks/useTheme";
+import { Icon } from "./Icon";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { ContextMenuPortal, ContextMenuItem, ContextMenuDivider } from "./ContextMenu";
 
 interface SidebarProps {
@@ -26,6 +28,7 @@ interface SidebarProps {
   onRefreshSessions: () => void;
   onContinueLatest: () => void;
   streamingSessionIds: Set<string>;
+  isAddingProject?: boolean;
 }
 
 // ─── Helpers ───
@@ -107,6 +110,7 @@ export function Sidebar({
 }: SidebarProps) {
   const [sessionSearch, setSessionSearch] = useState("");
   const [focusedIdx, setFocusedIdx] = useState(-1);
+  const [confirmDialog, setConfirmDialog] = useState<{open: boolean; title: string; message: string; onConfirm: () => void}>({open: false, title: '', message: '', onConfirm: () => {}});
   const listRef = useRef<HTMLDivElement>(null);
 
   const filteredSessions = useMemo(() => {
@@ -156,6 +160,7 @@ export function Sidebar({
   }, [focusedIdx]);
 
   return (
+    <>
     <aside
       className="w-64 shrink-0 flex flex-col bg-ink-900/30 relative"
       onKeyDown={handleKeyDown}
@@ -173,16 +178,12 @@ export function Sidebar({
           onClick={onToggleTheme}
           className="text-ink-600 hover:text-ink-400 transition-theme p-1"
           title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
+          aria-label="Toggle dark mode"
         >
           {theme === "light" ? (
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-            </svg>
+            <Icon name="moon" size={13} />
           ) : (
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-              <circle cx="12" cy="12" r="5" />
-              <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-            </svg>
+            <Icon name="sun" size={13} />
           )}
         </button>
       </div>
@@ -193,10 +194,9 @@ export function Sidebar({
           <button
             onClick={onBack}
             className="flex items-center gap-1.5 text-ink-500 hover:text-ink-300 text-xs transition-theme"
+            aria-label="Back to projects"
           >
-            <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <path d="M10 4 L6 8 L10 12" />
-            </svg>
+            <Icon name="chevron-left" size={10} />
             {view === "sessions" ? "All Projects" : selectedProject?.name ?? "Sessions"}
           </button>
         </div>
@@ -213,6 +213,7 @@ export function Sidebar({
             onDelete={onDeleteProject}
             onAdd={onAddProject}
             onToggleAdd={onToggleAddProject}
+            onRequestConfirm={(title, message, onConfirm) => setConfirmDialog({open: true, title, message, onConfirm})}
           />
         )}
 
@@ -235,16 +236,25 @@ export function Sidebar({
             onContinueLatest={onContinueLatest}
             streamingSessionIds={streamingSessionIds}
             projectName={selectedProject.name}
+            onRequestConfirm={(title, message, onConfirm) => setConfirmDialog({open: true, title, message, onConfirm})}
           />
         )}
       </div>
 
       {/* Minimal footer */}
       <div className="px-4 py-2.5 flex items-center justify-between">
-        <span className="text-ink-500 text-[0.6rem] font-mono tracking-wide">PI WEB</span>
+        <span className="text-ink-500 text-[0.65rem] font-mono tracking-wide">PI WEB</span>
         <span className="w-1.5 h-1.5 rounded-full bg-teal-500/70" title="Connected" />
       </div>
     </aside>
+    <ConfirmDialog
+      open={confirmDialog.open}
+      title={confirmDialog.title}
+      message={confirmDialog.message}
+      onConfirm={() => { confirmDialog.onConfirm(); setConfirmDialog(s => ({...s, open: false})); }}
+      onCancel={() => setConfirmDialog(s => ({...s, open: false}))}
+    />
+    </>
   );
 }
 
@@ -258,6 +268,7 @@ function ProjectList({
   onDelete,
   onAdd,
   onToggleAdd,
+  onRequestConfirm,
 }: {
   projects: Project[];
   selectedProject: Project | null;
@@ -266,6 +277,7 @@ function ProjectList({
   onDelete: (id: string) => void;
   onAdd: (path: string, name: string) => void;
   onToggleAdd: () => void;
+  onRequestConfirm: (title: string, message: string, onConfirm: () => void) => void;
 }) {
   return (
     <div className="py-2">
@@ -275,10 +287,9 @@ function ProjectList({
           onClick={onToggleAdd}
           className="text-ink-600 hover:text-ink-300 transition-theme p-1 rounded-md hover:bg-ink-800/50"
           title="Add project"
+          aria-label="Add project"
         >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M8 3 L8 13 M3 8 L13 8" />
-          </svg>
+          <Icon name="plus" size={14} />
         </button>
       </div>
 
@@ -309,7 +320,7 @@ function ProjectList({
                 <div className="text-ink-400 text-[0.65rem] font-mono truncate mt-0.5">
                   {p.path}
                 </div>
-                <div className="flex items-center gap-1.5 mt-1 text-ink-500 text-[0.6rem] font-mono">
+                <div className="flex items-center gap-1.5 mt-1 text-ink-500 text-[0.65rem] font-mono">
                   {p.sessionCount > 0 && <span>{p.sessionCount} sess</span>}
                   {p.lastActiveAt && <span>{formatTimeAgo(p.lastActiveAt)}</span>}
                   {p.totalCost > 0 && <span>{formatCost(p.totalCost)}</span>}
@@ -318,14 +329,13 @@ function ProjectList({
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (confirm(`Remove "${p.name}"?`)) onDelete(p.id);
+                  onRequestConfirm('Remove Project', `Remove "${p.name}"? This cannot be undone.`, () => onDelete(p.id));
                 }}
                 className="opacity-0 group-hover:opacity-100 text-ink-600 hover:text-rose-400 transition-all shrink-0 p-0.5"
                 title="Remove project"
+                aria-label="Remove project"
               >
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M4 4 L12 12 M12 4 L4 12" />
-                </svg>
+                <Icon name="close" size={12} />
               </button>
             </div>
           </button>
@@ -410,6 +420,7 @@ function SessionList({
   onContinueLatest,
   projectName,
   streamingSessionIds,
+  onRequestConfirm,
 }: {
   sessions: SessionSummary[];
   filteredSessions: SessionSummary[];
@@ -428,6 +439,8 @@ function SessionList({
   onContinueLatest: () => void;
   projectName: string;
   streamingSessionIds: Set<string>;
+  isAddingProject?: boolean;
+  onRequestConfirm: (title: string, message: string, onConfirm: () => void) => void;
 }) {
   return (
     <div className="py-2">
@@ -439,20 +452,17 @@ function SessionList({
             onClick={onRefresh}
             className="text-ink-600 hover:text-ink-300 transition-theme p-1 rounded-md hover:bg-ink-800/50"
             title="Refresh"
+            aria-label="Refresh sessions"
           >
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M2 8 A6 6 0 1 1 8 14" />
-              <path d="M2 8 L2 4 L5 6" />
-            </svg>
+            <Icon name="refresh" size={12} />
           </button>
           <button
             onClick={onNewSession}
             className="text-ink-600 hover:text-ink-300 transition-theme p-1 rounded-md hover:bg-ink-800/50"
             title="New session"
+            aria-label="New session"
           >
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M8 3 L8 13 M3 8 L13 8" />
-            </svg>
+            <Icon name="plus" size={12} />
           </button>
         </div>
       </div>
@@ -464,10 +474,7 @@ function SessionList({
 
       {/* Search — minimal */}
       <div className="relative mb-2 px-1">
-        <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-600">
-          <circle cx="7" cy="7" r="4" />
-          <path d="M10 10 L14 14" />
-        </svg>
+        <Icon name="search" size={10} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-600" />
         <input
           type="text"
           placeholder="Filter…"
@@ -479,10 +486,9 @@ function SessionList({
           <button
             onClick={() => onSearch("")}
             className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-600 hover:text-ink-400"
+            aria-label="Clear search"
           >
-            <svg width="8" height="8" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <path d="M4 4 L12 12 M12 4 L4 12" />
-            </svg>
+            <Icon name="close-thick" size={8} />
           </button>
         )}
       </div>
@@ -528,6 +534,7 @@ function SessionList({
                     onDelete={onDelete}
                     onRename={onRename}
                     onFork={onFork}
+                    onRequestConfirm={onRequestConfirm}
                   />
                 );
               })}
@@ -551,6 +558,7 @@ function SessionItem({
   onDelete,
   onRename,
   onFork,
+  onRequestConfirm,
 }: {
   session: SessionSummary;
   isActive: boolean;
@@ -561,6 +569,7 @@ function SessionItem({
   onDelete: (s: SessionSummary) => void;
   onRename: (s: SessionSummary, name: string) => void;
   onFork: (entryId: string) => void;
+  onRequestConfirm: (title: string, message: string, onConfirm: () => void) => void;
 }) {
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(s.name || "");
@@ -638,7 +647,7 @@ function SessionItem({
               <div className="text-ink-200 text-[0.8rem] truncate leading-snug">{displayName}</div>
             )}
             {/* Metadata */}
-            <div className="flex items-center gap-1.5 mt-0.5 text-ink-500 text-[0.6rem] font-mono">
+            <div className="flex items-center gap-1.5 mt-0.5 text-ink-500 text-[0.65rem] font-mono">
               <span>{formatTimeAgo(s.lastActiveAt || s.timestamp)}</span>
               {s.messageCount > 0 && <span>{s.messageCount}m</span>}
               {s.cost > 0 && <span>{formatCost(s.cost)}</span>}
@@ -655,22 +664,22 @@ function SessionItem({
         >
           <ContextMenuItem
             label="Rename"
-            icon={<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3 L5 13 M3 10 L5 13 L8 12" /></svg>}
+            icon={<Icon name="pencil" size={10} />}
             onClick={() => { setCtxMenu(null); setIsRenaming(true); setRenameValue(s.name || ""); }}
           />
           <ContextMenuItem
             label="Fork From Here"
-            icon={<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3 L8 8 L3 13 M8 8 L13 13" /></svg>}
+            icon={<Icon name="fork" size={10} />}
             onClick={() => { setCtxMenu(null); onFork(s.id); }}
           />
           <ContextMenuDivider />
           <ContextMenuItem
             label="Delete"
             danger
-            icon={<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 5 L13 5 M6 5 L6 3 L10 3 L10 5 M5 5 L5 13 L11 13 L11 5" /></svg>}
+            icon={<Icon name="trash" size={10} />}
             onClick={() => {
               setCtxMenu(null);
-              if (confirm(`Delete "${displayName}"? This removes the session file.`)) onDelete(s);
+              onRequestConfirm('Delete Session', `Delete "${displayName}"? This removes the session file and cannot be undone.`, () => onDelete(s));
             }}
           />
         </ContextMenuPortal>

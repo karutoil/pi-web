@@ -201,7 +201,7 @@ export function DiffRenderer({ content, collapsible = true }: Props) {
         <div className="overflow-x-auto">
           <div className="min-w-[600px]">
             {/* Column headers */}
-            <div className="flex border-b border-ink-800 bg-ink-900 text-ink-600 text-[0.6rem] font-mono uppercase tracking-wider">
+            <div className="flex border-b border-ink-800 bg-ink-900 text-ink-600 text-[0.65rem] font-mono uppercase tracking-wider">
               <div className="flex-1 flex">
                 <div className="w-10 shrink-0 px-1 border-r border-ink-800 py-1">old</div>
                 <div className="flex-1 px-2 py-1 border-r-2 border-ink-700">Original</div>

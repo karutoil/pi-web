@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import type { ModelInfo, SessionStats } from "@pi-web/shared";
-import type { WSBridge } from "../hooks/useWebSocket";
+import type { WSBridge } from "../lib/types";
 
 interface Props {
   ws: WSBridge;
@@ -68,7 +68,7 @@ export function ChatHeader({ ws, cwd, sessionName }: Props) {
     <div className="flex items-center gap-2 px-4 py-2.5 border-b border-ink-800 bg-ink-900/30 shrink-0 flex-wrap">
       {/* Logo + Session name */}
       <div className="flex-1 min-w-0 flex items-center gap-2">
-        <img src="/pi-logo.svg" alt="" className="w-4 h-4 shrink-0 opacity-60" />
+        <img src="/pi-logo.svg" alt="" aria-hidden="true" className="w-4 h-4 shrink-0 opacity-60" />
         {editingName ? (
           <input
             value={nameInput}
@@ -83,6 +83,7 @@ export function ChatHeader({ ws, cwd, sessionName }: Props) {
             onClick={() => { setNameInput(sessionName || ""); setEditingName(true); }}
             className="text-sm font-medium text-ink-200 truncate hover:text-amber-500 transition-theme max-w-[200px]"
             title="Click to rename"
+            aria-label="Rename session"
           >
             {sessionName || "Chat"}
           </button>
@@ -120,11 +121,12 @@ export function ChatHeader({ ws, cwd, sessionName }: Props) {
           <button
             onClick={() => { setThinkingOpen(o => !o); setModelOpen(false); }}
             className="text-xs font-mono px-2 py-1 rounded bg-ink-850 border border-ink-750 hover:border-ink-600 text-ink-400 transition-theme"
+            aria-label="Thinking level"
           >
             {ws.state?.thinkingLevel || "off"}
           </button>
           {thinkingOpen && (
-            <div className="absolute right-0 top-full mt-1 bg-ink-900 border border-ink-700 rounded-lg shadow-lg py-1 z-50 min-w-[100px]">
+            <div className="absolute right-0 top-full mt-1 bg-ink-900 border border-ink-700 rounded-lg shadow-lg py-1 z-40 min-w-[100px]">
               {thinkingLevels.map(l => (
                 <button
                   key={l}
@@ -145,11 +147,12 @@ export function ChatHeader({ ws, cwd, sessionName }: Props) {
           <button
             onClick={() => { setModelOpen(o => !o); setThinkingOpen(false); }}
             className="text-xs font-mono px-2 py-1 rounded bg-ink-850 border border-ink-750 hover:border-ink-600 text-ink-300 transition-theme max-w-[160px] truncate"
+            aria-label="Select model"
           >
-            {currentModel?.name || ws.state?.model || "Model"}
+            {currentModel?.name || ws.state?.model || (ws.models.length === 0 && ws.isConnected ? "Loading…" : "Model")}
           </button>
           {modelOpen && (
-            <div className="absolute right-0 top-full mt-1 bg-ink-900 border border-ink-700 rounded-lg shadow-lg py-1 z-50 min-w-[240px]">
+            <div className="absolute right-0 top-full mt-1 bg-ink-900 border border-ink-700 rounded-lg shadow-lg py-1 z-40 min-w-[240px]">
               {/* Search input */}
               <div className="px-2 py-1.5 border-b border-ink-800">
                 <input
@@ -157,6 +160,7 @@ export function ChatHeader({ ws, cwd, sessionName }: Props) {
                   onChange={e => setModelSearch(e.target.value)}
                   placeholder="Filter models..."
                   className="w-full bg-ink-850 border border-ink-700 rounded px-2 py-1 text-ink-200 text-xs font-mono placeholder-ink-600 outline-none focus:border-amber-500"
+                  aria-label="Search models"
                   autoFocus
                   onKeyDown={e => e.stopPropagation()}
                 />
@@ -185,7 +189,7 @@ export function ChatHeader({ ws, cwd, sessionName }: Props) {
                       {m.contextWindow >= 1000 ? `${(m.contextWindow / 1000).toFixed(0)}k` : m.contextWindow}
                     </span>
                   </div>
-                  <div className="text-ink-600 text-[0.6rem] font-mono mt-0.5">
+                  <div className="text-ink-600 text-[0.65rem] font-mono mt-0.5">
                     {m.provider} · {m.reasoning ? "reasoning" : "no reasoning"}
                   </div>
                 </button>

@@ -34,7 +34,7 @@ export function CommandCompleter({ commands, filter, onSelect, onClose }: Props)
 
   return (
     <div className="absolute bottom-full left-0 mb-2 bg-ink-900 border border-ink-700 rounded-lg shadow-lg py-1 z-50 w-80 max-h-64 overflow-y-auto custom-scrollbar">
-      <div className="px-3 py-1.5 text-ink-600 text-[0.6rem] font-mono uppercase tracking-wider border-b border-ink-800">
+      <div className="px-3 py-1.5 text-ink-600 text-[0.65rem] font-mono uppercase tracking-wider border-b border-ink-800">
         Commands {filter ? `matching "${filter}"` : ""}
       </div>
       {filtered.map(c => (

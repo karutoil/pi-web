@@ -1,31 +1,12 @@
 import { useRef, useEffect, useCallback, useState } from "react";
 import type { WSClientMessage, WSServerMessage, AgentState, ChatMessage, SessionDetail,
-  ModelInfo, CommandInfo, ForkEntry, SessionStats, ExtensionUIRequest } from "@pi-web/shared";
+  ModelInfo, CommandInfo, ForkEntry, SessionStats, ExtensionUIRequest, ImageAttachment } from "@pi-web/shared";
+import type { ToolEvent, WSBridge } from "../lib/types";
+export type { ToolEvent, WSBridge };
+import { NOTIFY_TIMEOUT_MS } from "../lib/constants";
 
-export interface ToolEvent {
-  toolCallId: string; toolName: string; args: Record<string, unknown>;
-  partialResult?: { content: any[] }; result?: { content: any[]; details?: any }; isError?: boolean;
-  status: "running" | "done" | "error";
-  details?: any;
-}
-
-export interface WSConnection {
+export interface WSConnection extends WSBridge {
   key: string;
-  send: (msg: WSClientMessage) => void;
-  sendPrompt: (text: string, images?: any[]) => void;
-  messages: ChatMessage[];
-  liveMessages: Map<string, ChatMessage>;
-  runningTools: Map<string, ToolEvent>;
-  state: AgentState | null;
-  isConnected: boolean;
-  isStreaming: boolean;
-  isActive: boolean;
-  models: ModelInfo[]; commands: CommandInfo[];
-  forkMessages: ForkEntry[]; sessionStats: SessionStats | null;
-  pendingUI: ExtensionUIRequest | null;
-  respondToUI: (response: { value?: string; confirmed?: boolean; cancelled?: boolean }) => void;
-  setOnSessionLoaded: (cb: ((session: SessionDetail) => void) | null) => void;
-  setOnSessionEvent: (cb: ((event: WSServerMessage) => void) | null) => void;
   subscribe: (l: () => void) => void;
   unsubscribe: (l: () => void) => void;
   close: () => void;
@@ -84,7 +65,7 @@ function createConnection(
       reconnectAttempts = 0;
       notify();
       // Request current state on reconnect to sync up
-      setTimeout(() => send({ type: "get_state" } as any), 200);
+      setTimeout(() => send({ type: "get_state" }), 200);
     };
     ws.onclose = () => {
       data.isConnected = false;
@@ -175,11 +156,17 @@ function createConnection(
         if (!dialogMethods.includes(msg.ui.method) && msg.ui.method !== "notify") break;
         if (msg.ui.method === "notify") {
           data.pendingUI = msg.ui;
-          setTimeout(() => {
-            data.pendingUI = data.pendingUI?.id === msg.ui.id ? null : data.pendingUI;
-            notify();
-            send({ type: "extension_ui_response", id: msg.ui.id, cancelled: true });
-          }, 4000);
+          data.pendingUIId = msg.ui.id;
+          const autoTimer = setTimeout(() => {
+            if (data.pendingUIId === msg.ui.id) {
+              data.pendingUI = null;
+              data.pendingUIId = null;
+              notify();
+              send({ type: "extension_ui_response", id: msg.ui.id, cancelled: true });
+            }
+          }, NOTIFY_TIMEOUT_MS);
+          // Store timer ref so manual dismiss can cancel it
+          (data as { notifyTimer?: ReturnType<typeof setTimeout> }).notifyTimer = autoTimer;
         } else {
           data.pendingUI = msg.ui;
           data.pendingUIId = msg.ui.id;
@@ -197,7 +184,7 @@ function createConnection(
   const conn: WSConnection = {
     key,
     send,
-    sendPrompt: (text: string, images?: any[]) => {
+    sendPrompt: (text: string, images?: ImageAttachment[]) => {
       const userMsg: ChatMessage = { role: "user", content: text, timestamp: Date.now() };
       messagesRef = [...messagesRef, userMsg];
       data.messages = [...messagesRef];
@@ -219,6 +206,9 @@ function createConnection(
     respondToUI: (response) => {
       const id = data.pendingUIId;
       if (id) {
+        // Clear auto-dismiss timer if manually dismissed
+        const timer = (data as { notifyTimer?: ReturnType<typeof setTimeout> }).notifyTimer;
+        if (timer) { clearTimeout(timer); delete (data as { notifyTimer?: ReturnType<typeof setTimeout> }).notifyTimer; }
         send({ type: "extension_ui_response", id, ...response });
         data.pendingUIId = null;
         data.pendingUI = null;

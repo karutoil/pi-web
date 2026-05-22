@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
-      "@pi-web/shared": path.resolve(__dirname, "../shared/src/types.ts"),
+      "@pi-web/shared": path.resolve(__dirname, "../shared/src/index.ts"),
     },
   },
   server: {

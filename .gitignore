@@ -44,3 +44,6 @@ packages/client/dist/
 packages/shared/dist/
 .pi-web.db
 .pi/
+progress.md
+scout-*.md
+fix-*.md

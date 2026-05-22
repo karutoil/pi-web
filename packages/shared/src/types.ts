@@ -79,17 +79,24 @@ export interface ChatMessage {
   toolCallId?: string;
   toolName?: string;
   isError?: boolean;
-  details?: any;
+  details?: ToolDetails;
   // bash execution
   command?: string;
   output?: string;
   exitCode?: number;
   cancelled?: boolean;
   truncated?: boolean;
+  fullOutputPath?: string;
   // branch/compaction
   tokensBefore?: number;
   // thinking
   thinking?: string;
+}
+
+/** Tool result details — currently known: diff. Extensible with unknown props. */
+export interface ToolDetails {
+  diff?: string;
+  [key: string]: unknown;
 }
 
 export interface ContentBlock {
@@ -149,7 +156,7 @@ export type WSServerMessage =
   | { type: "message_end"; message: ChatMessage }
   | { type: "tool_start"; toolCallId: string; toolName: string; args: Record<string, unknown> }
   | { type: "tool_update"; toolCallId: string; partialResult: { content: ContentBlock[] } }
-  | { type: "tool_end"; toolCallId: string; toolName: string; result: { content: ContentBlock[]; details?: any }; isError: boolean }
+  | { type: "tool_end"; toolCallId: string; toolName: string; result: { content: ContentBlock[]; details?: ToolDetails }; isError: boolean }
   | { type: "turn_start" }
   | { type: "turn_end"; message: ChatMessage; toolResults: ChatMessage[] }
   | { type: "queue_update"; steering: string[]; followUp: string[] }

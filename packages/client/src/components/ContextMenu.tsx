@@ -47,7 +47,7 @@ export function ContextMenuPortal({
   return createPortal(
     <div
       ref={menuRef}
-      style={{ position: "fixed", left: pos.x, top: pos.y, zIndex: 9999 }}
+      style={{ position: "fixed", left: pos.x, top: pos.y, zIndex: 50 }}
       className="bg-ink-900 border border-ink-700 rounded-lg shadow-2xl py-1 min-w-[160px] animate-fade-in-up"
     >
       {children}
@@ -80,7 +80,7 @@ export function ContextMenuItem({
     >
       {icon && <span className="shrink-0 w-3 flex justify-center">{icon}</span>}
       <span className="flex-1">{label}</span>
-      {shortcut && <span className="text-ink-600 text-[0.6rem] font-mono ml-2">{shortcut}</span>}
+      {shortcut && <span className="text-ink-600 text-[0.65rem] font-mono ml-2">{shortcut}</span>}
     </button>
   );
 }

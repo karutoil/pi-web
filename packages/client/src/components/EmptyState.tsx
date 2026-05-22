@@ -1,4 +1,5 @@
 import type { Project } from "@pi-web/shared";
+import { Icon } from "./Icon";
 
 interface EmptyStateProps {
   projects: Project[];
@@ -34,10 +35,7 @@ export function EmptyState({ projects, onSelectProject, onAddProject }: EmptySta
               >
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-lg bg-amber-500/15 border border-amber-500/25 flex items-center justify-center shrink-0">
-                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" className="text-amber-500">
-                      <path d="M2 13 L2 3 L14 3 L14 13 Z" />
-                      <path d="M2 7 L14 7" />
-                    </svg>
+                    <Icon name="project" size={14} className="text-amber-500" />
                   </div>
                   <div className="text-left min-w-0">
                     <div className="text-ink-200 font-medium text-sm">{p.name}</div>
@@ -53,9 +51,7 @@ export function EmptyState({ projects, onSelectProject, onAddProject }: EmptySta
               onClick={onAddProject}
               className="inline-flex items-center gap-2 px-6 py-3 bg-amber-600 hover:bg-amber-500 text-ink-950 font-medium rounded-xl transition-theme text-sm"
             >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <path d="M8 3 L8 13 M3 8 L13 8" />
-              </svg>
+              <Icon name="plus-thick" size={16} />
               Add a project directory
             </button>
             <p className="text-ink-600 text-xs font-mono mt-4">
