@@ -52,12 +52,23 @@ const STATUS_LABELS: Record<string, string> = {
 function DiffViewer({ diff, path, onClose }: { diff: string; path: string; onClose: () => void }) {
   const lines = diff.split("\n");
 
+  // Escape to close diff
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-ink-800/60 bg-ink-900/30 shrink-0">
-        <Icon name="close" size={12} className="text-ink-500" />
+        <button onClick={onClose} className="p-1 text-ink-500 hover:text-ink-300 hover:bg-ink-800/50 rounded transition-theme" aria-label="Close diff">
+          <Icon name="chevron-left" size={12} />
+        </button>
         <span className="text-ink-200 text-xs font-mono truncate flex-1">{path}</span>
-        <button onClick={onClose} className="text-ink-500 hover:text-ink-300 text-xs transition-theme">Close</button>
+        <button onClick={onClose} className="px-2.5 py-1 text-xs text-ink-400 hover:text-ink-200 bg-ink-800/40 hover:bg-ink-800/60 rounded transition-theme">Back</button>
       </div>
       <div className="flex-1 overflow-y-auto custom-scrollbar font-mono text-xs leading-5 bg-ink-950">
         {lines.map((line, i) => {
