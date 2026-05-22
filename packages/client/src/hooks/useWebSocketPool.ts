@@ -59,7 +59,7 @@ function createConnection(
     if (sessionPath) params.set("sessionPath", sessionPath);
     if (newSessionId) params.set("newSessionId", newSessionId);
     const protocol = location.protocol === "https:" ? "wss" : "ws";
-    ws = new WebSocket(`${protocol}://${location.host}/ws/chat?${params}`);
+    ws = new WebSocket(`${protocol}://${location.host}/ws?${params}`);
     ws.onopen = () => {
       data.isConnected = true;
       reconnectAttempts = 0;

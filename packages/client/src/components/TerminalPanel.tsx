@@ -75,7 +75,7 @@ function TerminalInstance({ tab, visible }: { tab: TerminalTab; visible: boolean
 
       // Connect to terminal WS
       const protocol = location.protocol === "https:" ? "wss" : "ws";
-      const ws = new WebSocket(`${protocol}://${location.host}/ws/terminal?id=${encodeURIComponent(tab.id)}`);
+      const ws = new WebSocket(`${protocol}://${location.host}/ws?type=terminal&id=${encodeURIComponent(tab.id)}`);
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -106,7 +106,7 @@ function TerminalInstance({ tab, visible }: { tab: TerminalTab; visible: boolean
         if (!destroyed) {
           setTimeout(() => {
             if (!destroyed && containerRef.current) {
-              const newWs = new WebSocket(`${protocol}://${location.host}/ws/terminal?id=${encodeURIComponent(tab.id)}`);
+              const newWs = new WebSocket(`${protocol}://${location.host}/ws?type=terminal&id=${encodeURIComponent(tab.id)}`);
               wsRef.current = newWs;
               // Same handlers
               newWs.onopen = ws.onopen;

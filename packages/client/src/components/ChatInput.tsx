@@ -121,8 +121,8 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
   }, [text]);
 
   return (
-    <div className="absolute bottom-4 left-4 right-4 z-10 flex justify-center pointer-events-none">
-      <div className="max-w-3xl w-full pointer-events-auto">
+    <div className="px-4 pb-4 pt-2 flex justify-center">
+      <div className="max-w-3xl w-full">
         {/* Image previews */}
         {pendingImages.length > 0 && (
           <div className="flex gap-2 mb-2 flex-wrap px-2">

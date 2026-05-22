@@ -179,59 +179,60 @@ const wsToAgent = new Map<ServerWebSocket, string>();
 // Map: raw ServerWebSocket -> terminalId (for terminal WS routing)
 const wsToTerminal = new Map<ServerWebSocket, string>();
 
-// ── Terminal WebSocket ──
+// ── Unified WebSocket endpoint ──
+// Routes to chat or terminal handler based on ?type= query param
 app.get(
-  "/ws/terminal",
+  "/ws",
   upgradeWebSocket((c) => {
-    const terminalId = c.req.query("id");
+    const wsType = c.req.query("type") || "chat";
 
-    return {
-      onOpen(_event, ws) {
-        if (!terminalId) { ws.close(); return; }
-        const term = getTerminal(terminalId);
-        if (!term) {
-          try { ws.send(JSON.stringify({ type: "term_exit", id: terminalId, exitCode: 1 })); } catch {}
-          ws.close();
-          return;
-        }
-        const raw = (ws as any).raw as ServerWebSocket;
-        wsToTerminal.set(raw, terminalId);
-        term.attach(raw);
-        // Send buffer for scrollback on reattach
-        if (term.buffer) {
-          try { ws.send(JSON.stringify({ type: "term_output", id: terminalId, data: term.buffer })); } catch {}
-        }
-      },
-      onMessage(event, ws) {
-        const raw = (ws as any).raw as ServerWebSocket;
-        const tid = wsToTerminal.get(raw);
-        if (!tid) return;
-        const term = getTerminal(tid);
-        if (!term) return;
-        try {
-          const msg = JSON.parse(event.data as string);
-          switch (msg.type) {
-            case "term_input": term.write(msg.data); break;
-            case "term_resize": term.resize(msg.cols, msg.rows); break;
+    // ── Terminal route ──
+    if (wsType === "terminal") {
+      const terminalId = c.req.query("id");
+      return {
+        onOpen(_event, ws) {
+          if (!terminalId) { ws.close(); return; }
+          const term = getTerminal(terminalId);
+          if (!term) {
+            try { ws.send(JSON.stringify({ type: "term_exit", id: terminalId, exitCode: 1 })); } catch {}
+            ws.close();
+            return;
           }
-        } catch {}
-      },
-      onClose(_event, ws) {
-        const raw = (ws as any).raw as ServerWebSocket;
-        const tid = wsToTerminal.get(raw);
-        wsToTerminal.delete(raw);
-        if (tid) {
+          const raw = (ws as any).raw as ServerWebSocket;
+          wsToTerminal.set(raw, terminalId);
+          term.attach(raw);
+          // Send buffer for scrollback on reattach
+          if (term.buffer) {
+            try { ws.send(JSON.stringify({ type: "term_output", id: terminalId, data: term.buffer })); } catch {}
+          }
+        },
+        onMessage(event, ws) {
+          const raw = (ws as any).raw as ServerWebSocket;
+          const tid = wsToTerminal.get(raw);
+          if (!tid) return;
           const term = getTerminal(tid);
-          if (term) term.detach(raw);
-        }
-      },
-    };
-  })
-);
+          if (!term) return;
+          try {
+            const msg = JSON.parse(event.data as string);
+            switch (msg.type) {
+              case "term_input": term.write(msg.data); break;
+              case "term_resize": term.resize(msg.cols, msg.rows); break;
+            }
+          } catch {}
+        },
+        onClose(_event, ws) {
+          const raw = (ws as any).raw as ServerWebSocket;
+          const tid = wsToTerminal.get(raw);
+          wsToTerminal.delete(raw);
+          if (tid) {
+            const term = getTerminal(tid);
+            if (term) term.detach(raw);
+          }
+        },
+      };
+    }
 
-app.get(
-  "/ws/chat",
-  upgradeWebSocket((c) => {
+    // ── Chat route (default) ──
     const projectId = c.req.query("projectId");
     const sessionPath = c.req.query("sessionPath");
     const provider = c.req.query("provider");

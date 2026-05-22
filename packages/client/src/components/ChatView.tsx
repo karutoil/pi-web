@@ -180,7 +180,7 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto custom-scrollbar px-5 pt-6 pb-28"
+        className="flex-1 overflow-y-auto custom-scrollbar px-5 pt-6 pb-4"
       >
         <div ref={contentRef} className="max-w-3xl mx-auto space-y-5">
           {/* Load earlier messages */}
