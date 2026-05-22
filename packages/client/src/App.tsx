@@ -20,6 +20,7 @@ export default function App() {
   const [showAddProject, setShowAddProject] = useState(false);
   const [newSessionId, setNewSessionId] = useState<string | null>(null);
   const [isAddingProject, setIsAddingProject] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(true);
 
   // Session detail cache with 30s TTL
   const sessionCacheRef = useRef<Map<string, { data: SessionDetail; timestamp: number }>>(new Map());
@@ -291,6 +292,10 @@ export default function App() {
         e.preventDefault();
         handleNewSession();
       }
+      if ((e.metaKey || e.ctrlKey) && e.key === "b") {
+        e.preventDefault();
+        setShowSidebar(v => !v);
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
@@ -299,6 +304,7 @@ export default function App() {
   return (
     <div className="flex h-screen overflow-hidden bg-ink-950">
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-0 focus:left-0 focus:z-80 focus:bg-ink-900 focus:p-4 focus:text-amber-500">Skip to chat</a>
+      {showSidebar && (
       <Sidebar
         projects={projects}
         sessions={sessions}
@@ -322,7 +328,24 @@ export default function App() {
         onRefreshSessions={handleRefreshSessions}
         onContinueLatest={handleContinueLatest}
         streamingSessionIds={streamingSessionIds}
+        onToggleSidebar={() => setShowSidebar(false)}
       />
+      )}
+      {!showSidebar && (
+        <button
+          onClick={() => setShowSidebar(true)}
+          className="absolute left-0 top-0 z-20 p-2 m-2 rounded-lg bg-ink-900/80 hover:bg-ink-800 text-ink-500 hover:text-amber-500 border border-ink-800/50 hover:border-ink-700 transition-theme backdrop-blur-sm"
+          aria-label="Show sidebar"
+          title="Show sidebar (⌘B)"
+        >
+          <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <line x1="3" y1="2" x2="3" y2="14" />
+            <line x1="7" y1="5" x2="13" y2="5" />
+            <line x1="7" y1="8" x2="11" y2="8" />
+            <line x1="7" y1="11" x2="13" y2="11" />
+          </svg>
+        </button>
+      )}
       
       <main id="main-content" className="flex-1 flex flex-col min-w-0">
         {view === "chat" && ws ? (

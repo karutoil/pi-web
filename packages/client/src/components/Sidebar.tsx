@@ -30,6 +30,7 @@ interface SidebarProps {
   onContinueLatest: () => void;
   streamingSessionIds: Set<string>;
   isAddingProject?: boolean;
+  onToggleSidebar?: () => void;
 }
 
 // ─── Helpers ───
@@ -108,6 +109,7 @@ export function Sidebar({
   onRefreshSessions,
   onContinueLatest,
   streamingSessionIds,
+  onToggleSidebar,
 }: SidebarProps) {
   const [sessionSearch, setSessionSearch] = useState("");
   const [focusedIdx, setFocusedIdx] = useState(-1);
@@ -187,6 +189,19 @@ export function Sidebar({
             <Icon name="sun" size={13} />
           )}
         </button>
+        {onToggleSidebar && (
+          <button
+            onClick={onToggleSidebar}
+            className="text-ink-600 hover:text-ink-400 transition-theme p-1"
+            title="Hide sidebar (⌘B)"
+            aria-label="Hide sidebar"
+          >
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <line x1="13" y1="2" x2="13" y2="14" />
+              <polyline points="9 5 13 8 9 11" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Breadcrumb nav — inline, borderless */}
