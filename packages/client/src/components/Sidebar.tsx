@@ -25,6 +25,7 @@ interface SidebarProps {
   onForkSession: (entryId: string) => void;
   onRefreshSessions: () => void;
   onContinueLatest: () => void;
+  streamingSessionIds: Set<string>;
 }
 
 // ─── Helpers ───
@@ -102,6 +103,7 @@ export function Sidebar({
   onForkSession,
   onRefreshSessions,
   onContinueLatest,
+  streamingSessionIds,
 }: SidebarProps) {
   const [sessionSearch, setSessionSearch] = useState("");
   const [focusedIdx, setFocusedIdx] = useState(-1);
@@ -164,13 +166,7 @@ export function Sidebar({
       {/* Header — compact single line */}
       <div className="relative flex items-center justify-between px-4 pt-4 pb-3">
         <div className="flex items-center gap-2.5">
-          <div className="w-6 h-6 rounded-md bg-amber-500/15 flex items-center justify-center">
-            <svg width="14" height="14" viewBox="0 0 128 128" fill="none" className="text-amber-500">
-              <path d="M44 52 L64 32 L84 52" stroke="currentColor" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M64 32 L64 88" stroke="currentColor" strokeWidth="8" strokeLinecap="round" />
-              <circle cx="64" cy="88" r="6" fill="currentColor" />
-            </svg>
-          </div>
+          <img src="/pi-logo.svg" alt="PI" className="w-6 h-6" />
           <span className="font-semibold text-ink-200 tracking-tight text-[0.82rem]">PI</span>
         </div>
         <button
@@ -237,6 +233,7 @@ export function Sidebar({
             onFork={onForkSession}
             onRefresh={onRefreshSessions}
             onContinueLatest={onContinueLatest}
+            streamingSessionIds={streamingSessionIds}
             projectName={selectedProject.name}
           />
         )}
@@ -414,6 +411,7 @@ function SessionList({
   onRefresh,
   onContinueLatest,
   projectName,
+  streamingSessionIds,
 }: {
   sessions: SessionSummary[];
   filteredSessions: SessionSummary[];
@@ -431,6 +429,7 @@ function SessionList({
   onRefresh: () => void;
   onContinueLatest: () => void;
   projectName: string;
+  streamingSessionIds: Set<string>;
 }) {
   return (
     <div className="py-2">
@@ -525,6 +524,7 @@ function SessionList({
                     session={s}
                     isActive={activeSession?.id === s.id}
                     isFocused={isFocused}
+                    isStreaming={streamingSessionIds.has(s.id)}
                     idx={globalIdx}
                     onSelect={onSelect}
                     onDelete={onDelete}
@@ -547,6 +547,7 @@ function SessionItem({
   session: s,
   isActive,
   isFocused,
+  isStreaming,
   idx,
   onSelect,
   onDelete,
@@ -556,6 +557,7 @@ function SessionItem({
   session: SessionSummary;
   isActive: boolean;
   isFocused: boolean;
+  isStreaming: boolean;
   idx: number;
   onSelect: (s: SessionSummary) => void;
   onDelete: (s: SessionSummary) => void;
@@ -591,8 +593,8 @@ function SessionItem({
     setCtxMenu({ x: e.clientX, y: e.clientY });
   };
 
-  // Status dot class
-  const dotColor = s.isRecentlyActive
+  // Status dot class — pulse only when actively streaming
+  const dotColor = isStreaming
     ? "bg-teal-400"
     : isActive
     ? "bg-amber-500/60"
@@ -617,7 +619,7 @@ function SessionItem({
       >
         <div className="flex items-center gap-2.5">
           {/* Minimal status dot */}
-          <span className={`shrink-0 w-1 h-1 rounded-full mt-1.5 ${dotColor} ${s.isRecentlyActive ? "animate-pulse" : ""}`} />
+          <span className={`shrink-0 w-1.5 h-1.5 rounded-full mt-1.5 ${dotColor} ${isStreaming ? "animate-pulse" : ""}`} />
 
           <div className="flex-1 min-w-0">
             {isRenaming ? (

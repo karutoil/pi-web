@@ -66,8 +66,9 @@ export function ChatHeader({ ws, cwd, sessionName }: Props) {
 
   return (
     <div className="flex items-center gap-2 px-4 py-2.5 border-b border-ink-800 bg-ink-900/30 shrink-0 flex-wrap">
-      {/* Session name */}
+      {/* Logo + Session name */}
       <div className="flex-1 min-w-0 flex items-center gap-2">
+        <img src="/pi-logo.svg" alt="" className="w-4 h-4 shrink-0 opacity-60" />
         {editingName ? (
           <input
             value={nameInput}

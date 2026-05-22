@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import type { Project, SessionSummary, SessionDetail } from "@pi-web/shared";
 import { Sidebar } from "./components/Sidebar";
 import { ChatView } from "./components/ChatView";
@@ -25,6 +25,17 @@ export default function App() {
     activeSession?.filePath || null,
     newSessionId,
   );
+
+  // Compute which sessions are actively streaming from the pool
+  const streamingSessionIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const conn of wsPool.pool.values()) {
+      if (conn.isStreaming && conn.state?.sessionId) {
+        ids.add(conn.state.sessionId);
+      }
+    }
+    return ids;
+  }, [wsPool.pool]);
 
   const [theme, toggleTheme] = useTheme();
 
@@ -219,6 +230,7 @@ export default function App() {
         onForkSession={handleForkSession}
         onRefreshSessions={handleRefreshSessions}
         onContinueLatest={handleContinueLatest}
+        streamingSessionIds={streamingSessionIds}
       />
       
       <main className="flex-1 flex flex-col min-w-0">

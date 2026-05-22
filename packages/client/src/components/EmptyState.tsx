@@ -12,14 +12,7 @@ export function EmptyState({ projects, onSelectProject, onAddProject }: EmptySta
       <div className="max-w-md w-full text-center animate-fade-in-up">
         {/* Logo */}
         <div className="mb-8">
-          <svg width="80" height="80" viewBox="0 0 128 128" fill="none" className="mx-auto">
-            <circle cx="64" cy="64" r="60" stroke="currentColor" strokeWidth="6" className="text-amber-600/40" />
-            <circle cx="64" cy="64" r="60" stroke="currentColor" strokeWidth="6" className="text-amber-500/30" />
-            <circle cx="64" cy="64" r="56" stroke="currentColor" strokeWidth="2" className="text-amber-500/15" />
-            <path d="M44 52 L64 32 L84 52" stroke="currentColor" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" className="text-amber-500" />
-            <path d="M64 32 L64 88" stroke="currentColor" strokeWidth="5" strokeLinecap="round" className="text-amber-500" />
-            <circle cx="64" cy="88" r="4.5" className="fill-amber-500" />
-          </svg>
+          <img src="/pi-logo.svg" alt="PI" width="80" height="80" className="mx-auto" />
         </div>
 
         <h1 className="text-3xl font-semibold text-ink-100 mb-3 tracking-tight">
