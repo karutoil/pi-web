@@ -1,4 +1,4 @@
-import { spawn, type IPty } from "@homebridge/node-pty-prebuilt-multiarch";
+import { spawn, type IPty } from "bun-pty";
 import type { ServerWebSocket } from "bun";
 
 // ─── Terminal Manager ───
@@ -20,19 +20,19 @@ class TerminalInstance {
   info: TerminalInfo;
   clients = new Set<ServerWebSocket>();
   buffer: string = "";
-  private maxBuffer = 50000; // Keep last 50K chars for reattach scrollback
+  private maxBuffer = 50000;
+  private dataDisposable: { dispose: () => void } | null = null;
+  private exitDisposable: { dispose: () => void } | null = null;
 
   constructor(info: TerminalInfo, pty: IPty) {
     this.info = info;
     this.pty = pty;
 
-    this.pty.onData((data: string) => {
-      // Append to buffer, trim if too large
+    this.dataDisposable = this.pty.onData((data: string) => {
       this.buffer += data;
       if (this.buffer.length > this.maxBuffer) {
         this.buffer = this.buffer.slice(this.buffer.length - this.maxBuffer);
       }
-      // Broadcast to all connected clients
       for (const ws of this.clients) {
         try {
           ws.send(JSON.stringify({ type: "term_output", id: this.info.id, data }));
@@ -40,7 +40,7 @@ class TerminalInstance {
       }
     });
 
-    this.pty.onExit(({ exitCode }) => {
+    this.exitDisposable = this.pty.onExit(({ exitCode }: { exitCode: number }) => {
       for (const ws of this.clients) {
         try {
           ws.send(JSON.stringify({ type: "term_exit", id: this.info.id, exitCode }));
@@ -67,6 +67,8 @@ class TerminalInstance {
   }
 
   kill() {
+    this.dataDisposable?.dispose();
+    this.exitDisposable?.dispose();
     try { this.pty.kill(); } catch {}
     terminals.delete(this.info.id);
   }
