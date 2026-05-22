@@ -109,8 +109,9 @@ export function getOrCreateAgent(
   sessionPath: string | null,
   provider?: string,
   model?: string,
+  newSessionId?: string,
 ): { agent: PooledAgent; isNew: boolean } {
-  const key = `${cwd}:${sessionPath || "__new__"}`;
+  const key = `${cwd}:${sessionPath || newSessionId || "__new__"}`;
   const existing = agentPool.get(key);
   if (existing) {
     console.log(`[pool] reusing existing agent ${key} (${existing.clientCount} clients)`);

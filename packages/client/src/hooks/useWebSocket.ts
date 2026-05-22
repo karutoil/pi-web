@@ -27,7 +27,7 @@ export interface WSBridge {
   setOnSessionEvent: (cb: ((event: WSServerMessage) => void) | null) => void;
 }
 
-export function useWebSocket(projectId: string | null, sessionPath: string | null): WSBridge | null {
+export function useWebSocket(projectId: string | null, sessionPath: string | null, newSessionId: string | null): WSBridge | null {
   const wsRef = useRef<WebSocket | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [liveMessages, setLiveMessages] = useState<Map<string, ChatMessage>>(new Map());
@@ -47,10 +47,11 @@ export function useWebSocket(projectId: string | null, sessionPath: string | nul
   const onSessionEventRef = useRef<((event: WSServerMessage) => void) | null>(null);
 
   useEffect(() => {
-    if (!projectId && !sessionPath) return;
+    if (!projectId && !sessionPath && !newSessionId) return;
     const params = new URLSearchParams();
     if (projectId) params.set("projectId", projectId);
     if (sessionPath) params.set("sessionPath", sessionPath);
+    if (newSessionId) params.set("newSessionId", newSessionId);
     const protocol = location.protocol === "https:" ? "wss" : "ws";
     const ws = new WebSocket(`${protocol}://${location.host}/ws/chat?${params}`);
     wsRef.current = ws;
@@ -64,7 +65,7 @@ export function useWebSocket(projectId: string | null, sessionPath: string | nul
       try { handleMessage(JSON.parse(event.data)); } catch (e) { console.error("WS parse error:", e); }
     };
     return () => { ws.close(); wsRef.current = null; };
-  }, [projectId, sessionPath]);
+  }, [projectId, sessionPath, newSessionId]);
 
   const handleMessage = useCallback((msg: WSServerMessage) => {
     switch (msg.type) {
@@ -169,7 +170,7 @@ export function useWebSocket(projectId: string | null, sessionPath: string | nul
     }
   }, [send]);
 
-  if (!projectId && !sessionPath) return null;
+  if (!projectId && !sessionPath && !newSessionId) return null;
 
   return {
     send, sendPrompt, messages, liveMessages, runningTools, state,

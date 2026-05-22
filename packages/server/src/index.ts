@@ -124,6 +124,7 @@ app.get(
     const sessionPath = c.req.query("sessionPath");
     const provider = c.req.query("provider");
     const model = c.req.query("model");
+    const newSessionId = c.req.query("newSessionId");
 
     return {
       async onOpen(_event, ws) {
@@ -133,11 +134,11 @@ app.get(
 
           if (project) touchProject(project.id);
 
-          const { agent, isNew } = getOrCreateAgent(cwd, sessionPath || null, provider || undefined, model || undefined);
+          const { agent, isNew } = getOrCreateAgent(cwd, sessionPath || null, provider || undefined, model || undefined, newSessionId || undefined);
           const raw = (ws as any).raw as ServerWebSocket;
 
           // Track which agent this WS belongs to
-          const agentKey = `${cwd}:${sessionPath || "__new__"}`;
+          const agentKey = `${cwd}:${sessionPath || newSessionId || "__new__"}`;
           wsToAgent.set(raw, agentKey);
 
           // Attach this client to the pooled agent

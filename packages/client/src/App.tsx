@@ -16,11 +16,13 @@ export default function App() {
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
   const [view, setView] = useState<ViewState>("projects");
   const [showAddProject, setShowAddProject] = useState(false);
+  const [newSessionId, setNewSessionId] = useState<string | null>(null);
 
   // WebSocket connection for active chat
   const ws = useWebSocket(
     selectedProject?.id || null,
-    activeSession?.filePath || null
+    activeSession?.filePath || null,
+    newSessionId
   );
 
   const [theme, toggleTheme] = useTheme();
@@ -79,14 +81,17 @@ export default function App() {
   }, []);
 
   const handleNewSession = useCallback(() => {
-    if (ws) {
-      ws.send({ type: "new_session" });
-      setSessionDetail(null);
-      setActiveSession(null);
-      // Refresh session list after PI creates the new session file
-      setTimeout(() => fetchSessions(), 1500);
-    }
-  }, [ws, fetchSessions]);
+    // Generate a unique ID for the new session — this creates a fresh WS/agent
+    const id = crypto.randomUUID();
+    setNewSessionId(id);
+    setActiveSession(null);
+    setSessionDetail(null);
+    setView("chat");
+    // Clear after WS connects so future navigations don't reuse it
+    setTimeout(() => setNewSessionId(null), 500);
+    // Refresh session list after PI creates the new session file
+    setTimeout(() => fetchSessions(), 1500);
+  }, [fetchSessions]);
 
   const handleBack = useCallback(() => {
     if (view === "chat") {
