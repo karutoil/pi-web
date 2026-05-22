@@ -43,3 +43,4 @@ packages/client/vite.config.js
 packages/client/dist/
 packages/shared/dist/
 .pi-web.db
+.pi/
