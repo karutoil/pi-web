@@ -77,6 +77,38 @@ app.get("/api/sessions/detail", async (c) => {
   return c.json({ session: detail });
 });
 
+// Delete session file
+app.delete("/api/sessions/:path", async (c) => {
+  const sessionPath = decodeURIComponent(c.req.param("path"));
+  try {
+    const { unlink } = await import("node:fs/promises");
+    await unlink(sessionPath);
+    return c.json({ success: true });
+  } catch (e: any) {
+    if (e.code === "ENOENT") return c.json({ error: "Session not found" }, 404);
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Rename session
+app.patch("/api/sessions/rename", async (c) => {
+  const { sessionPath, name } = await c.req.json();
+  if (!sessionPath || !name) return c.json({ error: "sessionPath and name required" }, 400);
+  
+  try {
+    const { readFile: rf, writeFile } = await import("node:fs/promises");
+    const content = await rf(sessionPath, "utf-8");
+    const lines = content.trim().split("\n");
+    // Append a session_info entry with the name
+    const renameEntry = JSON.stringify({ type: "session_info", name, timestamp: new Date().toISOString() });
+    const newContent = content.trim() + "\n" + renameEntry + "\n";
+    await writeFile(sessionPath, newContent);
+    return c.json({ success: true, name });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
 // Health
 app.get("/api/health", (c) => c.json({ status: "ok", time: Date.now() }));
 
@@ -201,6 +233,55 @@ app.get(
             case "set_session_name":
               agent.setSessionName(msg.name);
               break;
+            case "delete_session": {
+              const sessionId = msg.sessionId;
+              const rawWs = (ws as any).raw as ServerWebSocket;
+              const proj = projectId ? getProject(projectId) : null;
+              if (proj) {
+                listProjectSessions(proj.path).then(list => {
+                  const target = list.find(s => s.id === sessionId);
+                  if (target) {
+                    import("node:fs/promises").then(({ unlink }) => unlink(target.filePath))
+                      .then(() => { if (rawWs.readyState === 1) rawWs.send(JSON.stringify({ type: "session_deleted", sessionId })); })
+                      .catch((e: any) => { if (rawWs.readyState === 1) rawWs.send(JSON.stringify({ type: "error", message: `Failed to delete: ${e.message}` })); });
+                  }
+                });
+              }
+              break;
+            }
+            case "rename_session": {
+              const { sessionId, name } = msg;
+              const rawWs2 = (ws as any).raw as ServerWebSocket;
+              const proj2 = projectId ? getProject(projectId) : null;
+              if (proj2) {
+                listProjectSessions(proj2.path).then(list => {
+                  const target = list.find(s => s.id === sessionId);
+                  if (target) {
+                    import("node:fs/promises").then(({ readFile: rf, writeFile: wf }) =>
+                      rf(target.filePath, "utf-8").then(content => {
+                        const renameEntry = JSON.stringify({ type: "session_info", name, timestamp: new Date().toISOString() });
+                        return wf(target.filePath, content.trim() + "\n" + renameEntry + "\n");
+                      })
+                    ).then(() => {
+                      if (rawWs2.readyState === 1) rawWs2.send(JSON.stringify({ type: "session_renamed", sessionId, name }));
+                    }).catch((e: any) => {
+                      if (rawWs2.readyState === 1) rawWs2.send(JSON.stringify({ type: "error", message: `Failed to rename: ${e.message}` }));
+                    });
+                  }
+                });
+              }
+              break;
+            }
+            case "refresh_sessions": {
+              const rawWs3 = (ws as any).raw as ServerWebSocket;
+              const proj3 = msg.projectId ? getProject(msg.projectId) : null;
+              if (proj3) {
+                listProjectSessions(proj3.path).then(refreshed => {
+                  if (rawWs3.readyState === 1) rawWs3.send(JSON.stringify({ type: "sessions_refreshed", sessions: refreshed }));
+                });
+              }
+              break;
+            }
             case "extension_ui_response":
               agent.extensionUIResponse(msg.id, {
                 value: msg.value,

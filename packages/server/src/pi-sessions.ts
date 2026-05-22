@@ -59,8 +59,13 @@ async function parseSessionSummary(filePath: string, mtime: string): Promise<Ses
   let header: any = null;
   let messageCount = 0;
   let lastMessage: string | null = null;
+  let firstMessage: string | null = null;
   let model: string | null = null;
   let name: string | null = null;
+  let totalTokens = 0;
+  let totalCost = 0;
+  let lastActiveAt = "";
+  let firstUserTimestamp = "";
   
   for (const line of lines) {
     try {
@@ -72,30 +77,52 @@ async function parseSessionSummary(filePath: string, mtime: string): Promise<Ses
         const msg = entry.message;
         if (msg.role === "user") {
           const text = extractText(msg.content);
-          if (text && (!lastMessage || entry.timestamp > (header?.timestamp || ""))) {
+          if (text && !firstMessage) {
+            firstMessage = text.slice(0, 200);
+            firstUserTimestamp = entry.timestamp || "";
+          }
+          if (text) {
             lastMessage = text.slice(0, 200);
           }
+          lastActiveAt = entry.timestamp || lastActiveAt;
         }
-        if (msg.role === "assistant" && msg.model) {
-          model = msg.model;
+        if (msg.role === "assistant") {
+          lastActiveAt = entry.timestamp || lastActiveAt;
+          if (msg.model) model = msg.model;
+          if (msg.usage) {
+            totalTokens += (msg.usage.totalTokens || msg.usage.input + msg.usage.output);
+            if (msg.usage.cost?.total) totalCost += msg.usage.cost.total;
+          }
         }
       } else if (entry.type === "session_info" && entry.name) {
         name = entry.name;
+        lastActiveAt = entry.timestamp || lastActiveAt;
       }
     } catch {
       // skip malformed lines
     }
   }
   
+  const timestamp = header?.timestamp || mtime;
+  const now = Date.now();
+  const lastActive = lastActiveAt ? new Date(lastActiveAt).getTime() : new Date(timestamp).getTime();
+  const isRecentlyActive = (now - lastActive) < 5 * 60 * 1000; // 5 min
+  
   return {
     id: header?.id || basename(filePath, ".jsonl"),
     filePath,
     cwd: header?.cwd || "",
-    timestamp: header?.timestamp || mtime,
+    timestamp,
     name,
     messageCount,
     lastMessage,
     model,
+    firstMessage,
+    createdAt: firstUserTimestamp || timestamp,
+    lastActiveAt: lastActiveAt || timestamp,
+    tokenCount: totalTokens,
+    cost: totalCost,
+    isRecentlyActive,
   };
 }
 

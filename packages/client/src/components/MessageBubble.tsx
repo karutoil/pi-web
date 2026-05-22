@@ -186,6 +186,7 @@ function AssistantBubble({
 
 function ThinkingBlock({ thinking }: { thinking: string }) {
   const [collapsed, setCollapsed] = useState(false);
+  const clean = thinking.replace(/\x1b\[[0-9;]*m/g, "");
   
   return (
     <div className="border border-amber-500/20 rounded-lg overflow-hidden bg-amber-500/5">
@@ -201,11 +202,11 @@ function ThinkingBlock({ thinking }: { thinking: string }) {
           <path d="M3 1 L7 5 L3 9" />
         </svg>
         Reasoning
-        {collapsed && <span className="text-ink-600 ml-1">({thinking.split("\n").length} lines)</span>}
+        {collapsed && <span className="text-ink-600 ml-1">({clean.split("\n").length} lines)</span>}
       </button>
       {!collapsed && (
         <div className="px-3 pb-2 text-ink-500 text-xs leading-relaxed whitespace-pre-wrap border-t border-amber-500/10 pt-2 max-h-64 overflow-y-auto">
-          {thinking}
+          {clean}
         </div>
       )}
     </div>

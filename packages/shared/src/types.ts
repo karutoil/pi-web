@@ -7,6 +7,9 @@ export interface Project {
   addedAt: string;
   lastOpenedAt: string | null;
   sessionCount: number;
+  lastActiveAt: string | null;
+  totalTokens: number;
+  totalCost: number;
 }
 
 export interface SessionSummary {
@@ -18,6 +21,12 @@ export interface SessionSummary {
   messageCount: number;
   lastMessage: string | null;
   model: string | null;
+  firstMessage: string | null;
+  createdAt: string;
+  lastActiveAt: string;
+  tokenCount: number;
+  cost: number;
+  isRecentlyActive: boolean;
 }
 
 export interface SessionDetail {
@@ -118,7 +127,10 @@ export type WSClientMessage =
   | { type: "new_session" }
   | { type: "set_model"; provider: string; modelId: string }
   | { type: "set_thinking"; level: string }
+  | { type: "delete_session"; sessionId: string }
+  | { type: "rename_session"; sessionId: string; name: string }
   | { type: "fork"; entryId: string }
+  | { type: "refresh_sessions"; projectId: string }
   | { type: "get_available_models" }
   | { type: "get_commands" }
   | { type: "get_fork_messages" }
@@ -152,6 +164,9 @@ export type WSServerMessage =
   | { type: "fork_messages"; messages: ForkEntry[] }
   | { type: "session_stats"; stats: SessionStats }
   | { type: "session_name_changed"; name: string }
+  | { type: "session_deleted"; sessionId: string }
+  | { type: "session_renamed"; sessionId: string; name: string }
+  | { type: "sessions_refreshed"; sessions: SessionSummary[] }
   | { type: "extension_ui_request"; ui: ExtensionUIRequest };
 
 // Extension UI protocol

@@ -34,7 +34,7 @@ export function addProject(name: string, path: string): Project {
   d.run("INSERT INTO projects (id, name, path, added_at) VALUES (?, ?, ?, ?)", [
     id, name, path, addedAt,
   ]);
-  return { id, name, path, addedAt, lastOpenedAt: null, sessionCount: 0 };
+  return { id, name, path, addedAt, lastOpenedAt: null, sessionCount: 0, lastActiveAt: null, totalTokens: 0, totalCost: 0 };
 }
 
 export function removeProject(id: string): boolean {
@@ -53,6 +53,9 @@ export function listProjects(): Project[] {
     addedAt: r.added_at,
     lastOpenedAt: r.last_opened_at,
     sessionCount: 0,
+    lastActiveAt: r.last_opened_at,
+    totalTokens: 0,
+    totalCost: 0,
   }));
 }
 
@@ -67,6 +70,9 @@ export function getProject(id: string): Project | null {
     addedAt: row.added_at,
     lastOpenedAt: row.last_opened_at,
     sessionCount: 0,
+    lastActiveAt: row.last_opened_at,
+    totalTokens: 0,
+    totalCost: 0,
   };
 }
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import type { Project, SessionSummary } from "@pi-web/shared";
 import type { ViewState } from "../App";
 import type { Theme } from "../hooks/useTheme";
@@ -19,7 +19,66 @@ interface SidebarProps {
   onDeleteProject: (id: string) => void;
   onToggleAddProject: () => void;
   onToggleTheme: () => void;
+  onDeleteSession: (s: SessionSummary) => void;
+  onRenameSession: (s: SessionSummary, name: string) => void;
+  onForkSession: (entryId: string) => void;
+  onRefreshSessions: () => void;
+  onContinueLatest: () => void;
 }
+
+// ─── Helpers ───
+
+function formatTimeAgo(ts: string): string {
+  const d = new Date(ts);
+  const now = Date.now();
+  const diff = now - d.getTime();
+  if (diff < 0) return "now";
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "now";
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d`;
+  return d.toLocaleDateString();
+}
+
+function formatCost(cost: number): string {
+  if (cost <= 0) return "";
+  if (cost < 0.01) return "<$0.01";
+  return `$${cost.toFixed(2)}`;
+}
+
+function formatTokens(n: number): string {
+  if (n <= 0) return "";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return `${n}`;
+}
+
+type DateGroup = "today" | "yesterday" | "thisWeek" | "older";
+
+function getDateGroup(ts: string): DateGroup {
+  const d = new Date(ts);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today.getTime() - 86400000);
+  const thisWeek = new Date(today.getTime() - 7 * 86400000);
+  const t = d.getTime();
+  if (t >= today.getTime()) return "today";
+  if (t >= yesterday.getTime()) return "yesterday";
+  if (t >= thisWeek.getTime()) return "thisWeek";
+  return "older";
+}
+
+const GROUP_LABELS: Record<DateGroup, string> = {
+  today: "Today",
+  yesterday: "Yesterday",
+  thisWeek: "This Week",
+  older: "Older",
+};
+
+// ─── Main Sidebar ───
 
 export function Sidebar({
   projects,
@@ -37,9 +96,69 @@ export function Sidebar({
   onDeleteProject,
   onToggleAddProject,
   onToggleTheme,
+  onDeleteSession,
+  onRenameSession,
+  onForkSession,
+  onRefreshSessions,
+  onContinueLatest,
 }: SidebarProps) {
+  const [sessionSearch, setSessionSearch] = useState("");
+  const [focusedIdx, setFocusedIdx] = useState(-1);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  // Filtered sessions
+  const filteredSessions = useMemo(() => {
+    if (!sessionSearch.trim()) return sessions;
+    const q = sessionSearch.toLowerCase();
+    return sessions.filter(
+      s => (s.name || s.lastMessage || "").toLowerCase().includes(q)
+        || (s.model || "").toLowerCase().includes(q)
+    );
+  }, [sessions, sessionSearch]);
+
+  // Group sessions by date
+  const groupedSessions = useMemo(() => {
+    const groups: Record<DateGroup, SessionSummary[]> = { today: [], yesterday: [], thisWeek: [], older: [] };
+    for (const s of filteredSessions) {
+      groups[getDateGroup(s.lastActiveAt || s.timestamp)].push(s);
+    }
+    return groups;
+  }, [filteredSessions]);
+
+  // Flat list for keyboard navigation
+  const flatSessions = useMemo(() => {
+    const result: SessionSummary[] = [];
+    for (const g of ["today", "yesterday", "thisWeek", "older"] as DateGroup[]) {
+      result.push(...groupedSessions[g]);
+    }
+    return result;
+  }, [groupedSessions]);
+
+  // Keyboard navigation
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (view !== "sessions" && view !== "chat") return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setFocusedIdx(i => Math.min(i + 1, flatSessions.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setFocusedIdx(i => Math.max(i - 1, 0));
+    } else if (e.key === "Enter" && focusedIdx >= 0 && focusedIdx < flatSessions.length) {
+      e.preventDefault();
+      onSelectSession(flatSessions[focusedIdx]);
+    }
+  }, [view, flatSessions, focusedIdx, onSelectSession]);
+
+  // Scroll focused item into view
+  useEffect(() => {
+    if (focusedIdx >= 0 && listRef.current) {
+      const items = listRef.current.querySelectorAll("[data-session-idx]");
+      items[focusedIdx]?.scrollIntoView({ block: "nearest" });
+    }
+  }, [focusedIdx]);
+
   return (
-    <aside className="w-72 shrink-0 flex flex-col border-r border-ink-800 bg-ink-900/50">
+    <aside className="w-72 shrink-0 flex flex-col border-r border-ink-800 bg-ink-900/50" onKeyDown={handleKeyDown}>
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3.5 border-b border-ink-800">
         <svg width="24" height="24" viewBox="0 0 128 128" fill="none" className="shrink-0">
@@ -70,7 +189,7 @@ export function Sidebar({
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar">
+      <div className="flex-1 overflow-y-auto custom-scrollbar" ref={listRef}>
         {view === "projects" && (
           <ProjectList
             projects={projects}
@@ -83,22 +202,23 @@ export function Sidebar({
           />
         )}
 
-        {view === "sessions" && selectedProject && (
+        {(view === "sessions" || view === "chat") && selectedProject && (
           <SessionList
             sessions={sessions}
+            filteredSessions={filteredSessions}
+            groupedSessions={groupedSessions}
+            flatSessions={flatSessions}
             activeSession={activeSession}
+            focusedIdx={focusedIdx}
+            search={sessionSearch}
+            onSearch={setSessionSearch}
             onSelect={onSelectSession}
             onNewSession={onNewSession}
-            projectName={selectedProject.name}
-          />
-        )}
-
-        {view === "chat" && selectedProject && (
-          <SessionList
-            sessions={sessions}
-            activeSession={activeSession}
-            onSelect={onSelectSession}
-            onNewSession={onNewSession}
+            onDelete={onDeleteSession}
+            onRename={onRenameSession}
+            onFork={onForkSession}
+            onRefresh={onRefreshSessions}
+            onContinueLatest={onContinueLatest}
             projectName={selectedProject.name}
           />
         )}
@@ -128,6 +248,8 @@ export function Sidebar({
     </aside>
   );
 }
+
+// ─── Project List ───
 
 function ProjectList({
   projects,
@@ -186,6 +308,13 @@ function ProjectList({
               <div className="min-w-0">
                 <div className="text-ink-200 text-sm font-medium truncate">{p.name}</div>
                 <div className="text-ink-500 text-xs font-mono truncate mt-0.5">{p.path}</div>
+                {/* Project stats */}
+                <div className="flex items-center gap-2 mt-1 text-ink-600 text-[0.65rem] font-mono">
+                  {p.sessionCount > 0 && <span>{p.sessionCount} sessions</span>}
+                  {p.lastActiveAt && <span>· {formatTimeAgo(p.lastActiveAt)}</span>}
+                  {p.totalTokens > 0 && <span>· {formatTokens(p.totalTokens)} tok</span>}
+                  {p.totalCost > 0 && <span>· {formatCost(p.totalCost)}</span>}
+                </div>
               </div>
               <button
                 onClick={(e) => {
@@ -206,6 +335,8 @@ function ProjectList({
     </div>
   );
 }
+
+// ─── Add Project Form ───
 
 function AddProjectForm({
   onAdd,
@@ -260,64 +391,312 @@ function AddProjectForm({
   );
 }
 
+// ─── Session List (with all new features) ───
+
 function SessionList({
   sessions,
+  filteredSessions,
+  groupedSessions,
+  flatSessions,
   activeSession,
+  focusedIdx,
+  search,
+  onSearch,
   onSelect,
   onNewSession,
+  onDelete,
+  onRename,
+  onFork,
+  onRefresh,
+  onContinueLatest,
   projectName,
 }: {
   sessions: SessionSummary[];
+  filteredSessions: SessionSummary[];
+  groupedSessions: Record<DateGroup, SessionSummary[]>;
+  flatSessions: SessionSummary[];
   activeSession: SessionSummary | null;
+  focusedIdx: number;
+  search: string;
+  onSearch: (q: string) => void;
   onSelect: (s: SessionSummary) => void;
   onNewSession: () => void;
+  onDelete: (s: SessionSummary) => void;
+  onRename: (s: SessionSummary, name: string) => void;
+  onFork: (entryId: string) => void;
+  onRefresh: () => void;
+  onContinueLatest: () => void;
   projectName: string;
 }) {
   return (
     <div className="p-3">
-      <div className="flex items-center justify-between mb-3 px-1">
+      {/* Header with search + actions */}
+      <div className="flex items-center justify-between mb-2 px-1">
         <div>
           <h2 className="text-xs font-semibold text-ink-400 uppercase tracking-wider">Sessions</h2>
           <p className="text-ink-600 text-xs font-mono mt-0.5 truncate">{projectName}</p>
         </div>
-        <button
-          onClick={onNewSession}
-          className="text-ink-500 hover:text-ink-200 transition-theme p-1 rounded hover:bg-ink-850"
-          title="New session"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M8 3 L8 13 M3 8 L13 8" />
-          </svg>
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={onRefresh}
+            className="text-ink-500 hover:text-ink-200 transition-theme p-1 rounded hover:bg-ink-850"
+            title="Refresh sessions"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M2 8 A6 6 0 1 1 8 14" />
+              <path d="M2 8 L2 4 L5 6" />
+            </svg>
+          </button>
+          <button
+            onClick={onNewSession}
+            className="text-ink-500 hover:text-ink-200 transition-theme p-1 rounded hover:bg-ink-850"
+            title="New session"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M8 3 L8 13 M3 8 L13 8" />
+            </svg>
+          </button>
+        </div>
       </div>
 
-      {sessions.length === 0 && (
+      {/* Search / Filter */}
+      <div className="relative mb-2">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-600">
+          <circle cx="7" cy="7" r="4" />
+          <path d="M10 10 L14 14" />
+        </svg>
+        <input
+          type="text"
+          placeholder="Filter sessions..."
+          value={search}
+          onChange={e => onSearch(e.target.value)}
+          className="w-full bg-ink-900 border border-ink-800 rounded-md pl-7 pr-2 py-1.5 text-ink-200 text-xs font-mono placeholder-ink-600 focus:outline-none focus:border-amber-600/60 transition-theme"
+        />
+        {search && (
+          <button
+            onClick={() => onSearch("")}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-ink-600 hover:text-ink-400"
+          >
+            <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M4 4 L12 12 M12 4 L4 12" />
+            </svg>
+          </button>
+        )}
+      </div>
+
+      {/* Continue latest */}
+      {sessions.length > 0 && !search && (
+        <button
+          onClick={onContinueLatest}
+          className="w-full text-left px-3 py-2 rounded-md mb-2 bg-amber-600/10 border border-amber-600/20 text-amber-400 text-xs font-medium hover:bg-amber-600/15 transition-theme"
+        >
+          ▶ Continue latest session
+        </button>
+      )}
+
+      {filteredSessions.length === 0 && (
         <p className="text-ink-600 text-sm px-1 py-4 text-center italic">
-          No sessions. Click + to start.
+          {search ? "No matching sessions." : "No sessions. Click + to start."}
         </p>
       )}
 
-      <div className="space-y-0.5">
-        {sessions.map(s => (
-          <button
-            key={s.id}
-            onClick={() => onSelect(s)}
-            className={`w-full text-left px-3 py-2.5 rounded-md transition-theme ${
-              activeSession?.id === s.id
-                ? "bg-ink-850 border border-ink-700"
-                : "hover:bg-ink-850/50 border border-transparent"
-            }`}
-          >
-            <div className="text-ink-200 text-sm truncate">
-              {s.name || s.lastMessage || "Untitled"}
+      {/* Grouped session list */}
+      {(["today", "yesterday", "thisWeek", "older"] as DateGroup[]).map(group => {
+        const items = groupedSessions[group];
+        if (items.length === 0) return null;
+        return (
+          <div key={group} className="mb-2">
+            <div className="px-1 py-1 text-[0.6rem] font-semibold text-ink-500 uppercase tracking-widest">
+              {GROUP_LABELS[group]} ({items.length})
             </div>
-            <div className="flex items-center gap-2 mt-1 text-ink-600 text-xs font-mono">
+            <div className="space-y-0.5">
+              {items.map((s, idx) => {
+                const globalIdx = flatSessions.indexOf(s);
+                const isFocused = focusedIdx === globalIdx;
+                return (
+                  <SessionItem
+                    key={s.id}
+                    session={s}
+                    isActive={activeSession?.id === s.id}
+                    isFocused={isFocused}
+                    idx={globalIdx}
+                    onSelect={onSelect}
+                    onDelete={onDelete}
+                    onRename={onRename}
+                    onFork={onFork}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Session Item (with hover preview, delete, rename, fork) ───
+
+function SessionItem({
+  session: s,
+  isActive,
+  isFocused,
+  idx,
+  onSelect,
+  onDelete,
+  onRename,
+  onFork,
+}: {
+  session: SessionSummary;
+  isActive: boolean;
+  isFocused: boolean;
+  idx: number;
+  onSelect: (s: SessionSummary) => void;
+  onDelete: (s: SessionSummary) => void;
+  onRename: (s: SessionSummary, name: string) => void;
+  onFork: (entryId: string) => void;
+}) {
+  const [showMenu, setShowMenu] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState(s.name || "");
+  const menuRef = useRef<HTMLDivElement>(null);
+  const renameRef = useRef<HTMLInputElement>(null);
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!showMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setShowMenu(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showMenu]);
+
+  // Focus rename input
+  useEffect(() => {
+    if (isRenaming && renameRef.current) {
+      renameRef.current.focus();
+      renameRef.current.select();
+    }
+  }, [isRenaming]);
+
+  const handleRenameSubmit = () => {
+    const trimmed = renameValue.trim();
+    if (trimmed && trimmed !== s.name) {
+      onRename(s, trimmed);
+    }
+    setIsRenaming(false);
+  };
+
+  const displayName = s.name || s.lastMessage || "Untitled";
+  const preview = s.firstMessage || s.lastMessage;
+
+  return (
+    <div
+      data-session-idx={idx}
+      className={`relative group rounded-md transition-theme ${
+        isActive
+          ? "bg-ink-850 border border-ink-700"
+          : isFocused
+          ? "bg-ink-850/70 border border-ink-800"
+          : "hover:bg-ink-850/50 border border-transparent"
+      }`}
+    >
+      <button
+        onClick={() => onSelect(s)}
+        className="w-full text-left px-3 py-2"
+        title={preview || undefined}
+      >
+        <div className="flex items-center gap-2">
+          {/* Active/recently active indicator */}
+          {s.isRecentlyActive && (
+            <span className="w-1.5 h-1.5 rounded-full bg-teal-400 shrink-0 animate-pulse" title="Active now" />
+          )}
+          {!s.isRecentlyActive && isActive && (
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" title="Selected" />
+          )}
+          <div className="flex-1 min-w-0">
+            {isRenaming ? (
+              <input
+                ref={renameRef}
+                value={renameValue}
+                onChange={e => setRenameValue(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter") handleRenameSubmit();
+                  if (e.key === "Escape") setIsRenaming(false);
+                  e.stopPropagation();
+                }}
+                onBlur={handleRenameSubmit}
+                onClick={e => e.stopPropagation()}
+                className="w-full bg-ink-900 border border-amber-600/40 rounded px-1.5 py-0.5 text-ink-200 text-sm focus:outline-none"
+              />
+            ) : (
+              <div className="text-ink-200 text-sm truncate">{displayName}</div>
+            )}
+            <div className="flex items-center gap-1.5 mt-0.5 text-ink-600 text-[0.65rem] font-mono flex-wrap">
+              <span>{formatTimeAgo(s.lastActiveAt || s.timestamp)}</span>
+              <span>·</span>
               <span>{s.messageCount} msgs</span>
-              {s.model && <span>· {s.model}</span>}
+              {s.model && <><span>·</span><span className="truncate max-w-[80px]">{s.model}</span></>}
+              {s.tokenCount > 0 && <><span>·</span><span>{formatTokens(s.tokenCount)} tok</span></>}
+              {s.cost > 0 && <><span>·</span><span>{formatCost(s.cost)}</span></>}
             </div>
+          </div>
+          {/* Context menu trigger */}
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowMenu(v => !v); }}
+            className="opacity-0 group-hover:opacity-100 text-ink-600 hover:text-ink-300 transition-all p-0.5 shrink-0"
+            title="Session actions"
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+              <circle cx="8" cy="3" r="1.5" />
+              <circle cx="8" cy="8" r="1.5" />
+              <circle cx="8" cy="13" r="1.5" />
+            </svg>
           </button>
-        ))}
-      </div>
+        </div>
+      </button>
+
+      {/* Context menu */}
+      {showMenu && (
+        <div
+          ref={menuRef}
+          className="absolute right-2 top-8 z-20 bg-ink-900 border border-ink-700 rounded-lg shadow-xl py-1 min-w-[140px] animate-fade-in-up"
+        >
+          <button
+            onClick={(e) => { e.stopPropagation(); setIsRenaming(true); setRenameValue(s.name || ""); setShowMenu(false); }}
+            className="w-full text-left px-3 py-1.5 text-xs text-ink-300 hover:bg-ink-800 hover:text-ink-100 transition-theme flex items-center gap-2"
+          >
+            <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 3 L5 13 M3 10 L5 13 L8 12" />
+            </svg>
+            Rename
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onFork(s.id); setShowMenu(false); }}
+            className="w-full text-left px-3 py-1.5 text-xs text-ink-300 hover:bg-ink-800 hover:text-ink-100 transition-theme flex items-center gap-2"
+          >
+            <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M8 3 L8 8 L3 13 M8 8 L13 13" />
+            </svg>
+            Fork from here
+          </button>
+          <div className="border-t border-ink-800 my-0.5" />
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowMenu(false);
+              if (confirm(`Delete "${displayName}"? This removes the session file.`)) onDelete(s);
+            }}
+            className="w-full text-left px-3 py-1.5 text-xs text-rose-400 hover:bg-rose-600/10 hover:text-rose-300 transition-theme flex items-center gap-2"
+          >
+            <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M3 5 L13 5 M6 5 L6 3 L10 3 L10 5 M5 5 L5 13 L11 13 L11 5" />
+            </svg>
+            Delete
+          </button>
+        </div>
+      )}
     </div>
   );
 }

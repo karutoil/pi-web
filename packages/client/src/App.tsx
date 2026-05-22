@@ -129,6 +129,69 @@ export default function App() {
     }
   }, [selectedProject]);
 
+  // Delete session
+  const handleDeleteSession = useCallback(async (session: SessionSummary) => {
+    try {
+      await fetch(`/api/sessions/${encodeURIComponent(session.filePath)}`, { method: "DELETE" });
+      setSessions(prev => prev.filter(s => s.id !== session.id));
+      if (activeSession?.id === session.id) {
+        setActiveSession(null);
+        setView("sessions");
+      }
+    } catch (e) {
+      console.error("Failed to delete session:", e);
+    }
+  }, [activeSession]);
+
+  // Rename session
+  const handleRenameSession = useCallback(async (session: SessionSummary, name: string) => {
+    try {
+      const r = await fetch("/api/sessions/rename", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionPath: session.filePath, name }),
+      });
+      if (r.ok) {
+        setSessions(prev => prev.map(s => s.id === session.id ? { ...s, name } : s));
+        if (activeSession?.id === session.id) {
+          setActiveSession(prev => prev ? { ...prev, name } : prev);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to rename session:", e);
+    }
+  }, [activeSession]);
+
+  // Fork session
+  const handleForkSession = useCallback((entryId: string) => {
+    if (ws) {
+      ws.send({ type: "fork", entryId });
+      setTimeout(() => fetchSessions(), 1500);
+    }
+  }, [ws, fetchSessions]);
+
+  // Refresh sessions manually
+  const handleRefreshSessions = useCallback(() => {
+    fetchSessions();
+  }, [fetchSessions]);
+
+  // Continue latest session
+  const handleContinueLatest = useCallback(() => {
+    if (sessions.length > 0) {
+      handleSelectSession(sessions[0]);
+    }
+  }, [sessions, handleSelectSession]);
+
+  // Listen for WS session events
+  useEffect(() => {
+    if (!ws) return;
+    ws.setOnSessionEvent((event) => {
+      if (event.type === "sessions_refreshed") {
+        setSessions(event.sessions || []);
+      }
+    });
+  }, [ws]);
+
   return (
     <div className="flex h-screen overflow-hidden bg-ink-950">
       <Sidebar
@@ -147,6 +210,11 @@ export default function App() {
         onDeleteProject={handleDeleteProject}
         onToggleAddProject={() => setShowAddProject(v => !v)}
         onToggleTheme={toggleTheme}
+        onDeleteSession={handleDeleteSession}
+        onRenameSession={handleRenameSession}
+        onForkSession={handleForkSession}
+        onRefreshSessions={handleRefreshSessions}
+        onContinueLatest={handleContinueLatest}
       />
       
       <main className="flex-1 flex flex-col min-w-0">

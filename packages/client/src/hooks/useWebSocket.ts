@@ -24,6 +24,7 @@ export interface WSBridge {
   pendingUI: ExtensionUIRequest | null;
   respondToUI: (response: { value?: string; confirmed?: boolean; cancelled?: boolean }) => void;
   setOnSessionLoaded: (cb: ((session: SessionDetail) => void) | null) => void;
+  setOnSessionEvent: (cb: ((event: WSServerMessage) => void) | null) => void;
 }
 
 export function useWebSocket(projectId: string | null, sessionPath: string | null): WSBridge | null {
@@ -43,6 +44,7 @@ export function useWebSocket(projectId: string | null, sessionPath: string | nul
   const messagesRef = useRef<ChatMessage[]>([]);
   const preRunCountRef = useRef(0);
   const onSessionLoadedRef = useRef<((session: SessionDetail) => void) | null>(null);
+  const onSessionEventRef = useRef<((event: WSServerMessage) => void) | null>(null);
 
   useEffect(() => {
     if (!projectId && !sessionPath) return;
@@ -116,6 +118,15 @@ export function useWebSocket(projectId: string | null, sessionPath: string | nul
       case "session_name_changed":
         setState(prev => prev ? { ...prev, sessionName: msg.name } : prev);
         break;
+      case "session_deleted":
+        if (onSessionEventRef.current) onSessionEventRef.current(msg);
+        break;
+      case "session_renamed":
+        if (onSessionEventRef.current) onSessionEventRef.current(msg);
+        break;
+      case "sessions_refreshed":
+        if (onSessionEventRef.current) onSessionEventRef.current(msg);
+        break;
       case "extension_ui_request": {
         // Fire-and-forget methods — ignore (setStatus, setWidget, setTitle, set_editor_text)
         const dialogMethods = ["select", "confirm", "input", "editor"];
@@ -165,5 +176,6 @@ export function useWebSocket(projectId: string | null, sessionPath: string | nul
     isConnected, isStreaming, models, commands, forkMessages, sessionStats,
     pendingUI, respondToUI,
     setOnSessionLoaded: (cb) => { onSessionLoadedRef.current = cb; },
+    setOnSessionEvent: (cb) => { onSessionEventRef.current = cb; },
   };
 }
