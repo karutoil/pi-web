@@ -155,8 +155,8 @@ app.get("/api/terminals", (c) => {
 });
 
 // Create a new terminal
-app.post("/api/terminals", (c) => {
-  const { id, projectId, cwd, name } = c.req.json() as any;
+app.post("/api/terminals", async (c) => {
+  const { id, projectId, cwd, name } = await c.req.json() as any;
   if (!id || !projectId || !cwd) return c.json({ error: "id, projectId, and cwd required" }, 400);
   const info = createTerminal(id, projectId, cwd, name || "Terminal");
   return c.json({ terminal: info }, 201);
@@ -262,8 +262,8 @@ app.get(
             try {
               await agent.start();
             } catch (err: any) {
-              console.error("Failed to start agent:", err);
-              try { ws.send(JSON.stringify({ type: "error", message: `Failed to start agent: ${err.message}` })); } catch {}
+              console.error("Failed to start agent:", err.message || err);
+              try { if (ws.readyState === 1) ws.send(JSON.stringify({ type: "error", message: `Failed to start agent: ${err.message}` })); } catch {}
             }
           }
         } catch (fatalErr: any) {
