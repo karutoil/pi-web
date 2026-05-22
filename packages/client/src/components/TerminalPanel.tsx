@@ -11,19 +11,22 @@ interface TerminalTab {
 }
 
 // ─── Single Terminal Instance ───
+// Only rendered when it's the active tab. xterm needs a real visible container.
 
-function TerminalInstance({ tab, visible }: { tab: TerminalTab; visible: boolean }) {
+function TerminalInstance({ tab }: { tab: TerminalTab }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<any>(null); // xterm Terminal instance
   const wsRef = useRef<WebSocket | null>(null);
   const fitAddonRef = useRef<any>(null);
-  const initializedRef = useRef(false);
 
   useEffect(() => {
-    if (!containerRef.current || initializedRef.current) return;
-    initializedRef.current = true;
+    const container = containerRef.current;
+    if (!container) return;
 
     let destroyed = false;
+    let term: any = null;
+    let fitAddon: any = null;
+    let ws: WebSocket | null = null;
 
     // Dynamic imports for xterm — heavy libs, only load when needed
     Promise.all([
@@ -33,7 +36,7 @@ function TerminalInstance({ tab, visible }: { tab: TerminalTab; visible: boolean
     ]).then(([{ Terminal }, { FitAddon }, { WebLinksAddon }]) => {
       if (destroyed || !containerRef.current) return;
 
-      const term = new Terminal({
+      term = new Terminal({
         cursorBlink: true,
         fontSize: 13,
         fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
@@ -64,37 +67,37 @@ function TerminalInstance({ tab, visible }: { tab: TerminalTab; visible: boolean
         scrollback: 5000,
       });
 
-      const fitAddon = new FitAddon();
+      fitAddon = new FitAddon();
       const webLinksAddon = new WebLinksAddon();
       term.loadAddon(fitAddon);
       term.loadAddon(webLinksAddon);
-      term.open(containerRef.current);
+      term.open(container);
 
       termRef.current = term;
       fitAddonRef.current = fitAddon;
 
-      // Initial fit — may need multiple attempts as container might not have settled
-      const tryInitFit = (attempt: number) => {
-        if (attempt > 10) return;
+      // Fit — may need a few attempts as container settles
+      const tryFit = (attempt: number) => {
+        if (attempt > 10 || destroyed) return;
         try {
           fitAddon.fit();
         } catch {
-          setTimeout(() => tryInitFit(attempt + 1), 150);
+          setTimeout(() => tryFit(attempt + 1), 100);
         }
       };
-      requestAnimationFrame(() => tryInitFit(0));
+      requestAnimationFrame(() => tryFit(0));
 
       // Connect to terminal WS
       const protocol = location.protocol === "https:" ? "wss" : "ws";
-      const ws = new WebSocket(`${protocol}://${location.host}/ws?type=terminal&id=${encodeURIComponent(tab.id)}`);
+      ws = new WebSocket(`${protocol}://${location.host}/ws?type=terminal&id=${encodeURIComponent(tab.id)}`);
       wsRef.current = ws;
 
       ws.onopen = () => {
-        // Initial fit after connect
         requestAnimationFrame(() => {
+          if (destroyed) return;
           try { fitAddon.fit(); } catch {}
           const dims = fitAddon.proposeDimensions();
-          if (dims && ws.readyState === WebSocket.OPEN) {
+          if (dims && ws && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: "term_resize", cols: dims.cols, rows: dims.rows }));
           }
         });
@@ -107,22 +110,20 @@ function TerminalInstance({ tab, visible }: { tab: TerminalTab; visible: boolean
             term.write(msg.data);
           } else if (msg.type === "term_exit") {
             term.write(`\r\n\x1b[38;5;196m[Process exited with code ${msg.exitCode}]\x1b[0m\r\n`);
-            ws.close();
+            ws?.close();
           }
         } catch {}
       };
 
       ws.onclose = () => {
-        // Auto-reconnect
         if (!destroyed) {
           setTimeout(() => {
             if (!destroyed && containerRef.current) {
               const newWs = new WebSocket(`${protocol}://${location.host}/ws?type=terminal&id=${encodeURIComponent(tab.id)}`);
               wsRef.current = newWs;
-              // Same handlers
-              newWs.onopen = ws.onopen;
-              newWs.onmessage = ws.onmessage;
-              newWs.onclose = ws.onclose;
+              newWs.onopen = ws!.onopen;
+              newWs.onmessage = ws!.onmessage;
+              newWs.onclose = ws!.onclose;
             }
           }, 2000);
         }
@@ -130,14 +131,14 @@ function TerminalInstance({ tab, visible }: { tab: TerminalTab; visible: boolean
 
       // Terminal input → WS
       term.onData((data: string) => {
-        if (ws.readyState === WebSocket.OPEN) {
+        if (ws && ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: "term_input", data }));
         }
       });
 
       // Resize handling
-      term.onResize(({ cols, rows }) => {
-        if (ws.readyState === WebSocket.OPEN) {
+      term.onResize(({ cols, rows }: { cols: number; rows: number }) => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: "term_resize", cols, rows }));
         }
       });
@@ -146,30 +147,28 @@ function TerminalInstance({ tab, visible }: { tab: TerminalTab; visible: boolean
     return () => {
       destroyed = true;
       wsRef.current?.close();
-      termRef.current?.dispose();
+      wsRef.current = null;
+      if (term) { term.dispose(); }
+      termRef.current = null;
+      fitAddonRef.current = null;
     };
   }, [tab.id]);
 
-  // Fit when visibility changes
+  // Fit on window resize
   useEffect(() => {
-    if (visible && fitAddonRef.current && termRef.current) {
-      // Multiple attempts — container might not have dimensions yet
-      const tryFit = (attempt: number) => {
-        if (attempt > 5) return;
-        try {
-          fitAddonRef.current.fit();
-        } catch {
-          setTimeout(() => tryFit(attempt + 1), 100);
-        }
-      };
-      requestAnimationFrame(() => tryFit(0));
-    }
-  }, [visible]);
+    const handleResize = () => {
+      if (fitAddonRef.current && termRef.current) {
+        try { fitAddonRef.current.fit(); } catch {}
+      }
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   return (
     <div
       ref={containerRef}
-      className={`w-full h-full ${visible ? "" : "invisible absolute"}`}
+      className="w-full h-full"
       style={{ padding: "4px 4px 0" }}
     />
   );
@@ -249,7 +248,6 @@ export function TerminalPanel({ projectId, projectPath, visible, onClose }: Term
     startHeightRef.current = height;
 
     const handleMouseMove = (ev: MouseEvent) => {
-      // Dragging UP = increasing height (mouse moves up, clientY decreases)
       const delta = startYRef.current - ev.clientY;
       const newHeight = Math.max(120, Math.min(window.innerHeight * 0.7, startHeightRef.current + delta));
       setHeight(newHeight);
@@ -260,22 +258,12 @@ export function TerminalPanel({ projectId, projectPath, visible, onClose }: Term
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
       // Refit xterm after resize
-      requestAnimationFrame(() => {
-        // Dispatch a resize event so xterm fitAddon picks it up
-        window.dispatchEvent(new Event("resize"));
-      });
+      requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
     };
 
     document.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("mouseup", handleMouseUp);
   }, [height]);
-
-  // Fit xterm on panel height change
-  useEffect(() => {
-    if (visible) {
-      requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
-    }
-  }, [visible, height]);
 
   if (!visible) return null;
 
@@ -331,14 +319,10 @@ export function TerminalPanel({ projectId, projectPath, visible, onClose }: Term
       </div>
 
       {/* ── Terminal content ── */}
-      <div className="flex-1 min-h-0 overflow-hidden relative">
-        {tabs.map(tab => (
-          <TerminalInstance
-            key={tab.id}
-            tab={tab}
-            visible={tab.id === activeTabId}
-          />
-        ))}
+      <div className="flex-1 min-h-0 overflow-hidden">
+        {activeTab && (
+          <TerminalInstance key={activeTab.id} tab={activeTab} />
+        )}
         {!activeTab && (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
