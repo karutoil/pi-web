@@ -303,3 +303,65 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   background: #3a3630;
   border-radius: 2px;
 }
+
+/* ========== Custom checkboxes (ink/amber theme) ========== */
+
+.checkbox-ink {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--color-ink-700);
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+  transition: all 120ms ease;
+  flex-shrink: 0;
+}
+
+.checkbox-ink:hover {
+  border-color: var(--color-ink-500);
+  background: var(--color-ink-900);
+}
+
+.checkbox-ink:checked {
+  background: var(--color-amber-600);
+  border-color: var(--color-amber-500);
+}
+
+.checkbox-ink:checked:hover {
+  background: var(--color-amber-500);
+}
+
+.checkbox-ink:checked::after {
+  content: '';
+  position: absolute;
+  left: 3.5px;
+  top: 1px;
+  width: 4px;
+  height: 7.5px;
+  border: solid var(--color-ink-950);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
+.checkbox-ink:focus-visible {
+  outline: 2px solid var(--color-amber-500);
+  outline-offset: 1px;
+}
+
+/* Smaller variant for file rows */
+.checkbox-ink-sm {
+  width: 11px;
+  height: 11px;
+  border-width: 1.5px;
+  border-radius: 2px;
+}
+.checkbox-ink-sm:checked::after {
+  left: 2.5px;
+  top: 0.5px;
+  width: 3.5px;
+  height: 6px;
+  border-width: 0 1.5px 1.5px 0;
+}

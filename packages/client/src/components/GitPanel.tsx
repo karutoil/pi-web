@@ -475,7 +475,7 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
                 type="checkbox"
                 checked={amend}
                 onChange={e => setAmend(e.target.checked)}
-                className="w-3 h-3 rounded accent-amber-500"
+                className="checkbox-ink"
               />
               <span className="text-ink-500 text-[0.65rem]">Amend</span>
             </label>
@@ -662,7 +662,7 @@ function FileRow({ file, stats, staged, selected, onStage, onUnstage, onDiscard,
           checked={selected}
           onChange={() => onToggleSelect(file.path, false)}
           onClick={(e) => e.stopPropagation()}
-          className="w-2.5 h-2.5 accent-amber-500 shrink-0"
+          className="checkbox-ink checkbox-ink-sm"
         />
       )}
 
