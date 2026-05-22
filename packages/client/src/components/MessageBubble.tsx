@@ -3,17 +3,20 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ChatMessage, ContentBlock } from "@pi-web/shared";
 import { DiffRenderer, isDiffContent } from "./DiffRenderer";
+import { ContextMenuPortal, ContextMenuItem, ContextMenuDivider } from "./ContextMenu";
 
 interface MessageBubbleProps {
   message: ChatMessage;
   showThinking: boolean;
   isHistorical?: boolean;
   isStreaming?: boolean;
-  entryId?: string; // for fork
+  entryId?: string;
   onFork?: (entryId: string) => void;
+  onCopyTurn?: () => void;
+  onCopyResponse?: () => void;
 }
 
-export function MessageBubble({ message, showThinking, isHistorical, isStreaming, entryId, onFork }: MessageBubbleProps) {
+export function MessageBubble({ message, showThinking, isHistorical, isStreaming, entryId, onFork, onCopyTurn, onCopyResponse }: MessageBubbleProps) {
   const role = message.role;
   const isUser = role === "user";
   const isAssistant = role === "assistant";
@@ -21,12 +24,22 @@ export function MessageBubble({ message, showThinking, isHistorical, isStreaming
   const isBash = role === "bashExecution";
   const isSystem = role === "branchSummary" || role === "compactionSummary";
 
+  // Right-click context menu
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const handleContextMenu = (e: React.MouseEvent) => {
+    // Only show context menu on user or assistant messages
+    if (isUser || isAssistant) {
+      e.preventDefault();
+      setCtxMenu({ x: e.clientX, y: e.clientY });
+    }
+  };
+
   if (isSystem) {
     return <SystemBubble message={message} />;
   }
 
   return (
-    <div className={`animate-fade-in-up ${isUser ? "flex justify-end" : "flex gap-3"}`}>
+    <div onContextMenu={handleContextMenu} className={`animate-fade-in-up ${isUser ? "flex justify-end" : "flex gap-3"}`}>
       {!isUser && (
         <div className="shrink-0 w-7 h-7 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center mt-1">
           <svg width="14" height="14" viewBox="0 0 128 128" fill="none">
@@ -80,6 +93,32 @@ export function MessageBubble({ message, showThinking, isHistorical, isStreaming
           </div>
         )}
       </div>
+
+      {/* Right-click context menu */}
+      {ctxMenu && (
+        <ContextMenuPortal
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          onClose={() => setCtxMenu(null)}
+        >
+          <ContextMenuItem
+            label="Copy final response"
+            icon={<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><rect x="5" y="5" width="8" height="8" rx="1" /><path d="M3 11 L3 3 L11 3" /></svg>}
+            onClick={() => { setCtxMenu(null); onCopyResponse?.(); }}
+          />
+          <ContextMenuItem
+            label="Copy entire turn"
+            icon={<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 4 L2 12 L6 12 M6 4 L14 4 L14 12 L6 12" /></svg>}
+            onClick={() => { setCtxMenu(null); onCopyTurn?.(); }}
+          />
+          <ContextMenuDivider />
+          <ContextMenuItem
+            label="Copy message"
+            icon={<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><rect x="4" y="4" width="8" height="8" rx="1" /></svg>}
+            onClick={() => { setCtxMenu(null); navigator.clipboard.writeText(extractTextContent(message.content)); }}
+          />
+        </ContextMenuPortal>
+      )}
     </div>
   );
 }

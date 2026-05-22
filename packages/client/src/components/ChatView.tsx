@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import type { Project, SessionSummary } from "@pi-web/shared";
+import type { Project, SessionSummary, ChatMessage } from "@pi-web/shared";
 import type { WSBridge, ToolEvent } from "../hooks/useWebSocket";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
@@ -12,6 +12,18 @@ interface ChatViewProps {
   sessionDetail: { entries: any[]; cwd: string } | null;
   project: Project | null;
   session: SessionSummary | null;
+}
+
+function extractMsgText(msg: ChatMessage): string {
+  const content = msg.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter((b: any) => b.type === "text")
+      .map((b: any) => b.text || "")
+      .join("");
+  }
+  return "";
 }
 
 export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps) {
@@ -59,6 +71,53 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
   const entryMap = new Map<string, string>();
   sessionDetail?.entries.forEach(e => { if (e.id && e.message?.role === "user") entryMap.set(e.id, e.id); });
 
+  // Group messages into turns for context menu copy
+  // A turn = user message + all toolResults + final assistant response
+  const historicalMsgs = (sessionDetail?.entries || [])
+    .filter(e => e.message && e.type !== "compaction" && e.type !== "branch_summary")
+    .map(e => e.message!);
+  const liveMsgs = ws.messages;
+  const allChatMsgs = [...historicalMsgs, ...liveMsgs];
+
+  const turnGroups = useMemo(() => {
+    const groups: Map<number, ChatMessage[]> = new Map(); // index -> turn messages
+    let turnStart = 0;
+    for (let i = 0; i < allChatMsgs.length; i++) {
+      const msg = allChatMsgs[i];
+      if (msg.role === "user" && i > 0) {
+        turnStart = i;
+      }
+      if (!groups.has(turnStart)) groups.set(turnStart, []);
+      groups.get(turnStart)!.push(msg);
+    }
+    return groups;
+  }, [allChatMsgs.length]);
+
+  const getTurnForMsg = useCallback((idx: number): ChatMessage[] => {
+    // Find which turn this message belongs to
+    for (const [start, msgs] of turnGroups) {
+      if (idx >= start && idx < start + msgs.length) return msgs;
+    }
+    return [allChatMsgs[idx]];
+  }, [turnGroups, allChatMsgs]);
+
+  const getFinalResponse = useCallback((turn: ChatMessage[]): string => {
+    // Get the last assistant message text
+    for (let i = turn.length - 1; i >= 0; i--) {
+      if (turn[i].role === "assistant") {
+        return extractMsgText(turn[i]);
+      }
+    }
+    return "";
+  }, []);
+
+  const getTurnText = useCallback((turn: ChatMessage[]): string => {
+    return turn.map(m => {
+      const prefix = m.role === "user" ? "User" : m.role === "assistant" ? "Assistant" : m.role === "toolResult" ? `Tool (${m.toolName || "unknown"})` : m.role;
+      return `${prefix}: ${extractMsgText(m)}`;
+    }).join("\n\n");
+  }, []);
+
   return (
     <div className="flex-1 flex flex-col min-h-0 relative">
       <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} />
@@ -74,6 +133,7 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
             if (!entry.message) return null;
             if (entry.type === "compaction" || entry.type === "branch_summary") return null;
             const isUser = entry.message.role === "user";
+            const turn = getTurnForMsg(i);
             return (
               <MessageBubble
                 key={entry.id || i}
@@ -82,6 +142,8 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
                 isHistorical={true}
                 entryId={isUser ? entry.id : undefined}
                 onFork={isUser ? handleFork : undefined}
+                onCopyTurn={() => navigator.clipboard.writeText(getTurnText(turn))}
+                onCopyResponse={() => navigator.clipboard.writeText(getFinalResponse(turn))}
               />
             );
           })}
@@ -102,6 +164,16 @@ export function ChatView({ ws, sessionDetail, project, session }: ChatViewProps)
               message={msg}
               showThinking={showThinking}
               isHistorical={false}
+              onCopyTurn={() => {
+                const histLen = historicalMsgs.length;
+                const turn = getTurnForMsg(histLen + i);
+                navigator.clipboard.writeText(getTurnText(turn));
+              }}
+              onCopyResponse={() => {
+                const histLen = historicalMsgs.length;
+                const turn = getTurnForMsg(histLen + i);
+                navigator.clipboard.writeText(getFinalResponse(turn));
+              }}
             />
           ))}
 
