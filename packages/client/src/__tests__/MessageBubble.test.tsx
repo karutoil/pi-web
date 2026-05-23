@@ -3,6 +3,21 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { MessageBubble } from '../components/MessageBubble';
 import type { ChatMessage } from '@pi-web/shared';
 
+// Mock matchMedia for useIsMobile hook
+Object.defineProperty(window, 'matchMedia', {
+  writable: true,
+  value: vi.fn().mockImplementation((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })),
+});
+
 // Mock ContextMenu portal
 vi.mock('../components/ContextMenu', () => ({
   ContextMenuPortal: ({ children, onClose }: { children: React.ReactNode; onClose: () => void }) => (
@@ -12,6 +27,7 @@ vi.mock('../components/ContextMenu', () => ({
     <button data-testid="ctx-item" onClick={onClick}>{label}</button>
   ),
   ContextMenuDivider: () => <hr data-testid="ctx-divider" />,
+  useLongPress: () => () => {},
 }));
 
 // Mock react-markdown to avoid complex rendering in tests
@@ -147,9 +163,27 @@ describe('MessageBubble', () => {
 
   // ─── Tool results ───
 
-  it('renders tool result with tool name', () => {
+  it('renders standalone tool result with tool name when no inline tool call', () => {
     render(<MessageBubble message={toolResultMessage} {...defaultProps} />);
     expect(screen.getByText(/read result/)).toBeInTheDocument();
+  });
+
+  it('hides standalone tool result when inline tool call exists', () => {
+    const inlineIds = new Set(['tc1']);
+    const { container } = render(<MessageBubble message={toolResultMessage} {...defaultProps} inlineToolCallIds={inlineIds} />);
+    expect(container.innerHTML).toBe('');
+  });
+
+  it('renders combined tool call + result bubble', () => {
+    const assistantWithToolCall: ChatMessage = {
+      role: 'assistant',
+      content: [{ type: 'toolCall', id: 'tc1', name: 'read', arguments: { path: 'foo.ts' } }],
+      model: 'claude-3',
+      timestamp: Date.now(),
+    };
+    const toolResultsMap = new Map([['tc1', toolResultMessage]]);
+    render(<MessageBubble message={assistantWithToolCall} {...defaultProps} toolResultsMap={toolResultsMap} />);
+    expect(screen.getByText('read')).toBeInTheDocument();
   });
 
   it('renders error tool result with error indicator', () => {

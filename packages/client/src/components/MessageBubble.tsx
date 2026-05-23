@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSanitize from "rehype-sanitize";
 import type { ChatMessage, ContentBlock, ToolDetails } from "@pi-web/shared";
+import type { ToolEvent } from "../lib/types";
 import { formatTokens } from "../lib/utils";
 import { DiffRenderer, isDiffContent } from "./DiffRenderer";
 import { Icon } from "./Icon";
@@ -12,6 +13,9 @@ import { useIsMobile } from "../hooks/useIsMobile";
 interface MessageBubbleProps {
   message: ChatMessage;
   showThinking: boolean;
+  toolResultsMap?: Map<string, ChatMessage>;
+  inlineToolCallIds?: Set<string>;
+  runningTools?: Map<string, ToolEvent>;
   isHistorical?: boolean;
   isStreaming?: boolean;
   entryId?: string;
@@ -20,7 +24,7 @@ interface MessageBubbleProps {
   onCopyResponse?: () => void;
 }
 
-export function MessageBubble({ message, showThinking, isHistorical, isStreaming, entryId, onFork, onCopyTurn, onCopyResponse }: MessageBubbleProps) {
+export function MessageBubble({ message, showThinking, toolResultsMap, inlineToolCallIds, runningTools, isHistorical, isStreaming, entryId, onFork, onCopyTurn, onCopyResponse }: MessageBubbleProps) {
   const role = message.role;
   const isUser = role === "user";
   const isAssistant = role === "assistant";
@@ -49,6 +53,11 @@ export function MessageBubble({ message, showThinking, isHistorical, isStreaming
     return <SystemBubble message={message} />;
   }
 
+  // Skip standalone tool result bubble if its call is rendered inline in an assistant message
+  if (isTool && message.toolCallId && inlineToolCallIds?.has(message.toolCallId)) {
+    return null;
+  }
+
   return (
     <div onContextMenu={handleContextMenu} {...longPress} className={`animate-fade-in-up ${isUser ? "flex justify-end" : "flex gap-2 md:gap-3"}`}>
       {!isUser && (
@@ -72,6 +81,9 @@ export function MessageBubble({ message, showThinking, isHistorical, isStreaming
         {isAssistant && (
           <AssistantBubble
             message={message}
+            toolResultsMap={toolResultsMap}
+            inlineToolCallIds={inlineToolCallIds}
+            runningTools={runningTools}
             showThinking={showThinking}
             isHistorical={isHistorical}
             isStreaming={isStreaming}
@@ -155,17 +167,29 @@ function UserBubble({ message, entryId, onFork }: { message: ChatMessage; entryI
 
 function AssistantBubble({
   message,
+  toolResultsMap,
+  runningTools,
   showThinking,
   isHistorical,
   isStreaming,
 }: {
   message: ChatMessage;
+  toolResultsMap?: Map<string, ChatMessage>;
+  inlineToolCallIds?: Set<string>;
+  runningTools?: Map<string, ToolEvent>;
   showThinking: boolean;
   isHistorical?: boolean;
   isStreaming?: boolean;
 }) {
   const content = Array.isArray(message.content) ? message.content : [];
   const [toolCallsExpanded, setToolCallsExpanded] = useState<Record<string, boolean>>({});
+
+  // Default expanded for completed tool calls with results
+  const _initialExpanded = useState(() => {
+    const init: Record<string, boolean> = {};
+    content.filter(b => b.type === "toolCall" && b.id).forEach(b => { init[b.id!] = true; });
+    return init;
+  })[0];
 
   // Separate thinking blocks from text
   const thinkingBlocks = content.filter(b => b.type === "thinking");
@@ -222,10 +246,12 @@ function AssistantBubble({
 
       {/* Tool calls */}
       {toolCalls.map((block, i) => (
-        <ToolCallIndicator
+        <CombinedToolBubble
           key={block.id || i}
           toolCall={block}
-          expanded={!!toolCallsExpanded[block.id || String(i)]}
+          toolResult={block.id ? toolResultsMap?.get(block.id) : undefined}
+          runningTool={block.id ? runningTools?.get(block.id) : undefined}
+          expanded={toolCallsExpanded[block.id || String(i)] ?? _initialExpanded[block.id || String(i)] ?? true}
           onToggle={() => {
             const key = block.id || String(i);
             setToolCallsExpanded(prev => ({ ...prev, [key]: !prev[key] }));
@@ -260,19 +286,27 @@ function ThinkingBlock({ thinking }: { thinking: string }) {
   );
 }
 
-function ToolCallIndicator({
+/** Combined tool call + result bubble — shows request header and result body in one unit */
+function CombinedToolBubble({
   toolCall,
   expanded,
   onToggle,
+  toolResult,
+  runningTool,
 }: {
   toolCall: { id?: string; name?: string; arguments?: Record<string, unknown> };
   expanded: boolean;
   onToggle: () => void;
+  toolResult?: ChatMessage;
+  runningTool?: ToolEvent;
 }) {
   const name = toolCall.name || "unknown";
   const args = toolCall.arguments || {};
   const isMobile = useIsMobile();
   const argsPreview = JSON.stringify(args).slice(0, isMobile ? 40 : 80);
+  const isRunning = runningTool && runningTool.status === "running";
+  const isDone = !!toolResult || (runningTool && runningTool.status === "done");
+  const isError = toolResult?.isError || (runningTool && runningTool.status === "error");
 
   // Color by tool — adaptive tokens (light/dark aware)
   const colors: Record<string, string> = {
@@ -285,18 +319,104 @@ function ToolCallIndicator({
     ls: "text-tool-ls border-tool-ls-bdr bg-tool-ls-bg",
   };
 
-  const color = colors[name] || "text-tool-default";
+  const headerColor = colors[name] || "text-tool-default";
+
+  // Determine border color for the whole bubble
+  const borderColor = isError
+    ? "border-rose-500/30"
+    : isRunning
+    ? "border-amber-500/30"
+    : "border-ink-800";
+  const bgColor = isError
+    ? "bg-rose-500/5"
+    : "bg-ink-900/30";
+
+  // Build result content for inline rendering
+  const resultContent = useMemo(() => {
+    if (!toolResult) return null;
+    return extractTextContent(toolResult.content);
+  }, [toolResult]);
+
+  // Parse diff from tool result details
+  const detailsDiff = useMemo(() => {
+    if (!toolResult?.details?.diff || typeof toolResult.details.diff !== "string") return null;
+    const rawDiff: string = toolResult.details.diff;
+    const rawLines = rawDiff.split("\n");
+    const parts: string[] = [];
+    parts.push("--- a/file");
+    parts.push("+++ b/file");
+    parts.push(`@@ -1,${rawLines.length} +1,${rawLines.length} @@`);
+    for (const line of rawLines) {
+      const prefix = line.charAt(0);
+      const rest = line.slice(1).replace(/^\d+\s*/, "");
+      if (prefix === "-" || prefix === "+" || prefix === " ") {
+        parts.push(prefix + rest);
+      } else {
+        parts.push(" " + line);
+      }
+    }
+    return parts.join("\n");
+  }, [toolResult?.details?.diff]);
+
+  // Result lines for expansion logic
+  const resultLines = resultContent ? resultContent.split("\n") : [];
+  const needsExpansion = resultLines.length > 5;
+
+  const isDiffResult = !!(detailsDiff || (resultContent && !isError && isDiffContent(resultContent)));
 
   return (
-    <button
-      onClick={onToggle}
-      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-mono transition-theme w-full text-left ${color}`}
-      aria-label="Toggle tool details"
-    >
-      <Icon name="chevron-right-sm" size={10} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
-      <span className="font-medium">{name}</span>
-      <span className="opacity-60 truncate">{argsPreview}</span>
-    </button>
+    <div className={`rounded-lg border overflow-hidden ${borderColor} ${bgColor}`}>
+      {/* Header: tool call info */}
+      <button
+        onClick={onToggle}
+        className={`flex items-center gap-2 px-3 py-1.5 text-xs font-mono transition-theme w-full text-left ${headerColor}`}
+        aria-label="Toggle tool details"
+      >
+        <Icon name="chevron-right-sm" size={10} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
+        <span className="font-medium">{name}</span>
+        <span className="opacity-60 truncate">{argsPreview}</span>
+        {isRunning && <span className="text-amber-400 animate-pulse ml-1">●</span>}
+        {isDone && !isError && <span className="text-teal-400 ml-1">✓</span>}
+        {isError && <span className="text-rose-400 ml-1">(error)</span>}
+      </button>
+
+      {/* Expanded body: result content */}
+      {expanded && (resultContent || isRunning) && (
+        <>
+          {/* Diff result */}
+          {isDiffResult && (
+            <div className="border-t border-ink-800">
+              {detailsDiff ? (
+                <DiffRenderer content={detailsDiff} collapsible={false} />
+              ) : resultContent ? (
+                <DiffRenderer content={resultContent} collapsible={false} />
+              ) : null}
+            </div>
+          )}
+
+          {/* Running indicator with partial result */}
+          {isRunning && !isDiffResult && (
+            <div className="border-t border-ink-800 px-3 py-2 text-ink-500 text-xs font-mono">
+              <span className="animate-pulse">Running…</span>
+              {runningTool.partialResult?.content && (
+                <pre className="mt-1 text-ink-400 whitespace-pre-wrap max-h-20 overflow-hidden">
+                  {extractTextContent(runningTool.partialResult.content as ContentBlock[] | string)}
+                </pre>
+              )}
+            </div>
+          )}
+
+          {/* Text result (non-diff) */}
+          {!isDiffResult && !isRunning && resultContent && (
+            <div className="border-t border-ink-800">
+              <pre className="px-3 pb-2 text-ink-400 text-xs leading-relaxed whitespace-pre-wrap pt-2 max-h-64 overflow-y-auto font-mono">
+                {resultContent}
+              </pre>
+            </div>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 

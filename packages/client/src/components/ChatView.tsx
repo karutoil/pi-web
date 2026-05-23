@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import type { Project, SessionSummary, ChatMessage, SessionEntry, ContentBlock } from "@pi-web/shared";
-import type { WSBridge } from "../lib/types";
+import type { ToolEvent, WSBridge } from "../lib/types";
 import { SCROLL_THRESHOLD, SCROLL_THROTTLE_MS } from "../lib/constants";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
@@ -137,6 +137,37 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
   const liveMsgs = ws.messages;
   const allChatMsgs = [...historicalMsgs, ...liveMsgs];
 
+  // Build toolCallId → toolResult message map for inline tool result rendering
+  const toolResultsMap = useMemo(() => {
+    const map = new Map<string, ChatMessage>();
+    for (const msg of allChatMsgs) {
+      if (msg.role === "toolResult" && msg.toolCallId) {
+        map.set(msg.toolCallId, msg);
+      }
+    }
+    return map;
+  }, [allChatMsgs]);
+
+  // Collect toolCallIds that have inline tool calls in assistant messages (to skip standalone result bubbles)
+  const inlineToolCallIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const msg of allChatMsgs) {
+      if (msg.role === "assistant" && Array.isArray(msg.content)) {
+        for (const block of msg.content) {
+          if (block.type === "toolCall" && block.id) ids.add(block.id);
+        }
+      }
+    }
+    // Also check the live streaming message
+    const live = ws.liveMessages.get("current");
+    if (live && live.role === "assistant" && Array.isArray(live.content)) {
+      for (const block of live.content) {
+        if (block.type === "toolCall" && block.id) ids.add(block.id);
+      }
+    }
+    return ids;
+  }, [allChatMsgs, ws.liveMessages]);
+
   const turnGroups = useMemo(() => {
     const groups: Map<number, ChatMessage[]> = new Map(); // index -> turn messages
     let turnStart = 0;
@@ -212,6 +243,9 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
                 key={entry.id || i}
                 message={entry.message}
                 showThinking={showThinking}
+                toolResultsMap={toolResultsMap}
+                inlineToolCallIds={inlineToolCallIds}
+                runningTools={ws.runningTools}
                 isHistorical={true}
                 entryId={isUser ? entry.id : undefined}
                 onFork={isUser ? handleFork : undefined}
@@ -227,6 +261,9 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
               key={`live-${i}`}
               message={msg}
               showThinking={showThinking}
+              toolResultsMap={toolResultsMap}
+              inlineToolCallIds={inlineToolCallIds}
+              runningTools={ws.runningTools}
               isHistorical={false}
               onCopyTurn={() => {
                 const histLen = historicalMsgs.length;
@@ -243,7 +280,14 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
 
           {/* Currently streaming */}
           {liveMsg && (
-            <MessageBubble message={liveMsg} showThinking={showThinking} isStreaming={true} />
+            <MessageBubble
+              toolResultsMap={toolResultsMap}
+              inlineToolCallIds={inlineToolCallIds}
+              runningTools={ws.runningTools}
+              message={liveMsg}
+              showThinking={showThinking}
+              isStreaming={true}
+            />
           )}
 
 
