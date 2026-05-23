@@ -121,7 +121,7 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
   }, [text]);
 
   return (
-    <div className="px-4 pb-4 pt-2 flex justify-center">
+    <div className="px-2 md:px-4 pb-2 md:pb-4 pt-2 flex justify-center mobile-safe-bottom">
       <div className="max-w-3xl w-full">
         {/* Image previews */}
         {pendingImages.length > 0 && (
@@ -135,7 +135,7 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
                 />
                 <button
                   onClick={() => removeImage(i)}
-                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-600 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-600 text-white text-xs flex items-center justify-center opacity-70 group-hover:opacity-100 transition-opacity"
                   aria-label="Remove image"
                 >
                   ×
@@ -156,7 +156,7 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
             />
           )}
 
-          <div className="flex items-end gap-2 bg-ink-950/80 backdrop-blur-md border border-ink-800/60 rounded-2xl px-4 py-2.5 shadow-lg focus-within:border-amber-500/60 focus-within:shadow-[0_0_32px_rgba(192,141,14,0.08)] transition-all">
+          <div className="flex items-end gap-2 bg-ink-950/80 backdrop-blur-md border border-ink-800/60 rounded-2xl px-3 md:px-4 py-2 md:py-2.5 shadow-lg focus-within:border-amber-500/60 focus-within:shadow-[0_0_32px_rgba(192,141,14,0.08)] transition-all">
             <textarea
               ref={textareaRef}
               value={text}
@@ -174,7 +174,7 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
               {onToggleTerminal && (
                 <button
                   onClick={onToggleTerminal}
-                  className={`p-1.5 rounded-full transition-theme ${showTerminal ? "bg-amber-600/20 text-amber-500" : "text-ink-600 hover:text-ink-400 hover:bg-ink-800/40"}`}
+                  className={`p-1.5 rounded-full transition-theme touch-target ${showTerminal ? "bg-amber-600/20 text-amber-500" : "text-ink-600 hover:text-ink-400 hover:bg-ink-800/40"}`}
                   title="Toggle terminal"
                   aria-label="Toggle terminal"
                 >
@@ -182,14 +182,14 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
                 </button>
               )}
               {isStreaming ? (
-                <button onClick={onAbort} className="p-1.5 rounded-full bg-rose-600/20 text-rose-500 hover:bg-rose-600/30 transition-theme" title="Abort" aria-label="Abort">
+                <button onClick={onAbort} className="p-1.5 rounded-full bg-rose-600/20 text-rose-500 hover:bg-rose-600/30 transition-theme touch-target" title="Abort" aria-label="Abort">
                   <Icon name="abort" size={14} />
                 </button>
               ) : (
                 <button
                   onClick={handleSend}
                   disabled={(!text.trim() && pendingImages.length === 0) || disabled}
-                  className="p-1.5 rounded-full bg-amber-600 text-ink-950 hover:bg-amber-500 disabled:opacity-30 disabled:cursor-not-allowed transition-theme"
+                  className="p-1.5 rounded-full bg-amber-600 text-ink-950 hover:bg-amber-500 disabled:opacity-30 disabled:cursor-not-allowed transition-theme touch-target"
                   title="Send"
                   aria-label="Send message"
                 >
@@ -200,10 +200,15 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
           </div>
         </div>
         
-        <p className="text-ink-600 text-[0.65rem] font-mono mt-1.5 text-center opacity-50">
+        <p className="text-ink-600 text-[0.65rem] font-mono mt-1.5 text-center opacity-50 hidden md:block">
           {isStreaming ? "PI is working · type to steer"
             : disabled ? "Connecting..."
             : "Paste images · / for commands"}
+        </p>
+        <p className="text-ink-600 text-[0.65rem] font-mono mt-1.5 text-center opacity-50 md:hidden">
+          {isStreaming ? "Type to steer"
+            : disabled ? "Connecting..."
+            : "Type a message..."}
         </p>
       </div>
     </div>

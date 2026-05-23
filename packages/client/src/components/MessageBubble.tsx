@@ -6,7 +6,8 @@ import type { ChatMessage, ContentBlock, ToolDetails } from "@pi-web/shared";
 import { formatTokens } from "../lib/utils";
 import { DiffRenderer, isDiffContent } from "./DiffRenderer";
 import { Icon } from "./Icon";
-import { ContextMenuPortal, ContextMenuItem, ContextMenuDivider } from "./ContextMenu";
+import { ContextMenuPortal, ContextMenuItem, ContextMenuDivider, useLongPress } from "./ContextMenu";
+import { useIsMobile } from "../hooks/useIsMobile";
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -37,19 +38,26 @@ export function MessageBubble({ message, showThinking, isHistorical, isStreaming
     }
   };
 
+  // Long-press for mobile context menu
+  const longPress = useLongPress((e) => {
+    if (isUser || isAssistant) {
+      setCtxMenu({ x: e.clientX, y: e.clientY });
+    }
+  });
+
   if (isSystem) {
     return <SystemBubble message={message} />;
   }
 
   return (
-    <div onContextMenu={handleContextMenu} className={`animate-fade-in-up ${isUser ? "flex justify-end" : "flex gap-3"}`}>
+    <div onContextMenu={handleContextMenu} {...longPress} className={`animate-fade-in-up ${isUser ? "flex justify-end" : "flex gap-2 md:gap-3"}`}>
       {!isUser && (
-        <div className="shrink-0 w-7 h-7 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center mt-1">
-          <Icon name="pi-avatar" size={14} />
+        <div className="shrink-0 w-6 h-6 md:w-7 md:h-7 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center mt-1">
+          <Icon name="pi-avatar" size={12} />
         </div>
       )}
       
-      <div className={`max-w-[80%] ${isUser ? "" : "min-w-0 flex-1"}`}>
+      <div className={`max-w-[90%] md:max-w-[80%] ${isUser ? "" : "min-w-0 flex-1"}`}>
         {/* Tool execution */}
         {isTool && (
           <ToolResultBubble message={message} />
@@ -127,14 +135,14 @@ function UserBubble({ message, entryId, onFork }: { message: ChatMessage; entryI
   const text = extractTextContent(message.content);
   
   return (
-    <div className="group relative bg-amber-500/12 border border-amber-500/20 rounded-2xl rounded-br-md px-4 py-2.5">
+    <div className="group relative bg-amber-500/12 border border-amber-500/20 rounded-2xl rounded-br-md px-3 md:px-4 py-2.5">
       <p className="text-ink-100 text-sm leading-relaxed whitespace-pre-wrap break-words">
         {text}
       </p>
       {entryId && onFork && (
         <button
           onClick={() => onFork(entryId)}
-          className="absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-ink-600 hover:text-amber-500 transition-all p-1"
+          className="hidden md:block absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-ink-600 hover:text-amber-500 transition-all p-1"
           title="Fork from here"
           aria-label="Fork from here"
         >
@@ -199,6 +207,11 @@ function AssistantBubble({
               rehypePlugins={[rehypeSanitize]}
               components={{
                 pre: CodeBlock,
+                table: ({ children }) => (
+                  <div className="table-wrap">
+                    <table>{children}</table>
+                  </div>
+                ),
               }}
             >
               {text}
@@ -258,7 +271,8 @@ function ToolCallIndicator({
 }) {
   const name = toolCall.name || "unknown";
   const args = toolCall.arguments || {};
-  const argsPreview = JSON.stringify(args).slice(0, 80);
+  const isMobile = useIsMobile();
+  const argsPreview = JSON.stringify(args).slice(0, isMobile ? 40 : 80);
 
   // Color by tool — adaptive tokens (light/dark aware)
   const colors: Record<string, string> = {
@@ -400,7 +414,7 @@ function BashResultBubble({ message }: { message: ChatMessage }) {
         aria-label="Toggle output"
       >
         <Icon name="chevron-right-sm" size={10} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
-        <span className="text-teal-400 font-medium">$ {message.command}</span>
+        <span className="text-teal-400 font-medium truncate">$ {message.command}</span>
         {exitCode !== undefined && (
           <span className={isError ? "text-rose-500" : "text-ink-600"}>
             [{exitCode}]
@@ -464,7 +478,7 @@ function CodeBlock({ children, className, ...props }: CodeBlockProps) {
       <div className="relative group">
         <button
           onClick={handleCopy}
-          className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity px-2 py-1 rounded bg-ink-800 hover:bg-ink-700 text-ink-400 text-xs font-mono"
+          className="absolute top-2 right-2 z-10 opacity-60 md:opacity-0 md:group-hover:opacity-100 transition-opacity px-2 py-1.5 rounded bg-ink-800 hover:bg-ink-700 text-ink-400 text-xs font-mono min-h-[32px]"
           aria-label="Copy code"
         >
           {copied ? "Copied!" : "Copy"}
@@ -478,7 +492,7 @@ function CodeBlock({ children, className, ...props }: CodeBlockProps) {
     <div className="relative group">
       <button
         onClick={handleCopy}
-        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity px-2 py-1 rounded bg-ink-800 hover:bg-ink-700 text-ink-400 text-xs font-mono"
+        className="absolute top-2 right-2 opacity-60 md:opacity-0 md:group-hover:opacity-100 transition-opacity px-2 py-1.5 rounded bg-ink-800 hover:bg-ink-700 text-ink-400 text-xs font-mono min-h-[32px]"
         aria-label="Copy code"
       >
         {copied ? "Copied!" : "Copy"}

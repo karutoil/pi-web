@@ -189,9 +189,9 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
           <div
             ref={scrollRef}
             onScroll={handleScroll}
-            className="flex-1 overflow-y-auto custom-scrollbar px-5 pt-6 pb-4"
+            className="flex-1 overflow-y-auto custom-scrollbar px-3 md:px-5 pt-6 pb-4"
           >
-        <div ref={contentRef} className="max-w-3xl mx-auto space-y-5">
+        <div ref={contentRef} className="max-w-3xl mx-auto space-y-4 md:space-y-5">
           {/* Load earlier messages */}
           {hasMoreHistory && (
             <button
@@ -259,7 +259,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
             <div className="flex flex-wrap justify-center gap-2 mt-6">
               {["List files in this project", "Explain the codebase structure", "Find all TODO comments"].map(s => (
                 <button key={s} onClick={() => handleSend(s)}
-                  className="px-3 py-1.5 text-xs text-ink-400 bg-ink-900 border border-ink-800 rounded-full hover:border-ink-600 hover:text-ink-200 transition-theme">
+                  className="px-3 py-2 text-xs text-ink-400 bg-ink-900 border border-ink-800 rounded-full hover:border-ink-600 hover:text-ink-200 transition-theme min-h-[36px]">
                   {s}
                 </button>
               ))}

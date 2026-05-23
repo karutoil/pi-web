@@ -19,7 +19,7 @@ export function CommandCompleter({ commands, filter, onSelect, onClose }: Props)
 
   if (filtered.length === 0) {
     return (
-      <div className="absolute bottom-full left-0 mb-2 bg-ink-900 border border-ink-700 rounded-lg shadow-lg py-2 px-3 z-50 w-80">
+      <div className="absolute bottom-full left-0 mb-2 bg-ink-900 border border-ink-700 rounded-lg shadow-lg py-2 px-3 z-50 w-[calc(100vw-2rem)] md:w-80">
         <p className="text-ink-500 text-xs font-mono">No matching commands</p>
         <button onClick={onClose} className="text-ink-600 text-xs mt-1 hover:text-ink-400">Dismiss</button>
       </div>
@@ -33,7 +33,7 @@ export function CommandCompleter({ commands, filter, onSelect, onClose }: Props)
   };
 
   return (
-    <div className="absolute bottom-full left-0 mb-2 bg-ink-900 border border-ink-700 rounded-lg shadow-lg py-1 z-50 w-80 max-h-64 overflow-y-auto custom-scrollbar">
+    <div className="absolute bottom-full left-0 mb-2 bg-ink-900 border border-ink-700 rounded-lg shadow-lg py-1 z-50 w-[calc(100vw-2rem)] md:w-80 max-h-64 overflow-y-auto custom-scrollbar">
       <div className="px-3 py-1.5 text-ink-600 text-[0.65rem] font-mono uppercase tracking-wider border-b border-ink-800">
         Commands {filter ? `matching "${filter}"` : ""}
       </div>

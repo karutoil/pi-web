@@ -205,6 +205,7 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   text-decoration: underline; text-underline-offset: 2px;
 }
 .markdown-content table { width: 100%; border-collapse: collapse; margin: 0.75em 0; }
+.markdown-content .table-wrap { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .markdown-content th, .markdown-content td {
   border: 1px solid var(--color-ink-800);
   padding: 0.5em 0.75em; text-align: left;
@@ -364,4 +365,53 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   width: 3.5px;
   height: 6px;
   border-width: 0 1.5px 1.5px 0;
+}
+
+/* ========== Mobile responsive (<768px) ========== */
+
+@media (max-width: 767px) {
+  /* Touch-friendly scroll on code blocks */
+  pre {
+    -webkit-overflow-scrolling: touch;
+    font-size: 0.75rem;
+  }
+
+  /* Safe area for notched phones */
+  .mobile-safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .mobile-safe-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  /* Larger touch targets for icon buttons — standalone (44px) */
+  .touch-target {
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Compact touch targets for packed rows like headers (32px) */
+  .touch-target-sm {
+    min-width: 32px;
+    min-height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Hover-only action rows: always show on touch */
+  .mobile-show-actions .mobile-action {
+    opacity: 1 !important;
+  }
+
+  /* Disable side-by-side diff on mobile */
+  .diff-side-by-side {
+    display: none !important;
+  }
+  .diff-side-toggle {
+    display: none !important;
+  }
 }

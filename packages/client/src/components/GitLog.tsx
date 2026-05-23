@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Icon } from "./Icon";
-import { ContextMenuPortal, ContextMenuItem, ContextMenuDivider } from "./ContextMenu";
+import { ContextMenuPortal, ContextMenuItem, ContextMenuDivider, useLongPress } from "./ContextMenu";
 
 // ─── Types ───
 
@@ -145,6 +145,7 @@ function CommitRow({
 }) {
   const { message, refs: rawRefs } = splitMessageRefs(entry.message);
   const refBadges = parseRefs(rawRefs || entry.refs);
+  const longPress = useLongPress((e) => onContextMenu({ preventDefault: () => {}, clientX: e.clientX, clientY: e.clientY } as React.MouseEvent, entry));
 
   return (
     <div
@@ -153,6 +154,7 @@ function CommitRow({
       }`}
       onClick={onToggle}
       onContextMenu={e => onContextMenu(e, entry)}
+      {...longPress}
     >
       <div className="px-3 py-2">
         <div className="flex items-center gap-2">

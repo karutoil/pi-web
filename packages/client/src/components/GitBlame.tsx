@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Icon } from "./Icon";
+import { useIsMobile } from "../hooks/useIsMobile";
 
 // ─── Types ───
 
@@ -42,6 +43,7 @@ export function GitBlame({ cwd, path, onClose }: GitBlameProps) {
   const [lines, setLines] = useState<GitBlameLine[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const isMobile = useIsMobile();
 
   // Fetch blame data
   useEffect(() => {
@@ -118,7 +120,8 @@ export function GitBlame({ cwd, path, onClose }: GitBlameProps) {
                 key={i}
                 className="flex border-b border-ink-800/30 hover:bg-ink-800/20 transition-theme"
               >
-                {/* Left column: blame metadata (~120px) */}
+                {/* Left column: blame metadata — hidden on mobile to save space */}
+                {!isMobile && (
                 <div className="w-[120px] shrink-0 border-r border-ink-800/40 px-2 py-px select-none">
                   {first ? (
                     <div className="flex flex-col gap-px">
@@ -130,6 +133,15 @@ export function GitBlame({ cwd, path, onClose }: GitBlameProps) {
                     <span className="text-ink-700">│</span>
                   )}
                 </div>
+                )}
+
+                {/* Mobile: compact inline metadata */}
+                {isMobile && first && (
+                  <div className="shrink-0 px-2 py-px select-none border-r border-ink-800/40">
+                    <span className="text-amber-400 text-[0.6rem] font-medium">{bl.hash.slice(0, 7)}</span>
+                    <span className="text-ink-500 text-[0.55rem] ml-1">{bl.author.split(" ")[0]}</span>
+                  </div>
+                )}
 
                 {/* Line number */}
                 <div className="w-8 shrink-0 text-right pr-2 py-px select-none text-ink-700">
@@ -137,7 +149,7 @@ export function GitBlame({ cwd, path, onClose }: GitBlameProps) {
                 </div>
 
                 {/* Line content */}
-                <div className="flex-1 py-px whitespace-pre text-ink-200 min-w-0">
+                <div className="flex-1 py-px whitespace-pre-wrap break-words text-ink-200 min-w-0 text-[0.7rem]">
                   {bl.content}
                 </div>
               </div>

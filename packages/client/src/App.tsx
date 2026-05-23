@@ -7,6 +7,7 @@ import { ChatView } from "./components/ChatView";
 import { EmptyState } from "./components/EmptyState";
 import { useWebSocketPool } from "./hooks/useWebSocketPool";
 import { useTheme } from "./hooks/useTheme";
+import { useIsMobile } from "./hooks/useIsMobile";
 
 export type ViewState = "projects" | "sessions" | "chat";
 
@@ -20,7 +21,8 @@ export default function App() {
   const [showAddProject, setShowAddProject] = useState(false);
   const [newSessionId, setNewSessionId] = useState<string | null>(null);
   const [isAddingProject, setIsAddingProject] = useState(false);
-  const [showSidebar, setShowSidebar] = useState(true);
+  const [showSidebar, setShowSidebar] = useState(window.innerWidth >= 768);
+  const isMobile = useIsMobile();
 
   // Session detail cache with 30s TTL
   const sessionCacheRef = useRef<Map<string, { data: SessionDetail; timestamp: number }>>(new Map());
@@ -139,11 +141,13 @@ export default function App() {
     setActiveSession(null);
     setSessionDetail(null);
     setView("sessions");
-  }, []);
+    if (isMobile) setTimeout(() => setShowSidebar(false), 150);
+  }, [isMobile]);
 
   const handleSelectSession = useCallback(async (session: SessionSummary) => {
     setActiveSession(session);
     setView("chat");
+    if (isMobile) setTimeout(() => setShowSidebar(false), 150);
 
     // Load session detail — check cache first
     const cached = sessionCacheRef.current.get(session.filePath);
@@ -165,7 +169,7 @@ export default function App() {
         console.error("Failed to load session detail:", e);
       }
     }
-  }, []);
+  }, [isMobile]);
 
   const handleNewSession = useCallback(() => {
     // Generate a unique ID for the new session — this creates a fresh WS/agent
@@ -174,21 +178,24 @@ export default function App() {
     setActiveSession(null);
     setSessionDetail(null);
     setView("chat");
+    if (isMobile) setTimeout(() => setShowSidebar(false), 150);
     // Refresh session list after PI creates the new session file
     setTimeout(() => fetchSessions(), SESSION_FETCH_DELAY_MS);
-  }, [fetchSessions]);
+  }, [fetchSessions, isMobile]);
 
   const handleBack = useCallback(() => {
     if (view === "chat") {
       setView("sessions");
       setActiveSession(null);
       setSessionDetail(null);
+      if (isMobile) setShowSidebar(true);
     } else if (view === "sessions") {
       setView("projects");
       setSelectedProject(null);
       setSessions([]);
+      if (isMobile) setShowSidebar(true);
     }
-  }, [view]);
+  }, [view, isMobile]);
 
   const handleAddProject = useCallback(async (path: string, name: string) => {
     setIsAddingProject(true);
@@ -305,31 +312,41 @@ export default function App() {
     <div className="flex h-screen overflow-hidden bg-ink-950">
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-0 focus:left-0 focus:z-80 focus:bg-ink-900 focus:p-4 focus:text-amber-500">Skip to chat</a>
       {showSidebar && (
-      <Sidebar
-        projects={projects}
-        sessions={sessions}
-        selectedProject={selectedProject}
-        activeSession={activeSession}
-        view={view}
-        showAddProject={showAddProject}
-        theme={theme}
-        onSelectProject={handleSelectProject}
-        onSelectSession={handleSelectSession}
-        onBack={handleBack}
-        onNewSession={handleNewSession}
-        onAddProject={handleAddProject}
-        isAddingProject={isAddingProject}
-        onDeleteProject={handleDeleteProject}
-        onToggleAddProject={() => setShowAddProject(v => !v)}
-        onToggleTheme={toggleTheme}
-        onDeleteSession={handleDeleteSession}
-        onRenameSession={handleRenameSession}
-        onForkSession={handleForkSession}
-        onRefreshSessions={handleRefreshSessions}
-        onContinueLatest={handleContinueLatest}
-        streamingSessionIds={streamingSessionIds}
-        onToggleSidebar={() => setShowSidebar(false)}
-      />
+      <>
+        {/* Mobile: overlay backdrop */}
+        {isMobile && (
+          <div
+            className="fixed inset-0 z-20 bg-ink-950/60 backdrop-blur-sm"
+            onClick={() => setShowSidebar(false)}
+          />
+        )}
+        <Sidebar
+          projects={projects}
+          sessions={sessions}
+          selectedProject={selectedProject}
+          activeSession={activeSession}
+          view={view}
+          showAddProject={showAddProject}
+          theme={theme}
+          onSelectProject={handleSelectProject}
+          onSelectSession={handleSelectSession}
+          onBack={handleBack}
+          onNewSession={handleNewSession}
+          onAddProject={handleAddProject}
+          isAddingProject={isAddingProject}
+          onDeleteProject={handleDeleteProject}
+          onToggleAddProject={() => setShowAddProject(v => !v)}
+          onToggleTheme={toggleTheme}
+          onDeleteSession={handleDeleteSession}
+          onRenameSession={handleRenameSession}
+          onForkSession={handleForkSession}
+          onRefreshSessions={handleRefreshSessions}
+          onContinueLatest={handleContinueLatest}
+          streamingSessionIds={streamingSessionIds}
+          onToggleSidebar={() => setShowSidebar(false)}
+          isMobile={isMobile}
+        />
+      </>
       )}
       
 
@@ -366,10 +383,15 @@ function SessionWelcome({ project, sessions, onSelectSession }: {
   sessions: SessionSummary[];
   onSelectSession: (s: SessionSummary) => void;
 }) {
+  const isMobileScreen = useIsMobile();
   return (
-    <div className="flex-1 flex flex-col items-center justify-center p-8">
+    <div className="flex-1 flex flex-col items-center justify-center p-4 md:p-8">
       <div className="max-w-lg w-full text-center animate-fade-in-up">
-        <h2 className="text-2xl font-semibold text-ink-100 mb-2">
+        {/* Mobile back hint */}
+        {isMobileScreen && (
+          <p className="text-ink-500 text-xs font-mono mb-4">Tap ☰ to browse sessions</p>
+        )}
+        <h2 className="text-xl md:text-2xl font-semibold text-ink-100 mb-2">
           {project?.name || "Sessions"}
         </h2>
         <p className="text-ink-400 text-lg italic mb-8">

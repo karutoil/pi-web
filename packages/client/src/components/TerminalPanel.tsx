@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Icon } from "./Icon";
+import { useIsMobile } from "../hooks/useIsMobile";
 
 // ─── Types ───
 
@@ -191,6 +192,38 @@ export function TerminalPanel({ projectId, projectPath, visible, onClose }: Term
   const panelRef = useRef<HTMLDivElement>(null);
   const startYRef = useRef(0);
   const startHeightRef = useRef(0);
+  const isMobile = useIsMobile();
+
+  // Mobile: bottom-sheet snap heights as percentage of viewport
+  const SNAP_POINTS = [0.3, 0.5, 0.7];
+  const [mobileSnap, setMobileSnap] = useState(0.5); // default to 50%
+  const mobileDragStart = useRef<{ y: number; snap: number } | null>(null);
+
+  // Mobile touch drag handler for bottom sheet
+  const handleMobileTouchStart = useCallback((e: React.TouchEvent) => {
+    mobileDragStart.current = { y: e.touches[0].clientY, snap: mobileSnap };
+  }, [mobileSnap]);
+
+  const handleMobileTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!mobileDragStart.current) return;
+    const dy = mobileDragStart.current.y - e.touches[0].clientY;
+    const vh = window.innerHeight;
+    const deltaSnap = dy / vh;
+    setMobileSnap(Math.max(0.2, Math.min(0.85, mobileDragStart.current.snap + deltaSnap)));
+  }, []);
+
+  const handleMobileTouchEnd = useCallback(() => {
+    if (mobileDragStart.current === null) return;
+    // Snap to nearest snap point
+    const nearest = SNAP_POINTS.reduce((best, point) =>
+      Math.abs(point - mobileSnap) < Math.abs(best - mobileSnap) ? point : best
+    );
+    // Only snap if close enough, otherwise keep current position
+    if (Math.abs(nearest - mobileSnap) < 0.08) {
+      setMobileSnap(nearest);
+    }
+    mobileDragStart.current = null;
+  }, [mobileSnap]);
 
   // Load existing terminals for this project
   useEffect(() => {
@@ -270,18 +303,36 @@ export function TerminalPanel({ projectId, projectPath, visible, onClose }: Term
   const activeTab = tabs.find(t => t.id === activeTabId);
 
   return (
+    <>
+    {/* Mobile: backdrop behind bottom sheet */}
+    {isMobile && (
+      <div className="fixed inset-0 z-39 bg-ink-950/40" onClick={onClose} />
+    )}
     <div
       ref={panelRef}
-      className="flex flex-col bg-ink-950 border-t border-ink-800/60 select-none"
-      style={{ height: `${height}px` }}
+      className={`flex flex-col bg-ink-950 border-t border-ink-800/60 select-none ${
+        isMobile ? "fixed bottom-0 left-0 right-0 z-40 border-t-0 rounded-t-xl" : ""
+      }`}
+      style={isMobile ? { height: `${mobileSnap * 100}vh` } : { height: `${height}px` }}
     >
-      {/* ── Resize handle ── */}
+      {/* ── Resize handle (desktop: drag, mobile: touch drag bottom sheet) ── */}
+      {!isMobile ? (
       <div
         className="h-1.5 cursor-ns-resize flex items-center justify-center group hover:bg-amber-500/10 transition-theme"
         onMouseDown={handleResizeMouseDown}
       >
         <div className={`w-8 h-0.5 rounded-full transition-theme ${isResizing ? "bg-amber-500" : "bg-ink-700 group-hover:bg-ink-500"}`} />
       </div>
+      ) : (
+      <div
+        className="h-8 flex items-center justify-center cursor-grab active:cursor-grabbing touch-none"
+        onTouchStart={handleMobileTouchStart}
+        onTouchMove={handleMobileTouchMove}
+        onTouchEnd={handleMobileTouchEnd}
+      >
+        <div className="w-10 h-1 rounded-full bg-ink-600" />
+      </div>
+      )}
 
       {/* ── Tab bar ── */}
       <div className="flex items-center gap-0 px-1 border-b border-ink-800/40 min-h-0">
@@ -338,6 +389,7 @@ export function TerminalPanel({ projectId, projectPath, visible, onClose }: Term
         )}
       </div>
     </div>
+    </>
   );
 }
 
@@ -393,7 +445,7 @@ function TabButton({ tab, isActive, onSelect, onClose, onRename }: {
       )}
       <button
         onClick={(e) => { e.stopPropagation(); onClose(); }}
-        className="opacity-0 group-hover:opacity-100 text-ink-600 hover:text-rose-400 transition-all ml-0.5"
+        className="opacity-0 group-hover:opacity-100 sm:opacity-40 sm:group-hover:opacity-100 text-ink-600 hover:text-rose-400 transition-all ml-0.5"
         aria-label={`Close ${tab.name}`}
       >
         <Icon name="close" size={8} />

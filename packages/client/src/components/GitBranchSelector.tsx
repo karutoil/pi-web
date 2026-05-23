@@ -186,7 +186,7 @@ export function GitBranchSelector({ cwd, currentBranch, ahead, behind, onRefresh
       {open && (
         <div
           ref={dropdownRef}
-          className="absolute left-0 top-full mt-1 bg-ink-900 border border-ink-800 rounded-lg shadow-2xl z-40 min-w-[240px] max-w-[320px] animate-fade-in-up"
+          className="absolute left-0 top-full mt-1 bg-ink-900 border border-ink-800 rounded-lg shadow-2xl z-40 min-w-[200px] md:min-w-[240px] max-w-[320px] animate-fade-in-up"
         >
           {/* Create branch input */}
           <div className="px-2 py-2 border-b border-ink-800">

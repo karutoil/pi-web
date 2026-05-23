@@ -5,7 +5,7 @@ import type { Theme } from "../hooks/useTheme";
 import { Icon } from "./Icon";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { AddProjectExplorer } from "./AddProjectExplorer";
-import { ContextMenuPortal, ContextMenuItem, ContextMenuDivider } from "./ContextMenu";
+import { ContextMenuPortal, ContextMenuItem, ContextMenuDivider, useLongPress } from "./ContextMenu";
 
 interface SidebarProps {
   projects: Project[];
@@ -31,6 +31,7 @@ interface SidebarProps {
   streamingSessionIds: Set<string>;
   isAddingProject?: boolean;
   onToggleSidebar?: () => void;
+  isMobile?: boolean;
 }
 
 // ─── Helpers ───
@@ -110,6 +111,7 @@ export function Sidebar({
   onContinueLatest,
   streamingSessionIds,
   onToggleSidebar,
+  isMobile,
 }: SidebarProps) {
   const [sessionSearch, setSessionSearch] = useState("");
   const [focusedIdx, setFocusedIdx] = useState(-1);
@@ -165,7 +167,11 @@ export function Sidebar({
   return (
     <>
     <aside
-      className="w-64 shrink-0 flex flex-col bg-ink-900/30 relative"
+      className={`shrink-0 flex flex-col bg-ink-900/30 relative ${
+        isMobile
+          ? "fixed inset-y-0 left-0 z-30 w-[85vw] max-w-[288px] animate-fade-in-up"
+          : "w-64"
+      }`}
       onKeyDown={handleKeyDown}
     >
       {/* Ambient top glow */}
@@ -179,7 +185,7 @@ export function Sidebar({
         </div>
         <button
           onClick={onToggleTheme}
-          className="text-ink-600 hover:text-ink-400 transition-theme p-1"
+          className="text-ink-600 hover:text-ink-400 transition-theme p-1 touch-target"
           title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
           aria-label="Toggle dark mode"
         >
@@ -192,7 +198,7 @@ export function Sidebar({
         {onToggleSidebar && (
           <button
             onClick={onToggleSidebar}
-            className="text-ink-600 hover:text-ink-400 transition-theme p-1"
+            className="text-ink-600 hover:text-ink-400 transition-theme p-1 touch-target"
             title="Hide sidebar (⌘B)"
             aria-label="Hide sidebar"
           >
@@ -307,7 +313,7 @@ function ProjectList({
         <h2 className="text-[0.65rem] font-semibold text-ink-400 uppercase tracking-[0.12em]">Projects</h2>
         <button
           onClick={onToggleAdd}
-          className="text-ink-600 hover:text-ink-300 transition-theme p-1 rounded-md hover:bg-ink-800/50"
+          className="text-ink-600 hover:text-ink-300 transition-theme p-1 rounded-md hover:bg-ink-800/50 touch-target"
           title="Add project"
           aria-label="Add project"
         >
@@ -326,7 +332,7 @@ function ProjectList({
           <button
             key={p.id}
             onClick={() => onSelect(p)}
-            className={`w-full text-left px-3 py-2.5 rounded-lg transition-theme group ${
+            className={`w-full text-left px-3 py-3 rounded-lg transition-theme group ${
               selectedProject?.id === p.id
                 ? "bg-ink-800/40"
                 : "hover:bg-ink-800/20"
@@ -349,7 +355,7 @@ function ProjectList({
                   e.stopPropagation();
                   onRequestConfirm('Remove Project', `Remove "${p.name}"? This cannot be undone.`, () => onDelete(p.id));
                 }}
-                className="opacity-0 group-hover:opacity-100 text-ink-600 hover:text-rose-400 transition-all shrink-0 p-0.5"
+                className="opacity-0 group-hover:opacity-100 md:opacity-0 text-ink-600 hover:text-rose-400 transition-all shrink-0 p-1 touch-target"
                 title="Remove project"
                 aria-label="Remove project"
               >
@@ -415,7 +421,7 @@ function SessionList({
         <div className="flex items-center gap-0.5">
           <button
             onClick={onRefresh}
-            className="text-ink-600 hover:text-ink-300 transition-theme p-1 rounded-md hover:bg-ink-800/50"
+            className="text-ink-600 hover:text-ink-300 transition-theme p-1 rounded-md hover:bg-ink-800/50 touch-target"
             title="Refresh"
             aria-label="Refresh sessions"
           >
@@ -423,7 +429,7 @@ function SessionList({
           </button>
           <button
             onClick={onNewSession}
-            className="text-ink-600 hover:text-ink-300 transition-theme p-1 rounded-md hover:bg-ink-800/50"
+            className="text-ink-600 hover:text-ink-300 transition-theme p-1 rounded-md hover:bg-ink-800/50 touch-target"
             title="New session"
             aria-label="New session"
           >
@@ -540,6 +546,7 @@ function SessionItem({
   const [renameValue, setRenameValue] = useState(s.name || "");
   const renameRef = useRef<HTMLInputElement>(null);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const longPress = useLongPress((e) => setCtxMenu({ x: e.clientX, y: e.clientY }));
 
   useEffect(() => {
     if (isRenaming && renameRef.current) {
@@ -576,6 +583,7 @@ function SessionItem({
     <div
       data-session-idx={idx}
       onContextMenu={handleContextMenu}
+      {...longPress}
       className={`relative group rounded-lg transition-all duration-150 ${
         isActive
           ? "bg-ink-800/40"
@@ -586,7 +594,7 @@ function SessionItem({
     >
       <button
         onClick={() => onSelect(s)}
-        className="w-full text-left px-3 py-2"
+        className="w-full text-left px-3 py-2.5 min-h-[44px]"
         title={preview || undefined}
       >
         <div className="flex items-center gap-2.5">

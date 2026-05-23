@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import type { ModelInfo, SessionStats } from "@pi-web/shared";
 import type { WSBridge } from "../lib/types";
 import { Icon } from "./Icon";
+import { useIsMobile } from "../hooks/useIsMobile";
 
 interface Props {
   ws: WSBridge;
@@ -20,6 +21,7 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
   const [nameInput, setNameInput] = useState(sessionName || "");
   const modelRef = useRef<HTMLDivElement>(null);
   const thinkingRef = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
 
   // Fetch models on mount
   useEffect(() => {
@@ -70,9 +72,20 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
   };
 
   return (
-    <div className="flex items-center gap-2 px-4 py-2.5 border-b border-ink-800 bg-ink-900/30 shrink-0 flex-wrap">
+    <div className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2.5 border-b border-ink-800 bg-ink-900/30 shrink-0">
       {/* Logo + Session name */}
       <div className="flex-1 min-w-0 flex items-center gap-2">
+        {/* Sidebar toggle (mobile: always show when sidebar hidden) */}
+        {onToggleSidebar && !showSidebar && (
+          <button
+            onClick={onToggleSidebar}
+            className="text-ink-400 hover:text-ink-200 transition-theme touch-target-sm p-1"
+            aria-label="Show sidebar"
+            title="Show sidebar (⌘B)"
+          >
+            <Icon name="chevron-right" size={16} />
+          </button>
+        )}
         <img src="/pi-logo.svg" alt="" aria-hidden="true" className="w-4 h-4 shrink-0 opacity-60" />
         {editingName ? (
           <input
@@ -80,13 +93,13 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
             onChange={e => setNameInput(e.target.value)}
             onBlur={handleSaveName}
             onKeyDown={e => { if (e.key === "Enter") handleSaveName(); if (e.key === "Escape") setEditingName(false); }}
-            className="bg-ink-900 border border-ink-700 rounded px-2 py-0.5 text-ink-100 text-sm font-medium outline-none focus:border-amber-500 w-48"
+            className="bg-ink-900 border border-ink-700 rounded px-2 py-0.5 text-ink-100 text-sm font-medium outline-none focus:border-amber-500 w-24 md:w-32 lg:w-48"
             autoFocus
           />
         ) : (
           <button
             onClick={() => { setNameInput(sessionName || ""); setEditingName(true); }}
-            className="text-sm font-medium text-ink-200 truncate hover:text-amber-500 transition-theme max-w-[200px]"
+            className="text-sm font-medium text-ink-200 truncate hover:text-amber-500 transition-theme max-w-[80px] md:max-w-[120px] lg:max-w-[200px]"
             title="Click to rename"
             aria-label="Rename session"
           >
@@ -97,15 +110,17 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
       </div>
 
       {/* Connection & streaming indicators */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1 md:gap-2 shrink-0">
         {!ws.isConnected && (
           <span className="flex items-center gap-1 text-rose-500 text-xs font-mono">
-            <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Offline
+            <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+            <span className="hidden md:inline">Offline</span>
           </span>
         )}
         {ws.isStreaming && (
           <span className="flex items-center gap-1 text-amber-500 text-xs font-mono">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" /> Live
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+            <span className="hidden md:inline">Live</span>
           </span>
         )}
 
@@ -121,8 +136,8 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
           </div>
         )}
 
-        {/* Sidebar toggle */}
-        {onToggleSidebar && !showSidebar && (
+        {/* Sidebar toggle (desktop only — mobile has hamburger above) */}
+        {onToggleSidebar && !showSidebar && !isMobile && (
           <button
             onClick={onToggleSidebar}
             className="text-xs font-mono px-2 py-1 rounded border bg-ink-850 border-ink-750 hover:border-ink-600 text-ink-400 hover:text-ink-200 transition-theme"
@@ -137,7 +152,7 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
         {onToggleGit && (
           <button
             onClick={onToggleGit}
-            className={`text-xs font-mono px-2 py-1 rounded border transition-theme ${
+            className={`text-xs font-mono px-2 py-1 rounded border transition-theme touch-target-sm ${
               showGit ? "bg-amber-600/20 border-amber-500/30 text-amber-500" : "bg-ink-850 border-ink-750 hover:border-ink-600 text-ink-400"
             }`}
             aria-label="Toggle git panel"
@@ -147,7 +162,8 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
           </button>
         )}
 
-        {/* Thinking level */}
+        {/* Thinking level — hide on mobile, show in model dropdown instead */}
+        {!isMobile && (
         <div ref={thinkingRef} className="relative">
           <button
             onClick={() => { setThinkingOpen(o => !o); setModelOpen(false); }}
@@ -172,18 +188,27 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
             </div>
           )}
         </div>
+        )}
 
         {/* Model selector */}
         <div ref={modelRef} className="relative">
           <button
             onClick={() => { setModelOpen(o => !o); setThinkingOpen(false); }}
-            className="text-xs font-mono px-2 py-1 rounded bg-ink-850 border border-ink-750 hover:border-ink-600 text-ink-300 transition-theme max-w-[160px] truncate"
+            className="text-xs font-mono px-2 py-1 rounded bg-ink-850 border border-ink-750 hover:border-ink-600 text-ink-300 transition-theme max-w-[100px] md:max-w-[160px] truncate"
             aria-label="Select model"
           >
             {currentModel?.name || ws.state?.model || (ws.models.length === 0 && ws.isConnected ? "Loading…" : "Model")}
           </button>
+          {/* Mobile backdrop */}
+          {modelOpen && isMobile && (
+            <div className="fixed inset-0 z-39 bg-ink-950/50" onClick={() => setModelOpen(false)} />
+          )}
           {modelOpen && (
-            <div className="absolute right-0 top-full mt-1 bg-ink-900 border border-ink-700 rounded-lg shadow-lg py-1 z-40 min-w-[240px]">
+            <div className={`bg-ink-900 border border-ink-700 rounded-lg shadow-lg py-1 z-40 max-w-[320px] animate-fade-in-up ${
+              isMobile
+                ? "fixed bottom-0 left-0 right-0 rounded-b-none max-h-[60vh] overflow-y-auto"
+                : "absolute right-0 top-full mt-1 min-w-[240px]"
+            }`}>
               {/* Search input */}
               <div className="px-2 py-1.5 border-b border-ink-800">
                 <input
@@ -196,6 +221,25 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
                   onKeyDown={e => e.stopPropagation()}
                 />
               </div>
+              {/* Mobile: thinking level section inside model dropdown */}
+              {isMobile && (
+                <>
+                  <div className="px-3 py-1 text-ink-500 text-[0.6rem] font-semibold uppercase tracking-wider border-b border-ink-800">Thinking Level</div>
+                  <div className="flex flex-wrap gap-1 px-2 py-1.5 border-b border-ink-800">
+                    {thinkingLevels.map(l => (
+                      <button
+                        key={l}
+                        onClick={() => { ws.send({ type: "set_thinking", level: l }); }}
+                        className={`px-2 py-1 text-xs font-mono rounded transition-theme ${
+                          ws.state?.thinkingLevel === l ? "bg-amber-600/20 text-amber-500" : "bg-ink-850 text-ink-400 hover:text-ink-200"
+                        }`}
+                      >
+                        {l}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
               <div className="max-h-56 overflow-y-auto custom-scrollbar">
               {filteredModels.length === 0 && (
                 <div className="px-3 py-2 text-ink-600 text-xs">No models match "{modelSearch}"</div>

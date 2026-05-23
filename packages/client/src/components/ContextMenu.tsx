@@ -1,6 +1,44 @@
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 
+// ─── Long-press hook for mobile context menus ───
+
+export function useLongPress(onLongPress: (e: { clientX: number; clientY: number }) => void, delay = 500) {
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const posRef = useRef<{ x: number; y: number } | null>(null);
+  const MOVE_THRESHOLD = 10;
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    posRef.current = { x: touch.clientX, y: touch.clientY };
+    timerRef.current = setTimeout(() => {
+      if (posRef.current) {
+        onLongPress({ clientX: posRef.current.x, clientY: posRef.current.y });
+      }
+    }, delay);
+  };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    if (!posRef.current || !timerRef.current) return;
+    const touch = e.touches[0];
+    const dx = Math.abs(touch.clientX - posRef.current.x);
+    const dy = Math.abs(touch.clientY - posRef.current.y);
+    if (dx > MOVE_THRESHOLD || dy > MOVE_THRESHOLD) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  const onTouchEnd = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  return { onTouchStart, onTouchMove, onTouchEnd };
+}
+
 // ─── Portal-rendered right-click context menu at cursor position ───
 
 export function ContextMenuPortal({
@@ -35,12 +73,20 @@ export function ContextMenuPortal({
     };
   }, [onClose]);
 
-  const [pos, setPos] = useState({ x, y });
+  // Pre-calculate safe position — estimate menu size to avoid off-screen placement
+  const MENU_WIDTH = 200;
+  const MENU_HEIGHT = 160;
+  const vw = typeof window !== "undefined" ? window.innerWidth : 800;
+  const vh = typeof window !== "undefined" ? window.innerHeight : 600;
+  const safeX = x + MENU_WIDTH > vw ? Math.max(4, x - MENU_WIDTH) : Math.max(4, x);
+  const safeY = y + MENU_HEIGHT > vh ? Math.max(4, y - MENU_HEIGHT) : Math.max(4, y);
+
+  const [pos, setPos] = useState({ x: safeX, y: safeY });
   useEffect(() => {
     if (!menuRef.current) return;
     const rect = menuRef.current.getBoundingClientRect();
-    const cx = x + rect.width > window.innerWidth ? x - rect.width : x;
-    const cy = y + rect.height > window.innerHeight ? y - rect.height : y;
+    const cx = x + rect.width > vw ? x - rect.width : x;
+    const cy = y + rect.height > vh ? y - rect.height : y;
     setPos({ x: Math.max(4, cx), y: Math.max(4, cy) });
   }, [x, y]);
 

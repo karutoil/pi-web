@@ -145,7 +145,7 @@ export function ExtensionUIModal({ request, onRespond }: Props) {
 
   if (request.method === "notify") {
     return (
-      <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-80 min-w-[280px] max-w-lg animate-fade-in-up`}>
+      <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-80 min-w-[280px] max-w-lg animate-fade-in-up mobile-safe-top`}>
         <div className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl border backdrop-blur-md ${
           request.notifyType === "error"
             ? "bg-rose-500/15 border-rose-500/30 text-rose-300"
@@ -191,7 +191,7 @@ export function ExtensionUIModal({ request, onRespond }: Props) {
 
   return (
     <div className="fixed inset-0 z-60 flex items-center justify-center bg-ink-950/60 backdrop-blur-sm animate-fade-in-up">
-      <div className="relative z-70 bg-ink-900 border border-ink-700 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+      <div className="relative z-70 bg-ink-900 border border-ink-700 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden mobile-safe-bottom">
         {/* Header */}
         <div className="px-5 py-4 border-b border-ink-800 flex items-center justify-between">
           <h3 className="text-ink-200 font-medium text-sm">{request.title || "Extension"}</h3>

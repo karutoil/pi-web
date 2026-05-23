@@ -4,6 +4,7 @@ import { GitStash } from "./GitStash";
 import { GitLog } from "./GitLog";
 import { GitBlame } from "./GitBlame";
 import { GitBranchSelector } from "./GitBranchSelector";
+import { useIsMobile } from "../hooks/useIsMobile";
 
 // ─── Types ───
 
@@ -144,6 +145,7 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
   const isResizing = useRef(false);
   const startX = useRef(0);
   const startWidth = useRef(0);
+  const isMobile = useIsMobile();
 
   // Fetch status
   const refresh = useCallback(() => {
@@ -315,14 +317,18 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
 
   return (
     <div
-      className="flex flex-col bg-ink-950 border-l border-ink-800/60 shrink-0 select-none h-full relative"
-      style={{ width: `${width}px` }}
+      className={`flex flex-col bg-ink-950 border-l border-ink-800/60 shrink-0 select-none h-full relative ${
+        isMobile ? "fixed inset-0 border-l-0" : ""
+      }`}
+      style={isMobile ? { zIndex: 45 } : { width: `${width}px` }}
     >
-      {/* ── Resize handle ── */}
+      {/* ── Resize handle (desktop only) ── */}
+      {!isMobile && (
       <div
         className="w-2 -ml-1 cursor-ew-resize absolute left-0 top-0 bottom-0 z-10 hover:bg-amber-500/30 active:bg-amber-500/20 transition-theme"
         onMouseDown={handleResizeMouseDown}
       />
+      )}
 
       {/* ── Header ── */}
       <div className="px-3 py-2.5 border-b border-ink-800/60 bg-ink-900/20 shrink-0">
@@ -332,16 +338,16 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
 
           {/* Sync buttons */}
           <div className="flex items-center gap-0.5">
-            <button onClick={handleFetch} className="p-1 text-ink-600 hover:text-sky-400 transition-theme rounded hover:bg-ink-800/50" aria-label="Fetch" title="Fetch">
+            <button onClick={handleFetch} className="p-1.5 md:p-1 text-ink-600 hover:text-sky-400 transition-theme rounded hover:bg-ink-800/50 touch-target" aria-label="Fetch" title="Fetch">
               <Icon name="refresh" size={11} />
             </button>
-            <button onClick={handlePull} className="p-1 text-ink-600 hover:text-emerald-400 transition-theme rounded hover:bg-ink-800/50" aria-label="Pull" title="Pull">↓</button>
-            <button onClick={handlePush} className="p-1 text-ink-600 hover:text-amber-400 transition-theme rounded hover:bg-ink-800/50" aria-label="Push" title="Push">↑</button>
+            <button onClick={handlePull} className="p-1.5 md:p-1 text-ink-600 hover:text-emerald-400 transition-theme rounded hover:bg-ink-800/50 touch-target" aria-label="Pull" title="Pull">↓</button>
+            <button onClick={handlePush} className="p-1.5 md:p-1 text-ink-600 hover:text-amber-400 transition-theme rounded hover:bg-ink-800/50 touch-target" aria-label="Push" title="Push">↑</button>
           </div>
-          <button onClick={refresh} className="p-1 text-ink-600 hover:text-amber-500 transition-theme rounded hover:bg-ink-800/50" aria-label="Refresh" title="Refresh">
+          <button onClick={refresh} className="p-1.5 md:p-1 text-ink-600 hover:text-amber-500 transition-theme rounded hover:bg-ink-800/50 touch-target" aria-label="Refresh" title="Refresh">
             <Icon name="refresh" size={12} />
           </button>
-          <button onClick={onClose} className="p-1 text-ink-600 hover:text-ink-300 transition-theme rounded hover:bg-ink-800/50" aria-label="Close panel">
+          <button onClick={onClose} className="p-1.5 md:p-1 text-ink-600 hover:text-ink-300 transition-theme rounded hover:bg-ink-800/50 touch-target" aria-label="Close panel">
             <Icon name="close" size={12} />
           </button>
         </div>
@@ -479,7 +485,7 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
               />
               <span className="text-ink-500 text-[0.65rem]">Amend</span>
             </label>
-            <span className="text-ink-700 text-[0.6rem] font-mono ml-auto">⌘↵</span>
+            <span className="text-ink-700 text-[0.6rem] font-mono ml-auto hidden md:inline">⌘↵</span>
           </div>
         </div>
       )}
@@ -644,6 +650,8 @@ function FileRow({ file, stats, staged, selected, onStage, onUnstage, onDiscard,
   onToggleSelect?: (path: string, shiftKey: boolean) => void;
 }) {
   const [hovered, setHovered] = useState(false);
+  const isMobile = useIsMobile();
+  const showActions = hovered || isMobile;
 
   return (
     <div
@@ -681,36 +689,36 @@ function FileRow({ file, stats, staged, selected, onStage, onUnstage, onDiscard,
       </span>
 
       {/* Diff stats */}
-      {stats && (stats.additions > 0 || stats.deletions > 0) && !hovered && (
+      {stats && (stats.additions > 0 || stats.deletions > 0) && !showActions && (
         <span className="text-[0.6rem] font-mono shrink-0">
           <span className="text-emerald-400">+{stats.additions}</span>
           <span className="text-rose-400">-{stats.deletions}</span>
         </span>
       )}
 
-      {/* Action buttons on hover */}
-      {hovered && (
+      {/* Action buttons on hover or mobile */}
+      {showActions && (
         <div className="flex items-center gap-0.5 shrink-0">
           {staged && onUnstage && (
-            <button onClick={(e) => { e.stopPropagation(); onUnstage(file.path); }} className="p-0.5 text-ink-500 hover:text-amber-500 transition-theme" aria-label="Unstage" title="Unstage">
+            <button onClick={(e) => { e.stopPropagation(); onUnstage(file.path); }} className="p-1 md:p-0.5 text-ink-500 hover:text-amber-500 transition-theme touch-target" aria-label="Unstage" title="Unstage">
               <Icon name="minus" size={10} />
             </button>
           )}
           {!staged && onStage && (
-            <button onClick={(e) => { e.stopPropagation(); onStage(file.path); }} className="p-0.5 text-ink-500 hover:text-amber-500 transition-theme" aria-label="Stage" title="Stage">
+            <button onClick={(e) => { e.stopPropagation(); onStage(file.path); }} className="p-1 md:p-0.5 text-ink-500 hover:text-amber-500 transition-theme touch-target" aria-label="Stage" title="Stage">
               <Icon name="plus" size={10} />
             </button>
           )}
           {!staged && onDiscard && file.status !== "?" && (
-            <button onClick={(e) => { e.stopPropagation(); onDiscard(file.path); }} className="p-0.5 text-ink-500 hover:text-rose-400 transition-theme" aria-label="Discard" title="Discard">
+            <button onClick={(e) => { e.stopPropagation(); onDiscard(file.path); }} className="p-1 md:p-0.5 text-ink-500 hover:text-rose-400 transition-theme touch-target" aria-label="Discard" title="Discard">
               <Icon name="undo" size={10} />
             </button>
           )}
           {onBlame && file.status !== "?" && (
-            <button onClick={(e) => { e.stopPropagation(); onBlame(file.path); }} className="p-0.5 text-ink-500 hover:text-sky-400 transition-theme" aria-label="Blame" title="Blame">B</button>
+            <button onClick={(e) => { e.stopPropagation(); onBlame(file.path); }} className="p-1 md:p-0.5 text-ink-500 hover:text-sky-400 transition-theme touch-target" aria-label="Blame" title="Blame">B</button>
           )}
           {onComparePrev && file.status !== "?" && (
-            <button onClick={(e) => { e.stopPropagation(); onComparePrev(file.path); }} className="p-0.5 text-ink-500 hover:text-amber-400 transition-theme" aria-label="Compare with previous" title="Compare with previous">⇄</button>
+            <button onClick={(e) => { e.stopPropagation(); onComparePrev(file.path); }} className="p-1 md:p-0.5 text-ink-500 hover:text-amber-400 transition-theme touch-target" aria-label="Compare with previous" title="Compare with previous">⇄</button>
           )}
         </div>
       )}

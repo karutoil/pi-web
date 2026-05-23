@@ -241,7 +241,7 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
                     aria-selected={isSelected}
                     onClick={() => handleSelect(item)}
                     onDoubleClick={() => handleEnterDirectory(item)}
-                    className={`w-full text-left flex items-center gap-2.5 px-3 py-2 transition-theme group ${
+                    className={`w-full text-left flex items-center gap-2.5 px-3 py-3 md:py-2 transition-theme group ${
                       isSelected
                         ? "bg-amber-500/10 border-l-2 border-l-amber-500"
                         : isFocused

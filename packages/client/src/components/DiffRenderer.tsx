@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { useIsMobile } from "../hooks/useIsMobile";
 
 interface DiffLine {
   type: "add" | "remove" | "context" | "hunk" | "meta";
@@ -19,7 +20,13 @@ interface Props {
 
 export function DiffRenderer({ content, collapsible = true }: Props) {
   const [expanded, setExpanded] = useState(false);
-  const [viewMode, setViewMode] = useState<"side" | "unified">("side");
+  const isMobile = useIsMobile();
+  const [viewMode, setViewMode] = useState<"side" | "unified">("unified");
+
+  // Sync viewMode when viewport changes
+  useEffect(() => {
+    if (isMobile) setViewMode("unified");
+  }, [isMobile]);
 
   const { sideBySide, stats } = useMemo(() => {
     const rawLines = content.split("\n");
@@ -141,7 +148,8 @@ export function DiffRenderer({ content, collapsible = true }: Props) {
         <span className="text-rose-400 font-medium font-mono">-{stats.removed}</span>
         <span className="text-ink-600 font-mono">{stats.total} changes</span>
         <div className="flex-1" />
-        <div className="flex rounded border border-ink-700 overflow-hidden">
+        {!isMobile && (
+        <div className="flex rounded border border-ink-700 overflow-hidden diff-side-toggle">
           <button
             onClick={() => setViewMode("side")}
             className={`px-2 py-0.5 text-[0.65rem] font-mono transition-theme ${
@@ -159,12 +167,13 @@ export function DiffRenderer({ content, collapsible = true }: Props) {
             Unified
           </button>
         </div>
+        )}
       </div>
 
       {/* Unified view */}
       {viewMode === "unified" && (
         <div className="overflow-x-auto">
-          <div className="min-w-[300px]">
+          <div className="md:min-w-[300px]">
             {displayRows.map((row, i) => {
               const line = row.leftLine || row.rightLine;
               if (!line) return null;
@@ -177,9 +186,13 @@ export function DiffRenderer({ content, collapsible = true }: Props) {
                     line.type === "add" ? "bg-teal-500/10" : line.type === "remove" ? "bg-rose-500/10" : ""
                   }`}
                 >
+                  {/* Old line number — hidden on mobile to save space */}
+                  {!isMobile && (
                   <div className="w-10 text-right pr-2 select-none text-ink-600 text-[0.65rem] py-px shrink-0">
                     {line.type !== "add" && line.lineNum?.old != null ? line.lineNum.old : ""}
                   </div>
+                  )}
+                  {/* New line number */}
                   <div className="w-10 text-right pr-2 select-none text-ink-600 text-[0.65rem] py-px shrink-0 border-r border-ink-800">
                     {line.type !== "remove" && line.lineNum?.new != null ? line.lineNum.new : ""}
                   </div>

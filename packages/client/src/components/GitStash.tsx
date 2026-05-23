@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Icon } from "./Icon";
+import { useIsMobile } from "../hooks/useIsMobile";
 
 // ─── Types ───
 
@@ -197,6 +198,8 @@ function StashRow({
   onDrop: () => void;
 }) {
   const [hovered, setHovered] = useState(false);
+  const isMobile = useIsMobile();
+  const showActions = hovered || acting || isMobile;
 
   return (
     <div
@@ -220,12 +223,12 @@ function StashRow({
       </div>
 
       {/* Hover actions */}
-      {(hovered || acting) && (
+      {showActions && (
         <div className="flex items-center gap-0.5 shrink-0">
           <button
             onClick={onApply}
             disabled={acting}
-            className="px-1.5 py-0.5 text-[0.6rem] font-mono text-ink-500 hover:text-amber-500 hover:bg-ink-800/50 rounded transition-theme disabled:opacity-40"
+            className="px-2 py-1 md:px-1.5 md:py-0.5 text-[0.6rem] font-mono text-ink-500 hover:text-amber-500 hover:bg-ink-800/50 rounded transition-theme disabled:opacity-40 min-h-[28px] md:min-h-0"
             title="Apply stash"
           >
             Apply
@@ -233,7 +236,7 @@ function StashRow({
           <button
             onClick={onPop}
             disabled={acting}
-            className="px-1.5 py-0.5 text-[0.6rem] font-mono text-ink-500 hover:text-amber-500 hover:bg-ink-800/50 rounded transition-theme disabled:opacity-40"
+            className="px-2 py-1 md:px-1.5 md:py-0.5 text-[0.6rem] font-mono text-ink-500 hover:text-amber-500 hover:bg-ink-800/50 rounded transition-theme disabled:opacity-40 min-h-[28px] md:min-h-0"
             title="Pop stash"
           >
             Pop
@@ -241,7 +244,7 @@ function StashRow({
           <button
             onClick={onDrop}
             disabled={acting}
-            className="px-1.5 py-0.5 text-[0.6rem] font-mono text-ink-500 hover:text-rose-400 hover:bg-ink-800/50 rounded transition-theme disabled:opacity-40"
+            className="px-2 py-1 md:px-1.5 md:py-0.5 text-[0.6rem] font-mono text-ink-500 hover:text-rose-400 hover:bg-ink-800/50 rounded transition-theme disabled:opacity-40 min-h-[28px] md:min-h-0"
             title="Drop stash"
           >
             Drop
