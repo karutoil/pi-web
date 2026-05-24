@@ -385,7 +385,14 @@ class PIAgent {
         case "compaction_start":
           handler({ type: "compaction_start", reason: event.reason || "manual" }); break;
         case "compaction_end":
-          handler({ type: "compaction_end", reason: event.reason || "unknown", aborted: event.aborted || false }); break;
+          handler({
+            type: "compaction_end",
+            reason: event.reason || "unknown",
+            aborted: event.aborted || false,
+            result: event.result || undefined,
+            willRetry: event.willRetry || false,
+            errorMessage: event.errorMessage,
+          }); break;
         case "extension_ui_request":
           handler({
             type: "extension_ui_request",
@@ -394,11 +401,40 @@ class PIAgent {
               message: event.message, options: event.options,
               placeholder: event.placeholder, prefill: event.prefill,
               timeout: event.timeout, notifyType: event.notifyType,
+              // setStatus fields
+              statusKey: event.statusKey, statusText: event.statusText,
+              // setWidget fields
+              widgetKey: event.widgetKey, widgetLines: event.widgetLines,
+              widgetPlacement: event.widgetPlacement,
+              // set_editor_text fields
+              text: event.text,
             },
           });
           break;
+        case "auto_retry_start":
+          handler({
+            type: "auto_retry_start",
+            attempt: event.attempt || 1,
+            maxAttempts: event.maxAttempts || 3,
+            delayMs: event.delayMs || 2000,
+            errorMessage: event.errorMessage || "",
+          }); break;
+        case "auto_retry_end":
+          handler({
+            type: "auto_retry_end",
+            success: event.success ?? true,
+            attempt: event.attempt || 1,
+            finalError: event.finalError,
+          }); break;
+        case "extension_error":
+          handler({
+            type: "extension_error",
+            extensionPath: event.extensionPath || "",
+            event: event.event || "",
+            error: event.error || "",
+          }); break;
         case "response":
-          this.bridgeResponse(event);
+          this.bridgeResponse(event, handler);
           break;
       }
     } catch (err) {
@@ -410,10 +446,14 @@ class PIAgent {
     this.doSend({ type: "extension_ui_response", id, ...response });
   }
 
-  private bridgeResponse(event: any) {
-    const handler = this.onMessage;
-    if (!handler || !event.success) return;
+  private bridgeResponse(event: any, handler: (msg: WSServerMessage) => void) {
     try {
+      // Forward failed responses so client knows about failures
+      if (!event.success) {
+        handler({ type: "response", command: event.command, success: false, error: event.error, id: event.id });
+        return;
+      }
+
       switch (event.command) {
         case "get_state": {
           const data = event.data || {};
@@ -456,27 +496,76 @@ class PIAgent {
         case "load_session":
           if (event.data) handler({ type: "session_loaded", session: event.data });
           break;
+        case "switch_session":
+          if (event.data && !event.data.cancelled) handler({ type: "session_loaded", session: event.data });
+          break;
+        case "clone":
+          handler({ type: "clone_result", cancelled: event.data?.cancelled || false, sessionPath: event.data?.sessionPath });
+          break;
+        case "export_html":
+          handler({ type: "export_html_result", path: event.data?.path || "" });
+          break;
+        case "get_messages":
+          handler({ type: "messages_result", messages: event.data?.messages || [] });
+          break;
+        case "get_last_assistant_text":
+          handler({ type: "last_assistant_text_result", text: event.data?.text ?? null });
+          break;
+        case "cycle_model":
+          if (event.data?.model) handler({ type: "model_changed", provider: event.data.model.provider, modelId: event.data.model.id });
+          if (event.data?.thinkingLevel) handler({ type: "thinking_changed", level: event.data.thinkingLevel });
+          break;
+        case "cycle_thinking_level":
+          if (event.data?.level) handler({ type: "thinking_changed", level: event.data.level });
+          break;
+        // Commands that just return success/failure — forward generic response
+        case "compact":
+        case "set_auto_compaction":
+        case "set_auto_retry":
+        case "set_steering_mode":
+        case "set_follow_up_mode":
+        case "abort_retry":
+        case "abort_bash":
+        case "bash":
+          handler({ type: "response", command: event.command, success: true, id: event.id });
+          break;
       }
     } catch (err) {
       console.error("[pi] bridge error:", err);
     }
   }
 
+  // ─── Command senders ───
+
   getAvailableModels() { this.doSend({ type: "get_available_models" }); }
   getCommands() { this.doSend({ type: "get_commands" }); }
   getForkMessages() { this.doSend({ type: "get_fork_messages" }); }
   getSessionStats() { this.doSend({ type: "get_session_stats" }); }
+  getMessages() { this.doSend({ type: "get_messages" }); }
+  getLastAssistantText() { this.doSend({ type: "get_last_assistant_text" }); }
   setSessionName(name: string) { this.doSend({ type: "set_session_name", name }); }
   prompt(message: string, images?: any[]) { this.doSend({ type: "prompt", message, images }); }
-  steer(message: string) { this.doSend({ type: "steer", message }); }
-  followUp(message: string) { this.doSend({ type: "follow_up", message }); }
+  steer(message: string, images?: any[]) { this.doSend({ type: "steer", message, images }); }
+  followUp(message: string, images?: any[]) { this.doSend({ type: "follow_up", message, images }); }
   abort() { this.doSend({ type: "abort" }); }
   newSession() { this.doSend({ type: "new_session" }); }
   fork(entryId: string) { this.doSend({ type: "fork", entryId }); }
   setModel(provider: string, modelId: string) { this.doSend({ type: "set_model", provider, modelId }); }
   setThinking(level: string) { this.doSend({ type: "set_thinking_level", level }); }
-  compact() { this.doSend({ type: "compact" }); }
+  compact(customInstructions?: string) { this.doSend({ type: "compact", ...(customInstructions ? { customInstructions } : {}) }); }
   getState() { this.doSend({ type: "get_state" }); }
+  cycleModel() { this.doSend({ type: "cycle_model" }); }
+  cycleThinkingLevel() { this.doSend({ type: "cycle_thinking_level" }); }
+  setAutoCompaction(enabled: boolean) { this.doSend({ type: "set_auto_compaction", enabled }); }
+  setAutoRetry(enabled: boolean) { this.doSend({ type: "set_auto_retry", enabled }); }
+  abortRetry() { this.doSend({ type: "abort_retry" }); }
+  setSteeringMode(mode: string) { this.doSend({ type: "set_steering_mode", mode }); }
+  setFollowUpMode(mode: string) { this.doSend({ type: "set_follow_up_mode", mode }); }
+  exportHtml(outputPath?: string) { this.doSend({ type: "export_html", ...(outputPath ? { outputPath } : {}) }); }
+  switchSession(sessionPath: string) { this.doSend({ type: "switch_session", sessionPath }); }
+  clone() { this.doSend({ type: "clone" }); }
+  bash(command: string) { this.doSend({ type: "bash", command }); }
+  abortBash() { this.doSend({ type: "abort_bash" }); }
 
   doSend(msg: unknown) {
     if (this.ready) {

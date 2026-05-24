@@ -9,6 +9,9 @@ import { ExtensionUIModal } from "./ExtensionUIModal";
 import { Icon } from "./Icon";
 import { TerminalPanel } from "./TerminalPanel";
 import { GitPanel } from "./GitPanel";
+import { SessionActions } from "./SessionActions";
+import { CompactionIndicator } from "./CompactionIndicator";
+import { ExtensionErrorToast } from "./ExtensionErrorToast";
 
 interface ChatViewProps {
   ws: WSBridge;
@@ -93,23 +96,25 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
   const handleRequestCommands = useCallback(() => {
     ws.send({ type: "get_commands" });
   }, [ws]);
-  const handleCompact = useCallback(() => ws.send({ type: "compact" }), [ws]);
+  const [showSessionActions, setShowSessionActions] = useState(false);
+  const [extensionErrorList, setExtensionErrorList] = useState<Array<{ extensionPath: string; event: string; error: string }>>([]);
 
-  // Compact feedback state
-  const [isCompacting, setIsCompacting] = useState(false);
-  const [compactDone, setCompactDone] = useState(false);
-  const handleCompactClick = useCallback(() => {
-    setIsCompacting(true);
-    ws.send({ type: "compact" });
-  }, [ws]);
+  // Track extension errors from WSBridge
   useEffect(() => {
-    if (isCompacting && !ws.isStreaming) {
-      setIsCompacting(false);
-      setCompactDone(true);
-      const t = setTimeout(() => setCompactDone(false), 2000);
-      return () => clearTimeout(t);
+    if (ws.extensionErrors.length > extensionErrorList.length) {
+      setExtensionErrorList(ws.extensionErrors);
     }
-  }, [ws.isStreaming, isCompacting]);
+  }, [ws.extensionErrors.length]);
+
+  const handleExportHtml = useCallback(() => {
+    ws.exportHtml();
+  }, [ws]);
+  const handleClone = useCallback(() => {
+    ws.clone();
+  }, [ws]);
+  const handleSetAutoCompaction = useCallback((enabled: boolean) => {
+    ws.setAutoCompaction(enabled);
+  }, [ws]);
 
   // Screen reader announcements for streaming state
   useEffect(() => {
@@ -209,7 +214,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
 
   return (
     <div className="flex-1 flex flex-col min-h-0 relative">
-      <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} onToggleGit={() => setShowGit(v => !v)} showGit={showGit} onToggleSidebar={onToggleSidebar} showSidebar={showSidebar} />
+      <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} onToggleGit={() => setShowGit(v => !v)} showGit={showGit} onToggleSidebar={onToggleSidebar} showSidebar={showSidebar} onSessionActions={() => setShowSessionActions(true)} />
 
       <div aria-live="polite" className="sr-only">{srAnnouncement}</div>
 
@@ -311,17 +316,35 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
           </div>
         )}
 
-        {/* Compaction button */}
-        {ws.messages.length > 0 && !ws.isStreaming && (
-          <div className="max-w-3xl mx-auto flex justify-center pb-2">
+        {/* Compaction indicator */}
+        {ws.compactionResult && (
+          <div className="max-w-3xl mx-auto pb-2">
+            <CompactionIndicator
+              compactionResult={ws.compactionResult}
+              isCompacting={!!ws.state?.isCompacting}
+              onCompact={(instr) => ws.compact(instr)}
+              onSetAutoCompaction={handleSetAutoCompaction}
+            />
+          </div>
+        )}
+        {/* Compact & Session actions button */}
+        {ws.messages.length > 0 && !ws.isStreaming && !ws.compactionResult && (
+          <div className="max-w-3xl mx-auto flex justify-center gap-3 pb-2">
             <button
-              onClick={handleCompactClick}
-              disabled={isCompacting}
-              className={`text-xs font-mono transition-theme ${isCompacting ? 'text-ink-500 cursor-not-allowed' : compactDone ? 'text-teal-400' : 'text-ink-500 hover:text-amber-500'}`}
+              onClick={() => ws.compact()}
+              className="text-xs font-mono text-ink-500 hover:text-amber-500 transition-theme"
               title="Compact conversation context"
               aria-label="Compact conversation context"
             >
-              {isCompacting ? 'Compacting…' : compactDone ? '✓ Compacted' : 'Compact context'}
+              Compact context
+            </button>
+            <button
+              onClick={() => setShowSessionActions(true)}
+              className="text-xs font-mono text-ink-500 hover:text-amber-500 transition-theme"
+              title="More session actions"
+              aria-label="Session actions"
+            >
+              ⋯ More
             </button>
           </div>
         )}
@@ -344,6 +367,10 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
         onRequestCommands={handleRequestCommands}
         showTerminal={showTerminal}
         onToggleTerminal={() => setShowTerminal(v => !v)}
+        statusEntries={ws.statusEntries}
+        widgets={ws.widgets}
+        autoRetry={ws.autoRetry}
+        onAbortRetry={() => ws.abortRetry()}
       />
     </div>{/* end chat column */}
 
@@ -370,6 +397,23 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
           onRespond={ws.dismissNotification}
         />
       )}
+
+      {/* Session actions dropdown */}
+      {showSessionActions && (
+        <SessionActions
+          onCompact={(instr) => ws.compact(instr)}
+          onExportHtml={handleExportHtml}
+          onClone={handleClone}
+          onSetAutoCompaction={handleSetAutoCompaction}
+          onClose={() => setShowSessionActions(false)}
+        />
+      )}
+
+      {/* Extension error toasts */}
+      <ExtensionErrorToast
+        errors={extensionErrorList}
+        onDismiss={(idx) => setExtensionErrorList(prev => prev.filter((_, i) => i !== idx))}
+      />
     </div>
   );
 }

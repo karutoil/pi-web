@@ -12,9 +12,10 @@ interface Props {
   showGit?: boolean;
   onToggleSidebar?: () => void;
   showSidebar?: boolean;
+  onSessionActions?: () => void;
 }
 
-export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggleSidebar, showSidebar }: Props) {
+export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggleSidebar, showSidebar, onSessionActions }: Props) {
   const [modelOpen, setModelOpen] = useState(false);
   const [thinkingOpen, setThinkingOpen] = useState(false);
   const [editingName, setEditingName] = useState(false);
@@ -148,6 +149,18 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
           </button>
         )}
 
+        {/* Session actions */}
+        {onSessionActions && (
+          <button
+            onClick={onSessionActions}
+            className="text-xs font-mono px-2 py-1 rounded bg-ink-850 border border-ink-750 hover:border-ink-600 text-ink-400 hover:text-ink-200 transition-theme"
+            aria-label="Session actions"
+            title="Export, clone, compact..."
+          >
+            <Icon name="more" size={14} />
+          </button>
+        )}
+
         {/* Git toggle */}
         {onToggleGit && (
           <button
@@ -199,6 +212,13 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
           >
             {currentModel?.name || ws.state?.model || (ws.models.length === 0 && ws.isConnected ? "Loading…" : "Model")}
           </button>
+          {/* Cycle model button */}
+          <button
+            onClick={() => ws.cycleModel()}
+            className="ml-0.5 text-xs font-mono px-1 py-1 rounded bg-ink-850 border border-ink-750 hover:border-ink-600 text-ink-400 hover:text-ink-200 transition-theme"
+            title="Cycle to next model (Tab)"
+            aria-label="Cycle model"
+          >↻</button>
           {/* Mobile backdrop */}
           {modelOpen && isMobile && (
             <div className="fixed inset-0 z-39 bg-ink-950/50" onClick={() => setModelOpen(false)} />

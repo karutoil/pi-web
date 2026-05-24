@@ -154,6 +154,8 @@ export function ExtensionUIModal({ request, onRespond }: Props) {
             ? "bg-rose-500/15 border-rose-500/30 text-rose-300"
             : request.notifyType === "warning"
             ? "bg-amber-500/15 border-amber-500/30 text-amber-300"
+            : request.notifyType === "success"
+            ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-300"
             : "bg-ink-900/90 border-ink-700/60 text-ink-300"
         }`}>
           {/* Icon */}
@@ -162,11 +164,14 @@ export function ExtensionUIModal({ request, onRespond }: Props) {
               ? "bg-rose-500/20"
               : request.notifyType === "warning"
               ? "bg-amber-500/20"
+              : request.notifyType === "success"
+              ? "bg-emerald-500/20"
               : "bg-ink-700/50"
           }`}>
             <Icon name={
               request.notifyType === "error" ? "close" :
               request.notifyType === "warning" ? "check" :
+              request.notifyType === "success" ? "check" :
               "check"
             } size={14} />
           </div>

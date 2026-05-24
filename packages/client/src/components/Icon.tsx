@@ -325,6 +325,91 @@ const SVG_PATHS: Record<string, IconDef> = {
       </>
     ),
   },
+
+  // ── More / ellipsis (viewBox 0 0 16 16) ──
+  more: {
+    viewBox: "0 0 16 16",
+    fill: "currentColor",
+    stroke: "none",
+    strokeWidth: "0",
+    children: (
+      <>
+        <circle cx="3" cy="8" r="1.5" />
+        <circle cx="8" cy="8" r="1.5" />
+        <circle cx="13" cy="8" r="1.5" />
+      </>
+    ),
+  },
+
+  // ── Compress / compact (viewBox 0 0 16 16) ──
+  compress: {
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.5",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    children: (
+      <>
+        <polyline points="6 2 2 2 2 6" />
+        <line x1="2" y1="2" x2="5.5" y2="5.5" />
+        <polyline points="10 14 14 14 14 10" />
+        <line x1="14" y1="14" x2="10.5" y2="10.5" />
+      </>
+    ),
+  },
+
+  // ── Auto-compaction (viewBox 0 0 16 16) ──
+  "auto-compact": {
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.5",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    children: (
+      <>
+        <polyline points="6 2 2 2 2 6" />
+        <line x1="2" y1="2" x2="5.5" y2="5.5" />
+        <polyline points="10 14 14 14 14 10" />
+        <line x1="14" y1="14" x2="10.5" y2="10.5" />
+        <path d="M8 3a5 5 0 0 1 4.5 2.8" />
+      </>
+    ),
+  },
+
+  // ── Export (viewBox 0 0 16 16) ──
+  export: {
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.5",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    children: (
+      <>
+        <path d="M2 10v3a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-3" />
+        <polyline points="5 5 8 2 11 5" />
+        <line x1="8" y1="2" x2="8" y2="10" />
+      </>
+    ),
+  },
+
+  // ── Clone / copy (viewBox 0 0 16 16) ──
+  clone: {
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.5",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    children: (
+      <>
+        <rect x="5" y="5" width="8" height="8" rx="1" />
+        <path d="M3 11H2.5A1.5 1.5 0 0 1 1 9.5v-7A1.5 1.5 0 0 1 2.5 1h7A1.5 1.5 0 0 1 11 2.5V3" />
+      </>
+    ),
+  },
 };
 
 /* ─── Component ─── */

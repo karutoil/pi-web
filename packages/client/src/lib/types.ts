@@ -15,6 +15,43 @@ export interface ToolEvent {
   status: "running" | "done" | "error";
 }
 
+/** Extension status bar entry */
+export interface StatusEntry {
+  key: string;
+  text: string;
+}
+
+/** Extension widget */
+export interface WidgetEntry {
+  key: string;
+  lines: string[];
+  placement: "aboveEditor" | "belowEditor";
+}
+
+/** Auto-retry state */
+export interface AutoRetryState {
+  attempt: number;
+  maxAttempts: number;
+  delayMs: number;
+  errorMessage: string;
+}
+
+/** Extension error entry */
+export interface ExtensionErrorEntry {
+  extensionPath: string;
+  event: string;
+  error: string;
+}
+
+/** Compaction result */
+export interface CompactionResultState {
+  reason: string;
+  aborted: boolean;
+  result?: any;
+  willRetry?: boolean;
+  errorMessage?: string;
+}
+
 /**
  * Minimal interface that components depend on.
  * WSConnection (from useWebSocketPool) extends this with pool-specific
@@ -40,4 +77,28 @@ export interface WSBridge {
   dismissNotification: () => void;
   setOnSessionLoaded: (cb: ((session: SessionDetail) => void) | null) => void;
   setOnSessionEvent: (cb: ((event: WSServerMessage) => void) | null) => void;
+  // New: extension UI fire-and-forget state
+  statusEntries: Record<string, string>;
+  widgets: Record<string, { lines: string[]; placement: string }>;
+  windowTitle: string | null;
+  // New: auto-retry state
+  autoRetry: AutoRetryState | null;
+  // New: extension errors
+  extensionErrors: ExtensionErrorEntry[];
+  // New: compaction result
+  compactionResult: CompactionResultState | null;
+  // New: command methods
+  cycleModel: () => void;
+  cycleThinkingLevel: () => void;
+  compact: (customInstructions?: string) => void;
+  setAutoCompaction: (enabled: boolean) => void;
+  setAutoRetry: (enabled: boolean) => void;
+  abortRetry: () => void;
+  setSteeringMode: (mode: "all" | "one-at-a-time") => void;
+  setFollowUpMode: (mode: "all" | "one-at-a-time") => void;
+  exportHtml: (outputPath?: string) => void;
+  switchSession: (sessionPath: string) => void;
+  clone: () => void;
+  getMessages: () => void;
+  getLastAssistantText: () => void;
 }

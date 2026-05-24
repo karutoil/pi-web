@@ -21,6 +21,10 @@ const defaultProps = {
   disabled: false,
   commands: defaultCommands,
   onRequestCommands: vi.fn(),
+  statusEntries: {},
+  widgets: {},
+  autoRetry: null,
+  onAbortRetry: vi.fn(),
 };
 
 describe('ChatInput', () => {
@@ -114,7 +118,7 @@ describe('ChatInput', () => {
 
   it('shows connecting message when disabled', () => {
     render(<ChatInput {...defaultProps} disabled={true} />);
-    expect(screen.getByText('Connecting...')).toBeInTheDocument();
+    expect(screen.getAllByText('Connecting...').length).toBeGreaterThan(0);
   });
 
   // ─── Command completion ───

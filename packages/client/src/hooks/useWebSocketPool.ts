@@ -44,6 +44,16 @@ function createConnection(
     pendingDialogId: null as string | null,
     pendingNotification: null as ExtensionUIRequest | null,
     pendingNotificationId: null as string | null,
+    // New: extension UI fire-and-forget state
+    statusEntries: {} as Record<string, string>,
+    widgets: {} as Record<string, { lines: string[]; placement: string }>,
+    windowTitle: null as string | null,
+    // New: auto-retry state
+    autoRetry: null as { attempt: number; maxAttempts: number; delayMs: number; errorMessage: string } | null,
+    // New: extension errors
+    extensionErrors: [] as Array<{ extensionPath: string; event: string; error: string }>,
+    // New: compaction result
+    compactionResult: null as { reason: string; aborted: boolean; result?: any; willRetry?: boolean; errorMessage?: string } | null,
   };
 
   const notify = () => listeners.forEach(l => l());
@@ -130,8 +140,23 @@ function createConnection(
       case "tool_end": { const rt = new Map(data.runningTools); const e = rt.get(msg.toolCallId); if (e) rt.set(msg.toolCallId, { ...e, result: msg.result, isError: msg.isError, status: msg.isError ? "error" : "done" }); data.runningTools = rt; break; }
       case "turn_start": case "turn_end": break;
       case "queue_update": if (data.state) data.state = { ...data.state, steering: msg.steering, followUp: msg.followUp }; break;
-      case "compaction_start": case "compaction_end": break;
+      case "compaction_start":
+        data.compactionResult = null;
+        break;
+      case "compaction_end":
+        data.compactionResult = {
+          reason: msg.reason,
+          aborted: msg.aborted,
+          result: (msg as any).result,
+          willRetry: (msg as any).willRetry,
+          errorMessage: (msg as any).errorMessage,
+        };
+        break;
       case "error": console.error("Agent error:", msg.message); data.isStreaming = false; break;
+      case "response":
+        // Generic command success/failure response — just log for now
+        if (!(msg as any).success) console.warn(`Command ${(msg as any).command} failed:`, (msg as any).error);
+        break;
       case "session_loaded": if (msg.session && onSessionLoadedRef.current) onSessionLoadedRef.current(msg.session); break;
       case "available_models": data.models = msg.models; break;
       case "available_commands": data.commands = msg.commands; break;
@@ -156,31 +181,80 @@ function createConnection(
         if (onSessionEventRef.current) onSessionEventRef.current(msg);
         break;
       case "extension_ui_request": {
+        const ui = msg.ui;
         const dialogMethods = ["select", "confirm", "input", "editor"];
-        if (!dialogMethods.includes(msg.ui.method) && msg.ui.method !== "notify") break;
-        if (msg.ui.method === "notify") {
-          data.pendingNotification = msg.ui;
-          data.pendingNotificationId = msg.ui.id;
-          // Auto-dismiss notifications after NOTIFY_TIMEOUT_MS
-          const autoTimer = setTimeout(() => {
-            if (data.pendingNotificationId === msg.ui.id) {
-              data.pendingNotification = null;
-              data.pendingNotificationId = null;
-              notify();
-              send({ type: "extension_ui_response", id: msg.ui.id, cancelled: true });
-            }
-          }, NOTIFY_TIMEOUT_MS);
-          (data as { notifyTimer?: ReturnType<typeof setTimeout> }).notifyTimer = autoTimer;
-        } else {
-          // If a dialog is already pending, cancel it before showing new one
+
+        if (dialogMethods.includes(ui.method)) {
+          // Dialog: blocks until response — show modal
           if (data.pendingDialogId) {
             send({ type: "extension_ui_response", id: data.pendingDialogId, cancelled: true });
           }
-          data.pendingDialog = msg.ui;
-          data.pendingDialogId = msg.ui.id;
+          data.pendingDialog = ui;
+          data.pendingDialogId = ui.id;
+        } else if (ui.method === "notify") {
+          // Notification: fire-and-forget with auto-dismiss
+          data.pendingNotification = ui;
+          data.pendingNotificationId = ui.id;
+          const autoTimer = setTimeout(() => {
+            if (data.pendingNotificationId === ui.id) {
+              data.pendingNotification = null;
+              data.pendingNotificationId = null;
+              notify();
+              send({ type: "extension_ui_response", id: ui.id, cancelled: true });
+            }
+          }, NOTIFY_TIMEOUT_MS);
+          (data as { notifyTimer?: ReturnType<typeof setTimeout> }).notifyTimer = autoTimer;
+        } else if (ui.method === "setStatus") {
+          // setStatus: fire-and-forget — update status bar entries
+          if (ui.statusKey) {
+            if (ui.statusText) {
+              data.statusEntries = { ...data.statusEntries, [ui.statusKey]: ui.statusText };
+            } else {
+              const { [ui.statusKey]: _, ...rest } = data.statusEntries;
+              data.statusEntries = rest;
+            }
+          }
+          // Acknowledge fire-and-forget
+          send({ type: "extension_ui_response", id: ui.id, cancelled: true });
+        } else if (ui.method === "setWidget") {
+          // setWidget: fire-and-forget — update widget entries
+          if (ui.widgetKey) {
+            if (ui.widgetLines && ui.widgetLines.length > 0) {
+              data.widgets = { ...data.widgets, [ui.widgetKey]: { lines: ui.widgetLines, placement: ui.widgetPlacement || "aboveEditor" } };
+            } else {
+              const { [ui.widgetKey]: _, ...rest } = data.widgets;
+              data.widgets = rest;
+            }
+          }
+          send({ type: "extension_ui_response", id: ui.id, cancelled: true });
+        } else if (ui.method === "setTitle") {
+          // setTitle: fire-and-forget — update window title
+          data.windowTitle = ui.title || null;
+          send({ type: "extension_ui_response", id: ui.id, cancelled: true });
+        } else if (ui.method === "set_editor_text") {
+          // set_editor_text: fire-and-forget — no-op in web UI (no TUI editor)
+          send({ type: "extension_ui_response", id: ui.id, cancelled: true });
         }
         break;
       }
+      case "auto_retry_start":
+        data.autoRetry = { attempt: msg.attempt, maxAttempts: msg.maxAttempts, delayMs: msg.delayMs, errorMessage: msg.errorMessage };
+        break;
+      case "auto_retry_end":
+        data.autoRetry = null;
+        break;
+      case "extension_error":
+        data.extensionErrors = [...data.extensionErrors, { extensionPath: msg.extensionPath, event: msg.event, error: msg.error }];
+        // Keep only last 20 errors
+        if (data.extensionErrors.length > 20) data.extensionErrors = data.extensionErrors.slice(-20);
+        break;
+      case "export_html_result":
+      case "clone_result":
+      case "messages_result":
+      case "last_assistant_text_result":
+        // These result types are forwarded to session event listeners
+        if (onSessionEventRef.current) onSessionEventRef.current(msg as any);
+        break;
     }
     notify();
   }
@@ -218,6 +292,7 @@ function createConnection(
       data.isStreaming = false;
       data.isActive = false;
       data.state = null;
+      data.compactionResult = null;
       notify();
     },
     loadSession: (sessionPath: string) => {
@@ -229,8 +304,24 @@ function createConnection(
       data.isStreaming = false;
       data.isActive = false;
       data.state = null;
+      data.compactionResult = null;
       notify();
     },
+    // New command methods
+    cycleModel: () => { send({ type: "cycle_model" }); },
+    cycleThinkingLevel: () => { send({ type: "cycle_thinking_level" }); },
+    compact: (customInstructions?: string) => { send({ type: "compact", customInstructions }); },
+    setAutoCompaction: (enabled: boolean) => { send({ type: "set_auto_compaction", enabled }); },
+    setAutoRetry: (enabled: boolean) => { send({ type: "set_auto_retry", enabled }); },
+    abortRetry: () => { send({ type: "abort_retry" }); },
+    setSteeringMode: (mode: "all" | "one-at-a-time") => { send({ type: "set_steering_mode", mode }); },
+    setFollowUpMode: (mode: "all" | "one-at-a-time") => { send({ type: "set_follow_up_mode", mode }); },
+    exportHtml: (outputPath?: string) => { send({ type: "export_html", outputPath }); },
+    switchSession: (sessionPath: string) => { send({ type: "switch_session", sessionPath }); },
+    clone: () => { send({ type: "clone" }); },
+    getMessages: () => { send({ type: "get_messages" }); },
+    getLastAssistantText: () => { send({ type: "get_last_assistant_text" }); },
+
     get messages() { return data.messages; },
     get liveMessages() { return data.liveMessages; },
     get runningTools() { return data.runningTools; },
@@ -244,6 +335,14 @@ function createConnection(
     get sessionStats() { return data.sessionStats; },
     get pendingDialog() { return data.pendingDialog; },
     get pendingNotification() { return data.pendingNotification; },
+    // New state accessors
+    get statusEntries() { return data.statusEntries; },
+    get widgets() { return data.widgets; },
+    get windowTitle() { return data.windowTitle; },
+    get autoRetry() { return data.autoRetry; },
+    get extensionErrors() { return data.extensionErrors; },
+    get compactionResult() { return data.compactionResult; },
+
     respondToUI: (response) => {
       const id = data.pendingDialogId;
       if (id) {

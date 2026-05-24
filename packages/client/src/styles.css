@@ -235,6 +235,8 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
 }
 .animate-fade-in-up  { animation: fade-in-up 0.4s ease-out both; }
 .animate-pulse-glow  { animation: pulse-glow 2s ease-in-out infinite; }
+.animate-spin-slow   { animation: spin 3s linear infinite; }
+.animate-pulse-subtle { animation: pulse 2s ease-in-out infinite; }
 .animate-shimmer {
   background: linear-gradient(90deg, transparent 0%, rgba(212, 160, 32, 0.08) 50%, transparent 100%);
   background-size: 200% 100%;

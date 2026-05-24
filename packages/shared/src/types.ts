@@ -129,12 +129,15 @@ export interface TokenUsage {
 export type WSClientMessage =
   | { type: "prompt"; message: string; images?: ImageAttachment[] }
   | { type: "abort" }
-  | { type: "steer"; message: string }
-  | { type: "follow_up"; message: string }
+  | { type: "steer"; message: string; images?: ImageAttachment[] }
+  | { type: "follow_up"; message: string; images?: ImageAttachment[] }
   | { type: "new_session" }
   | { type: "load_session"; sessionPath: string }
+  | { type: "switch_session"; sessionPath: string }
   | { type: "set_model"; provider: string; modelId: string }
+  | { type: "cycle_model" }
   | { type: "set_thinking"; level: string }
+  | { type: "cycle_thinking_level" }
   | { type: "delete_session"; sessionId: string }
   | { type: "rename_session"; sessionId: string; name: string }
   | { type: "fork"; entryId: string }
@@ -142,10 +145,21 @@ export type WSClientMessage =
   | { type: "get_available_models" }
   | { type: "get_commands" }
   | { type: "get_fork_messages" }
+  | { type: "get_messages" }
+  | { type: "get_last_assistant_text" }
   | { type: "get_session_stats" }
   | { type: "set_session_name"; name: string }
-  | { type: "compact" }
+  | { type: "compact"; customInstructions?: string }
   | { type: "get_state" }
+  | { type: "set_auto_compaction"; enabled: boolean }
+  | { type: "set_auto_retry"; enabled: boolean }
+  | { type: "abort_retry" }
+  | { type: "set_steering_mode"; mode: "all" | "one-at-a-time" }
+  | { type: "set_follow_up_mode"; mode: "all" | "one-at-a-time" }
+  | { type: "export_html"; outputPath?: string }
+  | { type: "clone" }
+  | { type: "bash"; command: string }
+  | { type: "abort_bash" }
   | { type: "extension_ui_response"; id: string; value?: string; confirmed?: boolean; cancelled?: boolean };
 
 export type WSServerMessage =
@@ -162,8 +176,9 @@ export type WSServerMessage =
   | { type: "turn_end"; message: ChatMessage; toolResults: ChatMessage[] }
   | { type: "queue_update"; steering: string[]; followUp: string[] }
   | { type: "compaction_start"; reason: string }
-  | { type: "compaction_end"; reason: string; aborted: boolean }
+  | { type: "compaction_end"; reason: string; aborted: boolean; result?: CompactionResult; willRetry?: boolean; errorMessage?: string }
   | { type: "error"; message: string }
+  | { type: "response"; command: string; success: boolean; data?: unknown; error?: string; id?: string }
   | { type: "session_loaded"; session: SessionDetail }
   | { type: "model_changed"; provider: string; modelId: string }
   | { type: "thinking_changed"; level: string }
@@ -175,10 +190,17 @@ export type WSServerMessage =
   | { type: "session_deleted"; sessionId: string }
   | { type: "session_renamed"; sessionId: string; name: string }
   | { type: "sessions_refreshed"; sessions: SessionSummary[] }
-  | { type: "extension_ui_request"; ui: ExtensionUIRequest };
+  | { type: "extension_ui_request"; ui: ExtensionUIRequest }
+  | { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
+  | { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
+  | { type: "extension_error"; extensionPath: string; event: string; error: string }
+  | { type: "export_html_result"; path: string }
+  | { type: "clone_result"; cancelled: boolean; sessionPath?: string }
+  | { type: "messages_result"; messages: ChatMessage[] }
+  | { type: "last_assistant_text_result"; text: string | null };
 
 // Extension UI protocol
-export type ExtensionUIMethod = "select" | "confirm" | "input" | "editor" | "notify" | "setStatus";
+export type ExtensionUIMethod = "select" | "confirm" | "input" | "editor" | "notify" | "setStatus" | "setWidget" | "setTitle" | "set_editor_text";
 
 export interface ExtensionUIRequest {
   id: string;
@@ -189,7 +211,24 @@ export interface ExtensionUIRequest {
   placeholder?: string;
   prefill?: string;
   timeout?: number;
-  notifyType?: "info" | "warning" | "error";
+  notifyType?: "info" | "warning" | "error" | "success";
+  // setStatus fields
+  statusKey?: string;
+  statusText?: string;
+  // setWidget fields
+  widgetKey?: string;
+  widgetLines?: string[];
+  widgetPlacement?: "aboveEditor" | "belowEditor";
+  // set_editor_text fields
+  text?: string;
+}
+
+/** Compaction result data */
+export interface CompactionResult {
+  summary: string;
+  firstKeptEntryId: string;
+  tokensBefore: number;
+  details: Record<string, unknown>;
 }
 
 export interface ModelInfo {

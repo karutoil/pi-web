@@ -425,8 +425,40 @@ app.post("/api/git/unstage-all", async (c) => {
   return c.json({ success: true, result });
 });
 
+// Export session HTML
+app.post("/api/sessions/export-html", async (c) => {
+  const { sessionPath } = await c.req.json();
+  if (!sessionPath) return c.json({ error: "sessionPath required" }, 400);
+  // Ask the agent to export — response comes back via WS event
+  // For REST usage, we generate a simple HTML export server-side
+  try {
+    const detail = await getSessionDetail(sessionPath);
+    if (!detail) return c.json({ error: "Session not found" }, 404);
+    const html = buildSessionHtml(detail);
+    return c.json({ html });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
 // Health
 app.get("/api/health", (c) => c.json({ status: "ok", time: Date.now(), pool: getPoolStats() }));
+
+// Simple HTML export builder
+function buildSessionHtml(detail: any): string {
+  const entries = detail.entries || [];
+  let body = "";
+  for (const entry of entries) {
+    if (!entry.message) continue;
+    const msg = entry.message;
+    const role = msg.role || "unknown";
+    const content = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content);
+    const escaped = content.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
+    const bg = role === "user" ? "#1a1a2e" : role === "assistant" ? "#16213e" : "#0f3460";
+    body += `<div style="padding:12px;margin:8px 0;border-radius:8px;background:${bg};"><b style="color:#a8d8ea">${role}</b><div style="color:#e2e2e2;margin-top:4px;">${escaped}</div></div>`;
+  }
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${detail.name || "Session"}</title><style>body{font-family:system-ui;background:#0a0a0a;color:#e2e2e2;max-width:800px;margin:0 auto;padding:20px;}</style></head><body><h1>${detail.name || "Session Export"}</h1>${body}</body></html>`;
+}
 
 // ==================== WebSocket ====================
 
@@ -544,20 +576,34 @@ app.get(
           switch (msg.type) {
             case "prompt": agent.send({ type: "prompt", message: msg.message, images: msg.images }); break;
             case "abort": agent.send({ type: "abort" }); break;
-            case "steer": agent.send({ type: "steer", message: msg.message }); break;
-            case "follow_up": agent.send({ type: "follow_up", message: msg.message }); break;
+            case "steer": agent.send({ type: "steer", message: msg.message, ...(msg as any).images ? { images: (msg as any).images } : {} }); break;
+            case "follow_up": agent.send({ type: "follow_up", message: msg.message, ...(msg as any).images ? { images: (msg as any).images } : {} }); break;
             case "new_session": agent.send({ type: "new_session" }); break;
             case "load_session": await agent.loadSession(msg.sessionPath); break;
+            case "switch_session": agent.send({ type: "switch_session", sessionPath: (msg as any).sessionPath }); break;
             case "set_model": agent.send({ type: "set_model", provider: msg.provider, modelId: msg.modelId }); break;
+            case "cycle_model": agent.send({ type: "cycle_model" }); break;
             case "set_thinking": agent.send({ type: "set_thinking_level", level: msg.level }); break;
+            case "cycle_thinking_level": agent.send({ type: "cycle_thinking_level" }); break;
             case "fork": agent.send({ type: "fork", entryId: msg.entryId }); break;
-            case "compact": agent.send({ type: "compact" }); break;
+            case "compact": agent.send({ type: "compact", ...(msg as any).customInstructions ? { customInstructions: (msg as any).customInstructions } : {} }); break;
             case "get_state": agent.send({ type: "get_state" }); break;
             case "get_available_models": agent.send({ type: "get_available_models" }); break;
             case "get_commands": agent.send({ type: "get_commands" }); break;
             case "get_fork_messages": agent.send({ type: "get_fork_messages" }); break;
+            case "get_messages": agent.send({ type: "get_messages" }); break;
+            case "get_last_assistant_text": agent.send({ type: "get_last_assistant_text" }); break;
             case "get_session_stats": agent.send({ type: "get_session_stats" }); break;
             case "set_session_name": agent.send({ type: "set_session_name", name: msg.name }); break;
+            case "set_auto_compaction": agent.send({ type: "set_auto_compaction", enabled: (msg as any).enabled }); break;
+            case "set_auto_retry": agent.send({ type: "set_auto_retry", enabled: (msg as any).enabled }); break;
+            case "abort_retry": agent.send({ type: "abort_retry" }); break;
+            case "set_steering_mode": agent.send({ type: "set_steering_mode", mode: (msg as any).mode }); break;
+            case "set_follow_up_mode": agent.send({ type: "set_follow_up_mode", mode: (msg as any).mode }); break;
+            case "export_html": agent.send({ type: "export_html", ...(msg as any).outputPath ? { outputPath: (msg as any).outputPath } : {} }); break;
+            case "clone": agent.send({ type: "clone" }); break;
+            case "bash": agent.send({ type: "bash", command: (msg as any).command }); break;
+            case "abort_bash": agent.send({ type: "abort_bash" }); break;
             case "extension_ui_response": agent.send({ type: "extension_ui_response", id: msg.id, value: msg.value, confirmed: msg.confirmed, cancelled: msg.cancelled }); break;
             case "delete_session": {
               const sessionId = msg.sessionId;
