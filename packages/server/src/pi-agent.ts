@@ -224,7 +224,7 @@ class PIAgent {
     ].join(":");
 
     // Inject RPC bridge preload to patch custom() for clarify support
-    const bridgePath = join(__dirname, "pi-web-rpc-bridge.js");
+    const bridgePath = join(import.meta.dir, "pi-web-rpc-bridge.js");
     const nodeOptions = [
       process.env.NODE_OPTIONS || "",
       `--require=${bridgePath}`,
