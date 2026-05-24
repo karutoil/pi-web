@@ -183,18 +183,6 @@ export function Sidebar({
           <img src="/pi-logo.svg" alt="PI" className="w-6 h-6" />
           <span className="font-semibold text-ink-200 tracking-tight text-[0.82rem]">PI</span>
         </div>
-        <button
-          onClick={onToggleTheme}
-          className="text-ink-600 hover:text-ink-400 transition-theme p-1 touch-target"
-          title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
-          aria-label="Toggle dark mode"
-        >
-          {theme === "light" ? (
-            <Icon name="moon" size={13} />
-          ) : (
-            <Icon name="sun" size={13} />
-          )}
-        </button>
         {onToggleSidebar && (
           <button
             onClick={onToggleSidebar}
@@ -265,7 +253,21 @@ export function Sidebar({
 
       {/* Minimal footer */}
       <div className="px-4 py-2.5 flex items-center justify-between">
-        <span className="text-ink-500 text-[0.65rem] font-mono tracking-wide">PI WEB</span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onToggleTheme}
+            className="text-ink-600 hover:text-ink-400 transition-theme p-1 touch-target"
+            title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
+            aria-label="Toggle dark mode"
+          >
+            {theme === "light" ? (
+              <Icon name="moon" size={13} />
+            ) : (
+              <Icon name="sun" size={13} />
+            )}
+          </button>
+          <span className="text-ink-500 text-[0.65rem] font-mono tracking-wide">PI WEB</span>
+        </div>
         <span className="w-1.5 h-1.5 rounded-full bg-teal-500/70" title="Connected" />
       </div>
     </aside>
