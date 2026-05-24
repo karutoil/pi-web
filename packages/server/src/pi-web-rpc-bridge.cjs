@@ -5,13 +5,24 @@
  * Patches rpc-mode.js on disk before pi's ESM main module loads,
  * replacing custom() to bridge TUI overlay components to the web frontend.
  *
- * Pi-core uses ESM imports, so Module._load CJS hooks can't intercept.
- * Instead we patch the source file on disk and record the original content
- * for restoration after the process exits.
+ * IMPORTANT: This script must only run in the pi main process.
+ * It detects pi via PI_CODING_AGENT env var and skips all child
+ * processes (npm, extension installs, etc.) that inherit NODE_OPTIONS.
  */
 
 (function () {
   "use strict";
+
+  // Bail out if not the pi main process.
+  // When NODE_OPTIONS=--require is inherited by child processes (npm install, etc.),
+  // they shouldn't try to patch rpc-mode.js. We detect pi by checking argv
+  // or the presence of --mode rpc flag.
+  var argv = process.argv || [];
+  var isPiProcess = argv.some(function(a) { return a.indexOf('pi-coding-agent') !== -1 || a === '--mode'; });
+  var hasRpcFlag = argv.indexOf('rpc') !== -1 && argv.indexOf('--mode') !== -1;
+  if (!isPiProcess && !hasRpcFlag) {
+    return;
+  }
 
   var fs = require("fs");
   var path = require("path");
@@ -119,12 +130,9 @@
 
   var rpcModePath = findRpcModePath();
   if (!rpcModePath) {
-    // Not found in global paths — pi may install locally
-    // Will try again from the working directory
     return;
   }
 
-  // Read original source
   var source = fs.readFileSync(rpcModePath, "utf-8");
 
   // Check if already patched
@@ -132,11 +140,9 @@
     return;
   }
 
-  // Match the original custom() that returns undefined
   var pattern = /async\s+custom\s*\(\)\s*\{\s*\/\/\s*Custom UI not supported in RPC mode\s*\n\s*return undefined;\s*\}/;
 
   if (!pattern.test(source)) {
-    console.error("[pi-web-bridge] custom() pattern not found in rpc-mode.js");
     return;
   }
 
@@ -152,11 +158,7 @@
 
   // Schedule restoration on process exit
   process.on("exit", function () {
-    try {
-      fs.writeFileSync(rpcModePath, source, "utf-8");
-    } catch (e) {
-      // Best effort
-    }
+    try { fs.writeFileSync(rpcModePath, source, "utf-8"); } catch (e) {}
   });
   process.on("SIGTERM", function () {
     try { fs.writeFileSync(rpcModePath, source, "utf-8"); } catch (e) {}
