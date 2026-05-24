@@ -106,7 +106,7 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
             {sessionName || "Chat"}
           </button>
         )}
-        <span className="text-ink-600 text-xs font-mono truncate hidden sm:inline">{cwd}</span>
+        <span className="text-ink-500 text-xs font-mono truncate hidden sm:inline">{cwd}</span>
       </div>
 
       {/* Connection & streaming indicators */}
@@ -126,7 +126,7 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
 
         {/* Stats */}
         {stats && (
-          <div className="hidden md:flex items-center gap-2 text-ink-600 text-xs font-mono">
+          <div className="hidden md:flex items-center gap-2 text-ink-500 text-xs font-mono">
             {stats.contextUsage && (
               <span title={`${stats.contextUsage.tokens.toLocaleString()} / ${stats.contextUsage.contextWindow.toLocaleString()} tokens`}>
                 {stats.contextUsage.percent.toFixed(0)}%
@@ -215,7 +215,7 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
                   value={modelSearch}
                   onChange={e => setModelSearch(e.target.value)}
                   placeholder="Filter models..."
-                  className="w-full bg-ink-850 border border-ink-700 rounded px-2 py-1 text-ink-200 text-xs font-mono placeholder-ink-600 outline-none focus:border-amber-500"
+                  className="w-full bg-ink-850 border border-ink-700 rounded px-2 py-1 text-ink-200 text-xs font-mono placeholder-ink-500 outline-none focus:border-amber-500"
                   aria-label="Search models"
                   autoFocus
                   onKeyDown={e => e.stopPropagation()}
@@ -242,7 +242,7 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
               )}
               <div className="max-h-56 overflow-y-auto custom-scrollbar">
               {filteredModels.length === 0 && (
-                <div className="px-3 py-2 text-ink-600 text-xs">No models match "{modelSearch}"</div>
+                <div className="px-3 py-2 text-ink-500 text-xs">No models match "{modelSearch}"</div>
               )}
               {filteredModels.map(m => (
                 <button
@@ -260,11 +260,11 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
                     <span className={`text-xs font-medium ${ws.state?.model === m.id ? "text-amber-500" : "text-ink-200"}`}>
                       {m.name}
                     </span>
-                    <span className="text-ink-600 text-[0.65rem] font-mono hidden group-hover:inline">
+                    <span className="text-ink-500 text-[0.65rem] font-mono hidden group-hover:inline">
                       {m.contextWindow >= 1000 ? `${(m.contextWindow / 1000).toFixed(0)}k` : m.contextWindow}
                     </span>
                   </div>
-                  <div className="text-ink-600 text-[0.65rem] font-mono mt-0.5">
+                  <div className="text-ink-500 text-[0.65rem] font-mono mt-0.5">
                     {m.provider} · {m.reasoning ? "reasoning" : "no reasoning"}
                   </div>
                 </button>

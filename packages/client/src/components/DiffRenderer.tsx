@@ -102,7 +102,7 @@ export function DiffRenderer({ content, collapsible = true }: Props) {
   const displayRows = needsCollapse && !expanded ? sideBySide.slice(0, previewLimit) : sideBySide;
 
   const FileMeta = ({ line }: { line: DiffLine }) => (
-    <div className="px-3 py-1 bg-ink-900 text-ink-500 font-semibold text-xs font-mono border-b border-ink-800">
+    <div className="px-3 py-1 bg-ink-900 text-ink-400 font-semibold text-xs font-mono border-b border-ink-800">
       {line.content}
     </div>
   );
@@ -114,14 +114,14 @@ export function DiffRenderer({ content, collapsible = true }: Props) {
   );
 
   const lineNumCell = (num?: number) => (
-    <td className="w-10 text-right pr-2 select-none text-ink-600 text-[0.65rem] align-top py-px">
+    <td className="w-10 text-right pr-2 select-none text-ink-500 text-[0.65rem] align-top py-px">
       {num != null ? num : ""}
     </td>
   );
 
   const contentCell = (line: DiffLine | undefined, side: "left" | "right") => {
     if (!line || (side === "left" && line.type === "add") || (side === "right" && line.type === "remove")) {
-      return <td className="pl-2 py-px align-top text-ink-700">&nbsp;</td>;
+      return <td className="pl-2 py-px align-top text-ink-500">&nbsp;</td>;
     }
     const isAdd = side === "right" && line.type === "add";
     const isRemove = side === "left" && line.type === "remove";
@@ -146,14 +146,14 @@ export function DiffRenderer({ content, collapsible = true }: Props) {
       <div className="flex items-center gap-3 px-3 py-1.5 border-b border-ink-800 bg-ink-900 text-xs">
         <span className="text-teal-400 font-medium font-mono">+{stats.added}</span>
         <span className="text-rose-400 font-medium font-mono">-{stats.removed}</span>
-        <span className="text-ink-600 font-mono">{stats.total} changes</span>
+        <span className="text-ink-500 font-mono">{stats.total} changes</span>
         <div className="flex-1" />
         {!isMobile && (
         <div className="flex rounded border border-ink-700 overflow-hidden diff-side-toggle">
           <button
             onClick={() => setViewMode("side")}
             className={`px-2 py-0.5 text-[0.65rem] font-mono transition-theme ${
-              viewMode === "side" ? "bg-ink-800 text-ink-200" : "text-ink-600 hover:text-ink-400"
+              viewMode === "side" ? "bg-ink-800 text-ink-200" : "text-ink-500 hover:text-ink-400"
             }`}
           >
             Side-by-side
@@ -161,7 +161,7 @@ export function DiffRenderer({ content, collapsible = true }: Props) {
           <button
             onClick={() => setViewMode("unified")}
             className={`px-2 py-0.5 text-[0.65rem] font-mono transition-theme border-l border-ink-700 ${
-              viewMode === "unified" ? "bg-ink-800 text-ink-200" : "text-ink-600 hover:text-ink-400"
+              viewMode === "unified" ? "bg-ink-800 text-ink-200" : "text-ink-500 hover:text-ink-400"
             }`}
           >
             Unified
@@ -188,12 +188,12 @@ export function DiffRenderer({ content, collapsible = true }: Props) {
                 >
                   {/* Old line number — hidden on mobile to save space */}
                   {!isMobile && (
-                  <div className="w-10 text-right pr-2 select-none text-ink-600 text-[0.65rem] py-px shrink-0">
+                  <div className="w-10 text-right pr-2 select-none text-ink-500 text-[0.65rem] py-px shrink-0">
                     {line.type !== "add" && line.lineNum?.old != null ? line.lineNum.old : ""}
                   </div>
                   )}
                   {/* New line number */}
-                  <div className="w-10 text-right pr-2 select-none text-ink-600 text-[0.65rem] py-px shrink-0 border-r border-ink-800">
+                  <div className="w-10 text-right pr-2 select-none text-ink-500 text-[0.65rem] py-px shrink-0 border-r border-ink-800">
                     {line.type !== "remove" && line.lineNum?.new != null ? line.lineNum.new : ""}
                   </div>
                   <div className={`pl-2 py-px whitespace-pre-wrap break-all min-w-0 flex-1 ${
@@ -214,7 +214,7 @@ export function DiffRenderer({ content, collapsible = true }: Props) {
         <div className="overflow-x-auto">
           <div className="min-w-[600px]">
             {/* Column headers */}
-            <div className="flex border-b border-ink-800 bg-ink-900 text-ink-600 text-[0.65rem] font-mono uppercase tracking-wider">
+            <div className="flex border-b border-ink-800 bg-ink-900 text-ink-400 text-[0.65rem] font-mono uppercase tracking-wider">
               <div className="flex-1 flex">
                 <div className="w-10 shrink-0 px-1 border-r border-ink-800 py-1">old</div>
                 <div className="flex-1 px-2 py-1 border-r-2 border-ink-700">Original</div>
@@ -252,7 +252,7 @@ export function DiffRenderer({ content, collapsible = true }: Props) {
       {needsCollapse && (
         <button
           onClick={() => setExpanded(e => !e)}
-          className="w-full text-center py-1.5 text-xs text-ink-500 hover:text-ink-300 bg-ink-900 border-t border-ink-800 transition-theme font-mono"
+          className="w-full text-center py-1.5 text-xs text-ink-400 hover:text-ink-300 bg-ink-900 border-t border-ink-800 transition-theme font-mono"
         >
           {expanded
             ? "▲ Collapse"

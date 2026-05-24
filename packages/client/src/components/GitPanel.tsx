@@ -72,15 +72,15 @@ function DiffViewer({ diff, path, onClose, showBlame, showComparePrev }: {
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-ink-800/60 bg-ink-900/30 shrink-0">
-        <button onClick={onClose} className="p-1 text-ink-500 hover:text-ink-300 hover:bg-ink-800/50 rounded transition-theme" aria-label="Back">
+        <button onClick={onClose} className="p-1 text-ink-400 hover:text-ink-300 hover:bg-ink-800/50 rounded transition-theme" aria-label="Back">
           <Icon name="chevron-left" size={12} />
         </button>
         <span className="text-ink-200 text-xs font-mono truncate flex-1">{path}</span>
         {showBlame && (
-          <button onClick={() => showBlame(path)} className="px-2 py-0.5 text-[0.65rem] text-ink-500 hover:text-amber-500 bg-ink-800/30 hover:bg-ink-800/60 rounded transition-theme">Blame</button>
+          <button onClick={() => showBlame(path)} className="px-2 py-0.5 text-[0.65rem] text-ink-400 hover:text-amber-500 bg-ink-800/30 hover:bg-ink-800/60 rounded transition-theme">Blame</button>
         )}
         {showComparePrev && (
-          <button onClick={() => showComparePrev(path)} className="px-2 py-0.5 text-[0.65rem] text-ink-500 hover:text-amber-500 bg-ink-800/30 hover:bg-ink-800/60 rounded transition-theme">Compare with Prev</button>
+          <button onClick={() => showComparePrev(path)} className="px-2 py-0.5 text-[0.65rem] text-ink-400 hover:text-amber-500 bg-ink-800/30 hover:bg-ink-800/60 rounded transition-theme">Compare with Prev</button>
         )}
         <button onClick={onClose} className="px-2.5 py-1 text-xs text-ink-400 hover:text-ink-200 bg-ink-800/40 hover:bg-ink-800/60 rounded transition-theme">Back</button>
       </div>
@@ -338,16 +338,16 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
 
           {/* Sync buttons */}
           <div className="flex items-center gap-0.5">
-            <button onClick={handleFetch} className="p-1.5 md:p-1 text-ink-600 hover:text-sky-400 transition-theme rounded hover:bg-ink-800/50 touch-target" aria-label="Fetch" title="Fetch">
+            <button onClick={handleFetch} className="p-1.5 md:p-1 text-ink-400 hover:text-sky-400 transition-theme rounded hover:bg-ink-800/50 touch-target" aria-label="Fetch" title="Fetch">
               <Icon name="refresh" size={11} />
             </button>
-            <button onClick={handlePull} className="p-1.5 md:p-1 text-ink-600 hover:text-emerald-400 transition-theme rounded hover:bg-ink-800/50 touch-target" aria-label="Pull" title="Pull">↓</button>
-            <button onClick={handlePush} className="p-1.5 md:p-1 text-ink-600 hover:text-amber-400 transition-theme rounded hover:bg-ink-800/50 touch-target" aria-label="Push" title="Push">↑</button>
+            <button onClick={handlePull} className="p-1.5 md:p-1 text-ink-400 hover:text-emerald-400 transition-theme rounded hover:bg-ink-800/50 touch-target" aria-label="Pull" title="Pull">↓</button>
+            <button onClick={handlePush} className="p-1.5 md:p-1 text-ink-400 hover:text-amber-400 transition-theme rounded hover:bg-ink-800/50 touch-target" aria-label="Push" title="Push">↑</button>
           </div>
-          <button onClick={refresh} className="p-1.5 md:p-1 text-ink-600 hover:text-amber-500 transition-theme rounded hover:bg-ink-800/50 touch-target" aria-label="Refresh" title="Refresh">
+          <button onClick={refresh} className="p-1.5 md:p-1 text-ink-400 hover:text-amber-500 transition-theme rounded hover:bg-ink-800/50 touch-target" aria-label="Refresh" title="Refresh">
             <Icon name="refresh" size={12} />
           </button>
-          <button onClick={onClose} className="p-1.5 md:p-1 text-ink-600 hover:text-ink-300 transition-theme rounded hover:bg-ink-800/50 touch-target" aria-label="Close panel">
+          <button onClick={onClose} className="p-1.5 md:p-1 text-ink-400 hover:text-ink-300 transition-theme rounded hover:bg-ink-800/50 touch-target" aria-label="Close panel">
             <Icon name="close" size={12} />
           </button>
         </div>
@@ -383,7 +383,7 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
             view === "changes" ? "text-amber-400 border-b-amber-500" : "text-ink-500 border-b-transparent hover:text-ink-300"
           }`}
         >
-          Changes {totalChanges > 0 && <span className="text-ink-600 ml-1">({totalChanges})</span>}
+          Changes {totalChanges > 0 && <span className="text-ink-500 ml-1">({totalChanges})</span>}
         </button>
         <button
           onClick={() => setView("log")}
@@ -401,7 +401,7 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
           <span className="text-amber-400 text-[0.65rem] font-mono">{selectedFiles.size} selected</span>
           <button onClick={handleStageSelected} className="px-2 py-0.5 text-[0.65rem] bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 rounded transition-theme">Stage</button>
           <button onClick={handleUnstageSelected} className="px-2 py-0.5 text-[0.65rem] bg-ink-800/40 hover:bg-ink-800/60 text-ink-300 rounded transition-theme">Unstage</button>
-          <button onClick={() => setSelectedFiles(new Set())} className="ml-auto text-[0.65rem] text-ink-500 hover:text-ink-300 transition-theme">Clear</button>
+          <button onClick={() => setSelectedFiles(new Set())} className="ml-auto text-[0.65rem] text-ink-400 hover:text-ink-300 transition-theme">Clear</button>
         </div>
       )}
 
@@ -458,7 +458,7 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
               onChange={e => setCommitMsg(e.target.value)}
               placeholder={amend ? "Amend commit message" : "Commit message"}
               rows={2}
-              className="flex-1 bg-ink-900/60 border border-ink-800/50 rounded-md px-2.5 py-1.5 text-ink-200 text-xs placeholder-ink-600 outline-none focus:border-amber-500/50 resize-none transition-theme font-mono"
+              className="flex-1 bg-ink-900/60 border border-ink-800/50 rounded-md px-2.5 py-1.5 text-ink-200 text-xs placeholder-ink-500 outline-none focus:border-amber-500/50 resize-none transition-theme font-mono"
               onKeyDown={e => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); handleCommit(); }
               }}
@@ -471,7 +471,7 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
               className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-theme ${
                 commitMsg.trim() && (amend || status?.staged.length) && !committing
                   ? "bg-amber-600 hover:bg-amber-500 text-ink-950"
-                  : "bg-ink-800/40 text-ink-600 cursor-not-allowed"
+                  : "bg-ink-800/40 text-ink-400 cursor-not-allowed"
               }`}
             >
               {committing ? "…" : amend ? "Amend" : "Commit"}
@@ -485,7 +485,7 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
               />
               <span className="text-ink-500 text-[0.65rem]">Amend</span>
             </label>
-            <span className="text-ink-700 text-[0.6rem] font-mono ml-auto hidden md:inline">⌘↵</span>
+            <span className="text-ink-500 text-[0.6rem] font-mono ml-auto hidden md:inline">⌘↵</span>
           </div>
         </div>
       )}
@@ -542,11 +542,11 @@ function ChangesView({ cwd, status, loading, error, expandedStaged, expandedChan
           >
             <Icon name={expandedStaged ? "chevron-down" : "chevron-right"} size={8} />
             Staged Changes
-            <span className="text-ink-600 font-normal ml-auto">{status.staged.length}</span>
+            <span className="text-ink-500 font-normal ml-auto">{status.staged.length}</span>
             {status.staged.length > 0 && (
               <button
                 onClick={(e) => { e.stopPropagation(); onUnstageAll(); }}
-                className="text-ink-600 hover:text-amber-500 transition-theme ml-1 p-0.5"
+                className="text-ink-500 hover:text-amber-500 transition-theme ml-1 p-0.5"
                 aria-label="Unstage all"
                 title="Unstage all"
               >
@@ -580,11 +580,11 @@ function ChangesView({ cwd, status, loading, error, expandedStaged, expandedChan
           >
             <Icon name={expandedChanges ? "chevron-down" : "chevron-right"} size={8} />
             Changes
-            <span className="text-ink-600 font-normal ml-auto">{status.unstaged.length + status.untracked.length}</span>
+            <span className="text-ink-500 font-normal ml-auto">{status.unstaged.length + status.untracked.length}</span>
             {status.unstaged.length + status.untracked.length > 0 && (
               <button
                 onClick={(e) => { e.stopPropagation(); onStageAll(); }}
-                className="text-ink-600 hover:text-amber-500 transition-theme ml-1 p-0.5"
+                className="text-ink-500 hover:text-amber-500 transition-theme ml-1 p-0.5"
                 aria-label="Stage all changes"
                 title="Stage all"
               >
@@ -626,8 +626,8 @@ function ChangesView({ cwd, status, loading, error, expandedStaged, expandedChan
       {/* Empty state */}
       {status.staged.length === 0 && status.unstaged.length === 0 && status.untracked.length === 0 && (
         <div className="py-12 text-center">
-          <p className="text-ink-600 text-xs font-mono">No changes detected</p>
-          <p className="text-ink-700 text-[0.65rem] font-mono mt-1">Working tree clean</p>
+          <p className="text-ink-500 text-xs font-mono">No changes detected</p>
+          <p className="text-ink-500 text-[0.65rem] font-mono mt-1">Working tree clean</p>
         </div>
       )}
     </div>
@@ -683,7 +683,7 @@ function FileRow({ file, stats, staged, selected, onStage, onUnstage, onDiscard,
       <span className="text-ink-300 text-xs truncate flex-1 font-mono" title={file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}>
         {file.path.split("/").map((segment, i, arr) => (
           <span key={i}>
-            {i < arr.length - 1 ? <span className="text-ink-600">{segment}/</span> : segment}
+            {i < arr.length - 1 ? <span className="text-ink-500">{segment}/</span> : segment}
           </span>
         ))}
       </span>

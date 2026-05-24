@@ -98,7 +98,7 @@ export function MessageBubble({ message, showThinking, toolResultsMap, inlineToo
 
         {/* Timestamp / metadata */}
         {!isStreaming && (
-          <div className={`text-ink-600 text-[0.65rem] font-mono mt-1 ${isUser ? "text-right" : ""}`}>
+          <div className={`text-ink-500 text-[0.65rem] font-mono mt-1 ${isUser ? "text-right" : ""}`}>
             {message.model && <span>{message.model}</span>}
             {message.usage && (
               <span className="ml-2">
@@ -146,16 +146,31 @@ export function MessageBubble({ message, showThinking, toolResultsMap, inlineToo
 
 function UserBubble({ message, entryId, onFork }: { message: ChatMessage; entryId?: string; onFork?: (id: string) => void }) {
   const text = extractTextContent(message.content);
-  
+  const imageBlocks = extractImageBlocks(message.content);
+
   return (
     <div className="group relative bg-amber-500/12 border border-amber-500/20 rounded-2xl rounded-br-md px-3 md:px-4 py-2.5">
-      <p className="text-ink-100 text-sm leading-relaxed whitespace-pre-wrap break-words">
-        {text}
-      </p>
+      {text && (
+        <p className="text-ink-100 text-sm leading-relaxed whitespace-pre-wrap break-words">
+          {text}
+        </p>
+      )}
+      {imageBlocks.length > 0 && (
+        <div className={`flex gap-2 flex-wrap ${text ? 'mt-2' : ''}`}>
+          {imageBlocks.map((img, i) => (
+            <img
+              key={i}
+              src={`data:${img.mimeType};base64,${img.data}`}
+              alt={`Attachment ${i + 1}`}
+              className="max-h-48 rounded-lg border border-amber-500/20 object-contain"
+            />
+          ))}
+        </div>
+      )}
       {entryId && onFork && (
         <button
           onClick={() => onFork(entryId)}
-          className="hidden md:block absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-ink-600 hover:text-amber-500 transition-all p-1"
+          className="hidden md:block absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-ink-500 hover:text-amber-500 transition-all p-1"
           title="Fork from here"
           aria-label="Fork from here"
         >
@@ -276,7 +291,7 @@ function ThinkingBlock({ thinking }: { thinking: string }) {
       >
         <Icon name="chevron-right-sm" size={10} className={`transition-transform ${collapsed ? "" : "rotate-90"}`} />
         Reasoning
-        {collapsed && <span className="text-ink-600 ml-1">({clean.split("\n").length} lines)</span>}
+        {collapsed && <span className="text-ink-500 ml-1">({clean.split("\n").length} lines)</span>}
       </button>
       {!collapsed && (
         <div className="px-3 pb-2 text-ink-500 text-xs leading-relaxed whitespace-pre-wrap border-t border-amber-500/10 pt-2 max-h-64 overflow-y-auto">
@@ -511,7 +526,7 @@ function ToolResultBubble({ message }: { message: ChatMessage }) {
           {message.toolName || "tool"} result
         </span>
         {isError && <span className="text-rose-500">(error)</span>}
-        {needsExpansion && <span className="text-ink-600 ml-1">({lines.length} lines)</span>}
+        {needsExpansion && <span className="text-ink-500 ml-1">({lines.length} lines)</span>}
       </button>
       {/* Always show preview */}
       {!expanded && (
@@ -552,11 +567,11 @@ function BashResultBubble({ message }: { message: ChatMessage }) {
         <Icon name="chevron-right-sm" size={10} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
         <span className="text-teal-400 font-medium truncate">$ {message.command}</span>
         {exitCode !== undefined && (
-          <span className={isError ? "text-rose-500" : "text-ink-600"}>
+          <span className={isError ? "text-rose-500" : "text-ink-500"}>
             [{exitCode}]
           </span>
         )}
-        {needsExpansion && <span className="text-ink-600 ml-1">({lines.length} lines)</span>}
+        {needsExpansion && <span className="text-ink-500 ml-1">({lines.length} lines)</span>}
       </button>
       {output && (
         <pre className="px-3 pb-2 text-ink-400 text-xs leading-relaxed whitespace-pre-wrap border-t border-ink-800 pt-2 max-h-20 overflow-hidden font-mono">
@@ -570,7 +585,7 @@ function BashResultBubble({ message }: { message: ChatMessage }) {
 function SystemBubble({ message }: { message: ChatMessage }) {
   return (
     <div className="flex justify-center">
-      <div className="bg-ink-900 border border-ink-800 rounded-full px-4 py-1.5 text-ink-500 text-xs font-mono">
+      <div className="bg-ink-900 border border-ink-800 rounded-full px-4 py-1.5 text-ink-400 text-xs font-mono">
         {message.role === "compactionSummary" ? "Context compacted" : "Branch summary"}
         {message.tokensBefore && ` · ${formatTokens(message.tokensBefore)} tokens`}
       </div>
@@ -587,6 +602,14 @@ function extractTextContent(content: ChatMessage["content"]): string {
       .join("\n");
   }
   return "";
+}
+
+function extractImageBlocks(content: ChatMessage["content"]): ContentBlock[] {
+  if (typeof content === "string") return [];
+  if (Array.isArray(content)) {
+    return content.filter(b => b.type === "image" && b.data && b.mimeType);
+  }
+  return [];
 }
 
 interface CodeBlockProps extends React.HTMLAttributes<HTMLPreElement> {

@@ -100,7 +100,7 @@ function CommitDiffViewer({ diff, hash, onClose }: { diff: string; hash: string;
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-ink-800/60 bg-ink-900/30 shrink-0">
-        <button onClick={onClose} className="p-1 text-ink-500 hover:text-ink-300 hover:bg-ink-800/50 rounded transition-theme" aria-label="Close diff">
+        <button onClick={onClose} className="p-1 text-ink-400 hover:text-ink-300 hover:bg-ink-800/50 rounded transition-theme" aria-label="Close diff">
           <Icon name="chevron-left" size={12} />
         </button>
         <span className="text-amber-500/80 text-xs font-mono">{hash.slice(0, 7)}</span>
@@ -163,9 +163,9 @@ function CommitRow({
           <RefBadges refs={refBadges} />
         </div>
         <div className="flex items-center gap-2 mt-0.5">
-          <span className="text-ink-600 text-[0.65rem] font-mono">{entry.author}</span>
+          <span className="text-ink-500 text-[0.65rem] font-mono">{entry.author}</span>
           <span
-            className="text-ink-700 text-[0.65rem] font-mono"
+            className="text-ink-500 text-[0.65rem] font-mono"
             title={new Date(entry.date).toLocaleString()}
           >
             {formatRelativeDate(entry.date)}
@@ -320,14 +320,14 @@ export function GitLog({ cwd, onRefresh }: GitLogProps) {
       {/* ── Search bar ── */}
       <div className="px-3 py-2 border-b border-ink-800/40 bg-ink-900/20 shrink-0">
         <div className="flex items-center gap-1.5 bg-ink-900/60 border border-ink-800/50 rounded-md px-2 py-1.5 focus-within:border-amber-500/40 transition-theme">
-          <Icon name="search" size={12} className="text-ink-600 shrink-0" />
+          <Icon name="search" size={12} className="text-ink-500 shrink-0" />
           <input
             ref={searchInputRef}
             type="text"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder="Search commits…"
-            className="flex-1 bg-transparent text-ink-200 text-xs placeholder-ink-600 outline-none font-mono"
+            className="flex-1 bg-transparent text-ink-200 text-xs placeholder-ink-500 outline-none font-mono"
           />
           {searching && (
             <div className="w-3 h-3 border-2 border-ink-700 border-t-amber-500 rounded-full animate-spin shrink-0" />
@@ -335,15 +335,15 @@ export function GitLog({ cwd, onRefresh }: GitLogProps) {
           {searchQuery && (
             <button
               onClick={() => setSearchQuery("")}
-              className="text-ink-600 hover:text-ink-300 transition-theme shrink-0"
+              className="text-ink-500 hover:text-ink-300 transition-theme shrink-0"
             >
               <Icon name="close" size={10} />
             </button>
           )}
         </div>
         <div className="flex items-center justify-between mt-1">
-          <span className="text-ink-600 text-[0.6rem] font-mono">Press / to search</span>
-          <span className="text-ink-700 text-[0.6rem] font-mono">{log.length} commits</span>
+          <span className="text-ink-500 text-[0.6rem] font-mono">Press / to search</span>
+          <span className="text-ink-500 text-[0.6rem] font-mono">{log.length} commits</span>
         </div>
       </div>
 
@@ -368,7 +368,7 @@ export function GitLog({ cwd, onRefresh }: GitLogProps) {
             <span className="text-ink-500 text-xs font-mono">Loading…</span>
           </div>
         ) : log.length === 0 ? (
-          <div className="py-8 text-center text-ink-600 text-xs font-mono">
+          <div className="py-8 text-center text-ink-500 text-xs font-mono">
             {searchQuery ? "No commits match search" : "No commits found"}
           </div>
         ) : (
@@ -397,7 +397,7 @@ export function GitLog({ cwd, onRefresh }: GitLogProps) {
       {/* ── Context menu ── */}
       {ctxMenu && (
         <ContextMenuPortal x={ctxMenu.x} y={ctxMenu.y} onClose={() => setCtxMenu(null)}>
-          <div className="px-2.5 py-1 text-[0.6rem] font-mono text-ink-600 truncate max-w-[200px]">
+          <div className="px-2.5 py-1 text-[0.6rem] font-mono text-ink-500 truncate max-w-[200px]">
             {ctxMenu.entry.shortHash} {splitMessageRefs(ctxMenu.entry.message).message.slice(0, 30)}
           </div>
           <ContextMenuDivider />

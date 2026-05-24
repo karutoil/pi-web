@@ -94,7 +94,7 @@ export function ExtensionUIModal({ request, onRespond }: Props) {
                 if (e.key === "Escape") onRespond({ cancelled: true });
               }}
               placeholder={request.placeholder}
-              className="w-full bg-ink-900 border border-ink-700 rounded-lg px-3 py-2 text-ink-100 text-sm font-mono placeholder-ink-600 outline-none focus:border-amber-500"
+              className="w-full bg-ink-900 border border-ink-700 rounded-lg px-3 py-2 text-ink-100 text-sm font-mono placeholder-ink-500 outline-none focus:border-amber-500"
             />
             <div className="flex gap-2">
               <button
@@ -125,7 +125,7 @@ export function ExtensionUIModal({ request, onRespond }: Props) {
               }}
               placeholder={request.placeholder}
               rows={8}
-              className="w-full bg-ink-900 border border-ink-700 rounded-lg px-3 py-2 text-ink-100 text-sm font-mono placeholder-ink-600 outline-none focus:border-amber-500 resize-none"
+              className="w-full bg-ink-900 border border-ink-700 rounded-lg px-3 py-2 text-ink-100 text-sm font-mono placeholder-ink-500 outline-none focus:border-amber-500 resize-none"
             />
             <div className="flex gap-2">
               <button
@@ -182,7 +182,7 @@ export function ExtensionUIModal({ request, onRespond }: Props) {
           {/* Dismiss button */}
           <button
             onClick={() => onRespond({ cancelled: true })}
-            className="shrink-0 w-6 h-6 rounded-md flex items-center justify-center text-ink-600 hover:text-ink-300 hover:bg-ink-800/50 transition-theme"
+            className="shrink-0 w-6 h-6 rounded-md flex items-center justify-center text-ink-400 hover:text-ink-300 hover:bg-ink-800/50 transition-theme"
             aria-label="Dismiss notification"
           >
             <Icon name="close" size={12} />
@@ -198,7 +198,7 @@ export function ExtensionUIModal({ request, onRespond }: Props) {
         {/* Header */}
         <div className="px-5 py-4 border-b border-ink-800 flex items-center justify-between">
           <h3 className="text-ink-200 font-medium text-sm">{request.title || "Extension"}</h3>
-          <button onClick={handleCancel} className="text-ink-600 hover:text-ink-400 transition-theme" aria-label="Close">
+          <button onClick={handleCancel} className="text-ink-500 hover:text-ink-400 transition-theme" aria-label="Close">
             <Icon name="close" size={16} />
           </button>
         </div>

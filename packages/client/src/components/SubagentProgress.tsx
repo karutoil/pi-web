@@ -97,10 +97,10 @@ function AgentProgressView({ progress, now }: { progress: AgentProgress; now: nu
           <span className="text-ink-500">{formatDuration(elapsed)}</span>
         )}
         {progress.toolCount > 0 && (
-          <span className="text-ink-600">{progress.toolCount} tools</span>
+          <span className="text-ink-500">{progress.toolCount} tools</span>
         )}
         {progress.tokens > 0 && (
-          <span className="text-ink-600">{formatTokenCount(progress.tokens)} tok</span>
+          <span className="text-ink-500">{formatTokenCount(progress.tokens)} tok</span>
         )}
       </div>
 
@@ -110,7 +110,7 @@ function AgentProgressView({ progress, now }: { progress: AgentProgress; now: nu
           <Icon name="chevron-right-sm" size={8} className="text-amber-400" />
           <span className="text-ink-300">{progress.currentTool}</span>
           {progress.currentToolArgs && (
-            <span className="text-ink-600 truncate max-w-[200px]">{progress.currentToolArgs.slice(0, 60)}</span>
+            <span className="text-ink-500 truncate max-w-[200px]">{progress.currentToolArgs.slice(0, 60)}</span>
           )}
         </div>
       )}
@@ -150,11 +150,11 @@ function ChainStepIndicator({
     <div className="flex items-center gap-1 text-xs font-mono mb-2">
       {chainAgents.map((agent, i) => (
         <span key={i} className="flex items-center gap-1">
-          {i > 0 && <Icon name="chevron-right-sm" size={8} className="text-ink-700" />}
+          {i > 0 && <Icon name="chevron-right-sm" size={8} className="text-ink-500" />}
           <span className={
             i < current ? "text-teal-400" :
             i === current ? "text-amber-400 font-medium" :
-            "text-ink-600"
+            "text-ink-500"
           }>
             {agent}
           </span>
@@ -184,7 +184,7 @@ export function SubagentProgressView({ details, isRunning }: { details: ToolDeta
             {sub.mode}
           </span>
           {sub.context && (
-            <span className="text-[0.65rem] font-mono text-ink-600">{sub.context}</span>
+            <span className="text-[0.65rem] font-mono text-ink-500">{sub.context}</span>
           )}
         </div>
 
@@ -213,7 +213,7 @@ export function SubagentProgressView({ details, isRunning }: { details: ToolDeta
             {sub.mode}
           </span>
           {sub.context && (
-            <span className="text-[0.65rem] font-mono text-ink-600">{sub.context}</span>
+            <span className="text-[0.65rem] font-mono text-ink-500">{sub.context}</span>
           )}
         </div>
         {results.map((r, i) => {
@@ -227,9 +227,9 @@ export function SubagentProgressView({ details, isRunning }: { details: ToolDeta
                 <span className="font-medium text-ink-300">{r.agent}</span>
                 {r.progressSummary && (
                   <>
-                    <span className="text-ink-600">{r.progressSummary.toolCount} tools</span>
-                    <span className="text-ink-600">{formatTokenCount(r.progressSummary.tokens)} tok</span>
-                    <span className="text-ink-600">{formatDuration(r.progressSummary.durationMs)}</span>
+                    <span className="text-ink-500">{r.progressSummary.toolCount} tools</span>
+                    <span className="text-ink-500">{formatTokenCount(r.progressSummary.tokens)} tok</span>
+                    <span className="text-ink-500">{formatDuration(r.progressSummary.durationMs)}</span>
                   </>
                 )}
               </div>

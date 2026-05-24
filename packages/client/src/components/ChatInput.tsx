@@ -101,8 +101,9 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
           const base64 = dataUrl.split(",")[1];
           setPendingImages(prev => [...prev, { data: base64, mimeType: compressed.type || "image/jpeg" }]);
         };
+        reader.onerror = () => console.error("[ChatInput] FileReader failed for pasted image");
         reader.readAsDataURL(compressed);
-        });
+        }).catch((err) => console.error("[ChatInput] Image compression failed:", err));
       }
     }
   }, []);
@@ -174,7 +175,7 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
               {onToggleTerminal && (
                 <button
                   onClick={onToggleTerminal}
-                  className={`p-1.5 rounded-full transition-theme touch-target ${showTerminal ? "bg-amber-600/20 text-amber-500" : "text-ink-600 hover:text-ink-400 hover:bg-ink-800/40"}`}
+                  className={`p-1.5 rounded-full transition-theme touch-target ${showTerminal ? "bg-amber-600/20 text-amber-500" : "text-ink-400 hover:text-ink-400 hover:bg-ink-800/40"}`}
                   title="Toggle terminal"
                   aria-label="Toggle terminal"
                 >
@@ -200,12 +201,12 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
           </div>
         </div>
         
-        <p className="text-ink-600 text-[0.65rem] font-mono mt-1.5 text-center opacity-50 hidden md:block">
+        <p className="text-ink-500 text-[0.65rem] font-mono mt-1.5 text-center opacity-50 hidden md:block">
           {isStreaming ? "PI is working · type to steer"
             : disabled ? "Connecting..."
             : "Paste images · / for commands"}
         </p>
-        <p className="text-ink-600 text-[0.65rem] font-mono mt-1.5 text-center opacity-50 md:hidden">
+        <p className="text-ink-500 text-[0.65rem] font-mono mt-1.5 text-center opacity-50 md:hidden">
           {isStreaming ? "Type to steer"
             : disabled ? "Connecting..."
             : "Type a message..."}

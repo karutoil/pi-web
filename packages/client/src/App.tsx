@@ -418,7 +418,7 @@ function SessionWelcome({ project, sessions, onSelectSession }: {
                       {s.model && ` · ${s.model}`}
                     </div>
                   </div>
-                  <div className="text-ink-600 text-xs shrink-0 mt-0.5">
+                  <div className="text-ink-500 text-xs shrink-0 mt-0.5">
                     {formatTimeAgo(s.timestamp)}
                   </div>
                 </div>

@@ -126,7 +126,7 @@ export function ContextMenuItem({
     >
       {icon && <span className="shrink-0 w-3 flex justify-center">{icon}</span>}
       <span className="flex-1">{label}</span>
-      {shortcut && <span className="text-ink-600 text-[0.65rem] font-mono ml-2">{shortcut}</span>}
+      {shortcut && <span className="text-ink-500 text-[0.65rem] font-mono ml-2">{shortcut}</span>}
     </button>
   );
 }

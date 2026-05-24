@@ -159,7 +159,7 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
           </div>
           <button
             onClick={onCancel}
-            className="w-7 h-7 rounded-lg flex items-center justify-center text-ink-600 hover:text-ink-300 hover:bg-ink-800/50 transition-theme"
+            className="w-7 h-7 rounded-lg flex items-center justify-center text-ink-400 hover:text-ink-300 hover:bg-ink-800/50 transition-theme"
             aria-label="Close"
           >
             <Icon name="close" size={14} />
@@ -169,7 +169,7 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
         {/* ── Path bar ── */}
         <form onSubmit={handlePathSubmit} className="px-5 pb-2">
           <div className="flex items-center gap-1.5 bg-ink-900/80 border border-ink-800/50 rounded-lg px-2.5 py-1.5">
-            <span className="text-ink-600 text-xs font-mono shrink-0">~/</span>
+            <span className="text-ink-500 text-xs font-mono shrink-0">~/</span>
             <input
               ref={pathInputRef}
               type="text"
@@ -178,7 +178,7 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
               onKeyDown={e => {
                 if (e.key === "Escape") { onCancel(); e.stopPropagation(); }
               }}
-              className="flex-1 bg-transparent text-ink-200 text-xs font-mono placeholder-ink-600 outline-none min-w-0"
+              className="flex-1 bg-transparent text-ink-200 text-xs font-mono placeholder-ink-500 outline-none min-w-0"
               placeholder="/home/user"
               spellCheck={false}
             />
@@ -206,7 +206,7 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
                 <span className="font-mono">..</span>
               </button>
             )}
-            <span className="text-ink-700 font-mono truncate flex-1 text-right">{currentPath}</span>
+            <span className="text-ink-500 font-mono truncate flex-1 text-right">{currentPath}</span>
           </div>
 
           {/* File list */}
@@ -228,7 +228,7 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
               </div>
             ) : items.length === 0 ? (
               <div className="py-12 text-center">
-                <span className="text-ink-600 text-xs font-mono">No subdirectories found</span>
+                <span className="text-ink-500 text-xs font-mono">No subdirectories found</span>
               </div>
             ) : (
               items.map((item, idx) => {
@@ -271,7 +271,7 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
                       name="chevron-right-sm"
                       size={8}
                       className={`shrink-0 transition-theme ${
-                        isSelected ? "text-amber-500/60" : "text-ink-700 group-hover:text-ink-500"
+                        isSelected ? "text-amber-500/60" : "text-ink-500 group-hover:text-ink-400"
                       }`}
                     />
                   </button>
@@ -303,7 +303,7 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
               value={displayName}
               onChange={e => setDisplayName(e.target.value)}
               placeholder={selectedName || "Folder name"}
-              className="flex-1 bg-ink-900/60 border border-ink-800/50 rounded-md px-2.5 py-1.5 text-ink-200 text-xs placeholder-ink-600 outline-none focus:border-amber-500/50 transition-theme"
+              className="flex-1 bg-ink-900/60 border border-ink-800/50 rounded-md px-2.5 py-1.5 text-ink-200 text-xs placeholder-ink-500 outline-none focus:border-amber-500/50 transition-theme"
               spellCheck={false}
             />
           </div>
@@ -316,7 +316,7 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
               className={`flex-1 py-2 rounded-lg text-xs font-medium transition-theme ${
                 selectedPath && !isAdding
                   ? "bg-amber-600 hover:bg-amber-500 text-ink-950"
-                  : "bg-ink-800/40 text-ink-600 cursor-not-allowed"
+                  : "bg-ink-800/40 text-ink-400 cursor-not-allowed"
               }`}
             >
               {isAdding ? "Adding..." : selectedPath ? "Add Project" : "Select a Directory"}

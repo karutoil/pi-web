@@ -317,7 +317,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
             <button
               onClick={handleCompactClick}
               disabled={isCompacting}
-              className={`text-xs font-mono transition-theme ${isCompacting ? 'text-ink-500 cursor-not-allowed' : compactDone ? 'text-teal-400' : 'text-ink-600 hover:text-amber-500'}`}
+              className={`text-xs font-mono transition-theme ${isCompacting ? 'text-ink-500 cursor-not-allowed' : compactDone ? 'text-teal-400' : 'text-ink-500 hover:text-amber-500'}`}
               title="Compact conversation context"
               aria-label="Compact conversation context"
             >

@@ -81,7 +81,7 @@ export function GitBlame({ cwd, path, onClose }: GitBlameProps) {
       <div className="flex items-center gap-2 px-3 py-2 border-b border-ink-800/60 bg-ink-900/30 shrink-0">
         <button
           onClick={onClose}
-          className="p-1 text-ink-500 hover:text-ink-300 hover:bg-ink-800/50 rounded transition-theme"
+          className="p-1 text-ink-400 hover:text-ink-300 hover:bg-ink-800/50 rounded transition-theme"
           aria-label="Close blame"
         >
           <Icon name="chevron-left" size={12} />
@@ -109,7 +109,7 @@ export function GitBlame({ cwd, path, onClose }: GitBlameProps) {
         </div>
       ) : lines.length === 0 ? (
         <div className="flex-1 flex items-center justify-center">
-          <p className="text-ink-600 text-xs font-mono">No blame data</p>
+          <p className="text-ink-500 text-xs font-mono">No blame data</p>
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto custom-scrollbar font-mono text-xs leading-5 bg-ink-950">
@@ -127,10 +127,10 @@ export function GitBlame({ cwd, path, onClose }: GitBlameProps) {
                     <div className="flex flex-col gap-px">
                       <span className="text-amber-400 font-medium truncate">{bl.hash}</span>
                       <span className="text-ink-400 truncate">{bl.author}</span>
-                      <span className="text-ink-600">{shortDate(bl.date)}</span>
+                      <span className="text-ink-500">{shortDate(bl.date)}</span>
                     </div>
                   ) : (
-                    <span className="text-ink-700">│</span>
+                    <span className="text-ink-500">│</span>
                   )}
                 </div>
                 )}
@@ -144,7 +144,7 @@ export function GitBlame({ cwd, path, onClose }: GitBlameProps) {
                 )}
 
                 {/* Line number */}
-                <div className="w-8 shrink-0 text-right pr-2 py-px select-none text-ink-700">
+                <div className="w-8 shrink-0 text-right pr-2 py-px select-none text-ink-500">
                   {bl.line}
                 </div>
 

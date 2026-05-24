@@ -1,6 +1,6 @@
 import { useRef, useEffect, useCallback, useState } from "react";
 import type { WSClientMessage, WSServerMessage, AgentState, ChatMessage, SessionDetail,
-  ModelInfo, CommandInfo, ForkEntry, SessionStats, ExtensionUIRequest, ImageAttachment } from "@pi-web/shared";
+  ModelInfo, CommandInfo, ForkEntry, SessionStats, ExtensionUIRequest, ImageAttachment, ContentBlock } from "@pi-web/shared";
 import type { ToolEvent, WSBridge } from "../lib/types";
 export type { ToolEvent, WSBridge };
 import { NOTIFY_TIMEOUT_MS } from "../lib/constants";
@@ -103,13 +103,15 @@ function createConnection(
         data.isStreaming = false;
         data.isActive = false;
         const preMsgs = messagesRef.slice(0, preRunCountRef);
+        // Preserve the user message(s) sent during this run (may contain image content blocks)
+        const userMsgs = messagesRef.slice(preRunCountRef).filter(m => m.role === "user");
         const newMsgs: ChatMessage[] = [];
         if (msg.messages?.length) {
           for (const m of msg.messages) {
             if (m.role === "assistant" || m.role === "toolResult") newMsgs.push(m);
           }
         }
-        messagesRef = [...preMsgs, ...newMsgs];
+        messagesRef = [...preMsgs, ...userMsgs, ...newMsgs];
         data.messages = [...messagesRef];
         data.liveMessages = new Map(); data.runningTools = new Map();
         break;
@@ -191,7 +193,17 @@ function createConnection(
     key,
     send,
     sendPrompt: (text: string, images?: ImageAttachment[]) => {
-      const userMsg: ChatMessage = { role: "user", content: text, timestamp: Date.now() };
+      // Build content with image blocks so user sees their own attachments immediately
+      let content: string | ContentBlock[] = text;
+      if (images && images.length > 0) {
+        const blocks: ContentBlock[] = [];
+        if (text) blocks.push({ type: "text", text });
+        for (const img of images) {
+          blocks.push({ type: "image", data: img.data, mimeType: img.mimeType });
+        }
+        content = blocks;
+      }
+      const userMsg: ChatMessage = { role: "user", content, timestamp: Date.now() };
       messagesRef = [...messagesRef, userMsg];
       data.messages = [...messagesRef];
       send({ type: "prompt", message: text, images });

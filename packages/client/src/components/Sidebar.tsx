@@ -186,7 +186,7 @@ export function Sidebar({
         {onToggleSidebar && (
           <button
             onClick={onToggleSidebar}
-            className="text-ink-600 hover:text-ink-400 transition-theme p-1 touch-target"
+            className="text-ink-500 hover:text-ink-400 transition-theme p-1 touch-target"
             title="Hide sidebar (⌘B)"
             aria-label="Hide sidebar"
           >
@@ -256,7 +256,7 @@ export function Sidebar({
         <div className="flex items-center gap-2">
           <button
             onClick={onToggleTheme}
-            className="text-ink-600 hover:text-ink-400 transition-theme p-1 touch-target"
+            className="text-ink-500 hover:text-ink-400 transition-theme p-1 touch-target"
             title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
             aria-label="Toggle dark mode"
           >
@@ -315,7 +315,7 @@ function ProjectList({
         <h2 className="text-[0.65rem] font-semibold text-ink-400 uppercase tracking-[0.12em]">Projects</h2>
         <button
           onClick={onToggleAdd}
-          className="text-ink-600 hover:text-ink-300 transition-theme p-1 rounded-md hover:bg-ink-800/50 touch-target"
+          className="text-ink-500 hover:text-ink-300 transition-theme p-1 rounded-md hover:bg-ink-800/50 touch-target"
           title="Add project"
           aria-label="Add project"
         >
@@ -324,7 +324,7 @@ function ProjectList({
       </div>
 
       {projects.length === 0 && !showAddProject && (
-        <p className="text-ink-600 text-xs px-2 py-6 text-center">
+        <p className="text-ink-500 text-xs px-2 py-6 text-center">
           No projects yet. Add a local directory.
         </p>
       )}
@@ -357,7 +357,7 @@ function ProjectList({
                   e.stopPropagation();
                   onRequestConfirm('Remove Project', `Remove "${p.name}"? This cannot be undone.`, () => onDelete(p.id));
                 }}
-                className="opacity-0 group-hover:opacity-100 md:opacity-0 text-ink-600 hover:text-rose-400 transition-all shrink-0 p-1 touch-target"
+                className="opacity-0 group-hover:opacity-100 md:opacity-0 text-ink-500 hover:text-rose-400 transition-all shrink-0 p-1 touch-target"
                 title="Remove project"
                 aria-label="Remove project"
               >
@@ -423,7 +423,7 @@ function SessionList({
         <div className="flex items-center gap-0.5">
           <button
             onClick={onRefresh}
-            className="text-ink-600 hover:text-ink-300 transition-theme p-1 rounded-md hover:bg-ink-800/50 touch-target"
+            className="text-ink-500 hover:text-ink-300 transition-theme p-1 rounded-md hover:bg-ink-800/50 touch-target"
             title="Refresh"
             aria-label="Refresh sessions"
           >
@@ -431,7 +431,7 @@ function SessionList({
           </button>
           <button
             onClick={onNewSession}
-            className="text-ink-600 hover:text-ink-300 transition-theme p-1 rounded-md hover:bg-ink-800/50 touch-target"
+            className="text-ink-500 hover:text-ink-300 transition-theme p-1 rounded-md hover:bg-ink-800/50 touch-target"
             title="New session"
             aria-label="New session"
           >
@@ -447,7 +447,7 @@ function SessionList({
 
       {/* Search — minimal */}
       <div className="relative mb-2 px-1">
-        <Icon name="search" size={10} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-600" />
+        <Icon name="search" size={10} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-500" />
         <input
           type="text"
           placeholder="Filter…"
@@ -458,7 +458,7 @@ function SessionList({
         {search && (
           <button
             onClick={() => onSearch("")}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-600 hover:text-ink-400"
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-500 hover:text-ink-400"
             aria-label="Clear search"
           >
             <Icon name="close-thick" size={8} />
@@ -477,7 +477,7 @@ function SessionList({
       )}
 
       {filteredSessions.length === 0 && (
-        <p className="text-ink-600 text-xs px-2 py-6 text-center">
+        <p className="text-ink-500 text-xs px-2 py-6 text-center">
           {search ? "No matches." : "No sessions yet."}
         </p>
       )}

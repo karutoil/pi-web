@@ -352,7 +352,7 @@ export function TerminalPanel({ projectId, projectPath, visible, onClose }: Term
         <div className="flex items-center gap-0.5 shrink-0 pl-1">
           <button
             onClick={addTerminal}
-            className="p-1.5 text-ink-600 hover:text-amber-500 transition-theme rounded hover:bg-ink-800/50"
+            className="p-1.5 text-ink-400 hover:text-amber-500 transition-theme rounded hover:bg-ink-800/50"
             title="New terminal"
             aria-label="New terminal"
           >
@@ -360,7 +360,7 @@ export function TerminalPanel({ projectId, projectPath, visible, onClose }: Term
           </button>
           <button
             onClick={onClose}
-            className="p-1.5 text-ink-600 hover:text-ink-300 transition-theme rounded hover:bg-ink-800/50"
+            className="p-1.5 text-ink-400 hover:text-ink-300 transition-theme rounded hover:bg-ink-800/50"
             title="Close panel"
             aria-label="Close terminal panel"
           >
@@ -377,7 +377,7 @@ export function TerminalPanel({ projectId, projectPath, visible, onClose }: Term
         {!activeTab && (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
-              <p className="text-ink-600 text-xs font-mono mb-3">No terminals open</p>
+              <p className="text-ink-500 text-xs font-mono mb-3">No terminals open</p>
               <button
                 onClick={addTerminal}
                 className="px-3 py-1.5 bg-amber-600/80 hover:bg-amber-500 text-ink-950 text-xs font-medium rounded-md transition-theme"
@@ -426,7 +426,7 @@ function TabButton({ tab, isActive, onSelect, onClose, onRename }: {
       onClick={onSelect}
       onDoubleClick={() => setIsRenaming(true)}
     >
-      <Icon name="terminal" size={10} className={isActive ? "text-amber-500" : "text-ink-600"} />
+      <Icon name="terminal" size={10} className={isActive ? "text-amber-500" : "text-ink-500"} />
       {isRenaming ? (
         <input
           ref={inputRef}
@@ -445,7 +445,7 @@ function TabButton({ tab, isActive, onSelect, onClose, onRename }: {
       )}
       <button
         onClick={(e) => { e.stopPropagation(); onClose(); }}
-        className="opacity-0 group-hover:opacity-100 sm:opacity-40 sm:group-hover:opacity-100 text-ink-600 hover:text-rose-400 transition-all ml-0.5"
+        className="opacity-0 group-hover:opacity-100 sm:opacity-40 sm:group-hover:opacity-100 text-ink-500 hover:text-rose-400 transition-all ml-0.5"
         aria-label={`Close ${tab.name}`}
       >
         <Icon name="close" size={8} />

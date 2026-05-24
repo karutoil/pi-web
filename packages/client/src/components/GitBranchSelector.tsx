@@ -200,7 +200,7 @@ export function GitBranchSelector({ cwd, currentBranch, ahead, behind, onRefresh
                   if (e.key === "Escape") { e.stopPropagation(); setOpen(false); }
                 }}
                 placeholder="Create branch…"
-                className="flex-1 bg-ink-850 border border-ink-700 rounded px-2 py-1 text-ink-200 text-xs font-mono placeholder-ink-600 outline-none focus:border-amber-500 transition-theme"
+                className="flex-1 bg-ink-850 border border-ink-700 rounded px-2 py-1 text-ink-200 text-xs font-mono placeholder-ink-500 outline-none focus:border-amber-500 transition-theme"
                 aria-label="Create new branch"
                 disabled={creating}
               />
@@ -210,7 +210,7 @@ export function GitBranchSelector({ cwd, currentBranch, ahead, behind, onRefresh
                 className={`shrink-0 px-2 py-1 rounded text-xs font-medium transition-theme ${
                   createInput.trim() && !creating
                     ? "bg-amber-600 hover:bg-amber-500 text-ink-950"
-                    : "bg-ink-800/40 text-ink-600 cursor-not-allowed"
+                    : "bg-ink-800/40 text-ink-400 cursor-not-allowed"
                 }`}
                 aria-label="Create branch"
               >
@@ -229,7 +229,7 @@ export function GitBranchSelector({ cwd, currentBranch, ahead, behind, onRefresh
           {/* Branches list */}
           <div className="max-h-48 overflow-y-auto custom-scrollbar py-0.5">
             {branches.length === 0 && (
-              <div className="px-3 py-2 text-ink-600 text-xs font-mono">No branches</div>
+              <div className="px-3 py-2 text-ink-500 text-xs font-mono">No branches</div>
             )}
             {branches.map(branch => (
               <button
@@ -255,7 +255,7 @@ export function GitBranchSelector({ cwd, currentBranch, ahead, behind, onRefresh
           {tags.length > 0 && (
             <>
               <div className="border-t border-ink-800 mx-2" />
-              <div className="px-3 py-1 text-ink-600 text-[0.65rem] font-semibold tracking-wide uppercase">
+              <div className="px-3 py-1 text-ink-500 text-[0.65rem] font-semibold tracking-wide uppercase">
                 Tags
               </div>
               <div className="max-h-32 overflow-y-auto custom-scrollbar py-0.5">
@@ -270,7 +270,7 @@ export function GitBranchSelector({ cwd, currentBranch, ahead, behind, onRefresh
                   </button>
                 ))}
                 {tags.length > 20 && (
-                  <div className="px-3 py-1 text-ink-700 text-[0.6rem] font-mono">
+                  <div className="px-3 py-1 text-ink-500 text-[0.6rem] font-mono">
                     +{tags.length - 20} more
                   </div>
                 )}
@@ -292,11 +292,11 @@ export function GitBranchSelector({ cwd, currentBranch, ahead, behind, onRefresh
               {showRemotes && (
                 <div className="px-3 pb-1.5 space-y-0.5">
                   {remotes.map((r, i) => (
-                    <div key={`${r.name}-${r.type}-${i}`} className="text-[0.65rem] font-mono text-ink-600 truncate" title={`${r.name} ${r.type} ${r.url}`}>
+                    <div key={`${r.name}-${r.type}-${i}`} className="text-[0.65rem] font-mono text-ink-500 truncate" title={`${r.name} ${r.type} ${r.url}`}>
                       <span className="text-ink-500">{r.name}</span>
-                      <span className="text-ink-700"> ({r.type})</span>
+                      <span className="text-ink-500"> ({r.type})</span>
                       {" "}
-                      <span className="text-ink-600">{r.url}</span>
+                      <span className="text-ink-500">{r.url}</span>
                     </div>
                   ))}
                 </div>

@@ -39,7 +39,7 @@ export function EmptyState({ projects, onSelectProject, onAddProject }: EmptySta
                   </div>
                   <div className="text-left min-w-0">
                     <div className="text-ink-200 font-medium text-sm">{p.name}</div>
-                    <div className="text-ink-600 text-xs font-mono truncate">{p.path}</div>
+                    <div className="text-ink-500 text-xs font-mono truncate">{p.path}</div>
                   </div>
                 </div>
               </button>
@@ -54,7 +54,7 @@ export function EmptyState({ projects, onSelectProject, onAddProject }: EmptySta
               <Icon name="plus-thick" size={16} />
               Add a project directory
             </button>
-            <p className="text-ink-600 text-xs font-mono mt-4">
+            <p className="text-ink-500 text-xs font-mono mt-4">
               Add a local directory to start chatting with PI
             </p>
           </div>
