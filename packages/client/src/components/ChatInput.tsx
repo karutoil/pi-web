@@ -72,7 +72,7 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
     // Trigger command completion on "/"
     if (val.endsWith("/")) {
       setShowCommands(true);
-      if (commands.length === 0) onRequestCommands();
+      onRequestCommands();
     }
     // Keep showing if still typing command
     const lastSlash = val.lastIndexOf("/");

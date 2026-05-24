@@ -66,8 +66,8 @@ function createConnection(
       data.isConnected = true;
       reconnectAttempts = 0;
       notify();
-      // Request current state on reconnect to sync up
-      setTimeout(() => send({ type: "get_state" }), 200);
+      // Request current state and commands on connect
+      setTimeout(() => { send({ type: "get_state" }); send({ type: "get_commands" }); }, 200);
     };
     ws.onclose = () => {
       data.isConnected = false;
