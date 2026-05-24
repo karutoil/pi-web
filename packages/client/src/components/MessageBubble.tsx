@@ -9,6 +9,7 @@ import { DiffRenderer, isDiffContent } from "./DiffRenderer";
 import { Icon } from "./Icon";
 import { ContextMenuPortal, ContextMenuItem, ContextMenuDivider, useLongPress } from "./ContextMenu";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { SubagentProgressView, isSubagentDetails } from "./SubagentProgress";
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -317,6 +318,7 @@ function CombinedToolBubble({
     grep: "text-tool-grep border-tool-grep-bdr bg-tool-grep-bg",
     find: "text-tool-find border-tool-find-bdr bg-tool-find-bg",
     ls: "text-tool-ls border-tool-ls-bdr bg-tool-ls-bg",
+    subagent: "text-amber-400 border-amber-500/20 bg-amber-500/5",
   };
 
   const headerColor = colors[name] || "text-tool-default";
@@ -394,8 +396,15 @@ function CombinedToolBubble({
             </div>
           )}
 
-          {/* Running indicator with partial result */}
-          {isRunning && !isDiffResult && (
+          {/* Subagent progress — rich rendering for subagent/extension tools */}
+          {isRunning && !isDiffResult && runningTool.partialResult?.details && isSubagentDetails(runningTool.partialResult.details) && (
+            <div className="border-t border-ink-800 px-3 py-2">
+              <SubagentProgressView details={runningTool.partialResult.details} isRunning={true} />
+            </div>
+          )}
+
+          {/* Generic running indicator — for non-subagent tools */}
+          {isRunning && !isDiffResult && !(runningTool.partialResult?.details && isSubagentDetails(runningTool.partialResult.details)) && (
             <div className="border-t border-ink-800 px-3 py-2 text-ink-500 text-xs font-mono">
               <span className="animate-pulse">Running…</span>
               {runningTool.partialResult?.content && (
@@ -406,8 +415,15 @@ function CombinedToolBubble({
             </div>
           )}
 
-          {/* Text result (non-diff) */}
-          {!isDiffResult && !isRunning && resultContent && (
+          {/* Completed subagent result — show structured summary */}
+          {!isDiffResult && !isRunning && (toolResult?.details || runningTool?.result?.details) && isSubagentDetails(toolResult?.details || runningTool?.result?.details) && (
+            <div className="border-t border-ink-800 px-3 py-2">
+              <SubagentProgressView details={(toolResult?.details || runningTool?.result?.details)!} isRunning={false} />
+            </div>
+          )}
+
+          {/* Text result (non-diff, non-subagent) */}
+          {!isDiffResult && !isRunning && resultContent && !(toolResult?.details && isSubagentDetails(toolResult.details)) && !isSubagentDetails(runningTool?.result?.details) && (
             <div className="border-t border-ink-800">
               <pre className="px-3 pb-2 text-ink-400 text-xs leading-relaxed whitespace-pre-wrap pt-2 max-h-64 overflow-y-auto font-mono">
                 {resultContent}

@@ -336,7 +336,7 @@ class PIAgent {
         case "tool_execution_start":
           handler({ type: "tool_start", toolCallId: event.toolCallId, toolName: event.toolName, args: event.args || {} }); break;
         case "tool_execution_update":
-          handler({ type: "tool_update", toolCallId: event.toolCallId, partialResult: event.partialResult || { content: [] } }); break;
+          handler({ type: "tool_update", toolCallId: event.toolCallId, partialResult: event.partialResult || { content: [], details: undefined } }); break;
         case "tool_execution_end":
           handler({ type: "tool_end", toolCallId: event.toolCallId, toolName: event.toolName, result: event.result || { content: [] }, isError: event.isError || false }); break;
         case "turn_start": handler({ type: "turn_start" }); break;

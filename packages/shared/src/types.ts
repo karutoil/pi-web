@@ -155,7 +155,7 @@ export type WSServerMessage =
   | { type: "message_update"; message: ChatMessage; delta: TextDelta | ThinkingDelta | ToolCallDelta }
   | { type: "message_end"; message: ChatMessage }
   | { type: "tool_start"; toolCallId: string; toolName: string; args: Record<string, unknown> }
-  | { type: "tool_update"; toolCallId: string; partialResult: { content: ContentBlock[] } }
+  | { type: "tool_update"; toolCallId: string; partialResult: { content: ContentBlock[]; details?: ToolDetails } }
   | { type: "tool_end"; toolCallId: string; toolName: string; result: { content: ContentBlock[]; details?: ToolDetails }; isError: boolean }
   | { type: "turn_start" }
   | { type: "turn_end"; message: ChatMessage; toolResults: ChatMessage[] }

@@ -40,8 +40,10 @@ function createConnection(
     commands: [] as CommandInfo[],
     forkMessages: [] as ForkEntry[],
     sessionStats: null as SessionStats | null,
-    pendingUI: null as ExtensionUIRequest | null,
-    pendingUIId: null as string | null,
+    pendingDialog: null as ExtensionUIRequest | null,
+    pendingDialogId: null as string | null,
+    pendingNotification: null as ExtensionUIRequest | null,
+    pendingNotificationId: null as string | null,
   };
 
   const notify = () => listeners.forEach(l => l());
@@ -123,7 +125,7 @@ function createConnection(
         break;
       case "tool_start": { const rt = new Map(data.runningTools); rt.set(msg.toolCallId, { toolCallId: msg.toolCallId, toolName: msg.toolName, args: msg.args, status: "running" }); data.runningTools = rt; break; }
       case "tool_update": { const rt = new Map(data.runningTools); const e = rt.get(msg.toolCallId); if (e) rt.set(msg.toolCallId, { ...e, partialResult: msg.partialResult }); data.runningTools = rt; break; }
-      case "tool_end": { const rt = new Map(data.runningTools); const e = rt.get(msg.toolCallId); if (e) rt.set(msg.toolCallId, { ...e, result: msg.result, details: msg.result?.details, isError: msg.isError, status: msg.isError ? "error" : "done" }); data.runningTools = rt; break; }
+      case "tool_end": { const rt = new Map(data.runningTools); const e = rt.get(msg.toolCallId); if (e) rt.set(msg.toolCallId, { ...e, result: msg.result, isError: msg.isError, status: msg.isError ? "error" : "done" }); data.runningTools = rt; break; }
       case "turn_start": case "turn_end": break;
       case "queue_update": if (data.state) data.state = { ...data.state, steering: msg.steering, followUp: msg.followUp }; break;
       case "compaction_start": case "compaction_end": break;
@@ -155,21 +157,25 @@ function createConnection(
         const dialogMethods = ["select", "confirm", "input", "editor"];
         if (!dialogMethods.includes(msg.ui.method) && msg.ui.method !== "notify") break;
         if (msg.ui.method === "notify") {
-          data.pendingUI = msg.ui;
-          data.pendingUIId = msg.ui.id;
+          data.pendingNotification = msg.ui;
+          data.pendingNotificationId = msg.ui.id;
+          // Auto-dismiss notifications after NOTIFY_TIMEOUT_MS
           const autoTimer = setTimeout(() => {
-            if (data.pendingUIId === msg.ui.id) {
-              data.pendingUI = null;
-              data.pendingUIId = null;
+            if (data.pendingNotificationId === msg.ui.id) {
+              data.pendingNotification = null;
+              data.pendingNotificationId = null;
               notify();
               send({ type: "extension_ui_response", id: msg.ui.id, cancelled: true });
             }
           }, NOTIFY_TIMEOUT_MS);
-          // Store timer ref so manual dismiss can cancel it
           (data as { notifyTimer?: ReturnType<typeof setTimeout> }).notifyTimer = autoTimer;
         } else {
-          data.pendingUI = msg.ui;
-          data.pendingUIId = msg.ui.id;
+          // If a dialog is already pending, cancel it before showing new one
+          if (data.pendingDialogId) {
+            send({ type: "extension_ui_response", id: data.pendingDialogId, cancelled: true });
+          }
+          data.pendingDialog = msg.ui;
+          data.pendingDialogId = msg.ui.id;
         }
         break;
       }
@@ -202,16 +208,26 @@ function createConnection(
     get commands() { return data.commands; },
     get forkMessages() { return data.forkMessages; },
     get sessionStats() { return data.sessionStats; },
-    get pendingUI() { return data.pendingUI; },
+    get pendingDialog() { return data.pendingDialog; },
+    get pendingNotification() { return data.pendingNotification; },
     respondToUI: (response) => {
-      const id = data.pendingUIId;
+      const id = data.pendingDialogId;
       if (id) {
-        // Clear auto-dismiss timer if manually dismissed
+        send({ type: "extension_ui_response", id, ...response });
+        data.pendingDialogId = null;
+        data.pendingDialog = null;
+        notify();
+      }
+    },
+    dismissNotification: () => {
+      const id = data.pendingNotificationId;
+      if (id) {
+        // Clear auto-dismiss timer
         const timer = (data as { notifyTimer?: ReturnType<typeof setTimeout> }).notifyTimer;
         if (timer) { clearTimeout(timer); delete (data as { notifyTimer?: ReturnType<typeof setTimeout> }).notifyTimer; }
-        send({ type: "extension_ui_response", id, ...response });
-        data.pendingUIId = null;
-        data.pendingUI = null;
+        send({ type: "extension_ui_response", id, cancelled: true });
+        data.pendingNotificationId = null;
+        data.pendingNotification = null;
         notify();
       }
     },

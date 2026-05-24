@@ -11,9 +11,8 @@ import type { WSClientMessage, WSServerMessage, AgentState, ChatMessage, Session
 
 export interface ToolEvent {
   toolCallId: string; toolName: string; args: Record<string, unknown>;
-  partialResult?: { content: ContentBlock[] }; result?: { content: ContentBlock[]; details?: ToolDetails }; isError?: boolean;
+  partialResult?: { content: ContentBlock[]; details?: ToolDetails }; result?: { content: ContentBlock[]; details?: ToolDetails }; isError?: boolean;
   status: "running" | "done" | "error";
-  details?: ToolDetails;
 }
 
 /**
@@ -33,8 +32,10 @@ export interface WSBridge {
   isActive: boolean;
   models: ModelInfo[]; commands: CommandInfo[];
   forkMessages: ForkEntry[]; sessionStats: SessionStats | null;
-  pendingUI: ExtensionUIRequest | null;
+  pendingDialog: ExtensionUIRequest | null;
+  pendingNotification: ExtensionUIRequest | null;
   respondToUI: (response: { value?: string; confirmed?: boolean; cancelled?: boolean }) => void;
+  dismissNotification: () => void;
   setOnSessionLoaded: (cb: ((session: SessionDetail) => void) | null) => void;
   setOnSessionEvent: (cb: ((event: WSServerMessage) => void) | null) => void;
 }

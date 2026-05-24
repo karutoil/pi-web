@@ -14,19 +14,27 @@ export function ExtensionUIModal({ request, onRespond }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  // Auto-cancel on timeout
+  const isDialog = ["select", "confirm", "input", "editor"].includes(request.method);
+  const isNotify = request.method === "notify";
+
+  // Auto-cancel on timeout — ONLY for notify method.
+  // Dialog methods (confirm, select, input, editor) wait indefinitely for user action.
+  // The server-side pi process handles its own timeout; auto-cancelling from the UI
+  // was causing subagent clarify confirmations to be silently dismissed.
   useEffect(() => {
-    if (request.timeout) {
+    if (isNotify && request.timeout) {
       timerRef.current = setTimeout(() => onRespond({ cancelled: true }), request.timeout);
       return () => clearTimeout(timerRef.current);
     }
-  }, [request.timeout, onRespond]);
+  }, [isNotify, request.timeout, onRespond]);
 
-  // Auto-focus: focus the appropriate ref based on method
+  // Auto-focus
   useEffect(() => {
-    if (request.method === "editor") textareaRef.current?.focus();
-    else inputRef.current?.focus();
-  }, []);
+    if (isDialog) {
+      if (request.method === "editor") textareaRef.current?.focus();
+      else inputRef.current?.focus();
+    }
+  }, [isDialog, request.method]);
 
   const handleCancel = useCallback(() => onRespond({ cancelled: true }), [onRespond]);
 
@@ -137,13 +145,8 @@ export function ExtensionUIModal({ request, onRespond }: Props) {
         );
     }
   };
-  // Auto-focus: focus the appropriate ref based on method
-  useEffect(() => {
-    if (request.method === "editor") textareaRef.current?.focus();
-    else inputRef.current?.focus();
-  }, []);
 
-  if (request.method === "notify") {
+  if (isNotify) {
     return (
       <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-80 min-w-[280px] max-w-lg animate-fade-in-up mobile-safe-top`}>
         <div className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl border backdrop-blur-md ${
@@ -195,27 +198,14 @@ export function ExtensionUIModal({ request, onRespond }: Props) {
         {/* Header */}
         <div className="px-5 py-4 border-b border-ink-800 flex items-center justify-between">
           <h3 className="text-ink-200 font-medium text-sm">{request.title || "Extension"}</h3>
-          {!request.timeout && (
-            <button onClick={handleCancel} className="text-ink-600 hover:text-ink-400 transition-theme" aria-label="Close">
-              <Icon name="close" size={16} />
-            </button>
-          )}
+          <button onClick={handleCancel} className="text-ink-600 hover:text-ink-400 transition-theme" aria-label="Close">
+            <Icon name="close" size={16} />
+          </button>
         </div>
         {/* Body */}
         <div className="px-5 py-4">
           {renderContent()}
         </div>
-        {/* Timeout indicator */}
-        {request.timeout && (
-          <div className="px-5 py-2 border-t border-ink-800">
-            <div className="h-1 bg-ink-800 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-amber-500 rounded-full animate-shimmer"
-                style={{ width: "100%", animationDuration: `${request.timeout}ms` }}
-              />
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

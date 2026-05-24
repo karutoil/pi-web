@@ -355,19 +355,19 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
     />
   </div>{/* end main content row */}
 
-      {/* Extension UI Modal — only for dialog methods */}
-      {ws.pendingUI && ["select", "confirm", "input", "editor"].includes(ws.pendingUI.method) && (
+      {/* Extension UI Modal — dialog methods (confirm, select, input, editor) */}
+      {ws.pendingDialog && (
         <ExtensionUIModal
-          request={ws.pendingUI}
+          request={ws.pendingDialog}
           onRespond={ws.respondToUI}
         />
       )}
 
-      {/* Extension UI Notifications */}
-      {ws.pendingUI && ws.pendingUI.method === "notify" && (
+      {/* Extension UI Notifications — separate from dialogs so they don't overwrite each other */}
+      {ws.pendingNotification && (
         <ExtensionUIModal
-          request={ws.pendingUI}
-          onRespond={ws.respondToUI}
+          request={ws.pendingNotification}
+          onRespond={ws.dismissNotification}
         />
       )}
     </div>
