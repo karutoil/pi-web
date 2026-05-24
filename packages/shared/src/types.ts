@@ -145,7 +145,7 @@ export type WSClientMessage =
   | { type: "set_session_name"; name: string }
   | { type: "compact" }
   | { type: "get_state" }
-  | { type: "extension_ui_response"; id: string; value?: string; confirmed?: boolean; cancelled?: boolean; templates?: string[]; behaviorOverrides?: ClarifyResult["behaviorOverrides"]; runInBackground?: boolean };
+  | { type: "extension_ui_response"; id: string; value?: string; confirmed?: boolean; cancelled?: boolean };
 
 export type WSServerMessage =
   | { type: "state"; data: AgentState }
@@ -177,37 +177,7 @@ export type WSServerMessage =
   | { type: "extension_ui_request"; ui: ExtensionUIRequest };
 
 // Extension UI protocol
-export type ExtensionUIMethod = "select" | "confirm" | "input" | "editor" | "notify" | "setStatus" | "clarify";
-
-export interface ClarifyStep {
-  agent: string;
-  task: string;
-  model?: string;
-  output?: string;
-  skills?: string[];
-  reads?: string[];
-  progress?: boolean;
-}
-
-export interface ClarifyData {
-  mode: "single" | "parallel" | "chain";
-  steps: ClarifyStep[];
-  chainDir?: string;
-  originalTask?: string;
-}
-
-export interface ClarifyResult {
-  confirmed: boolean;
-  templates: string[];
-  behaviorOverrides: Array<{
-    output?: string | false;
-    reads?: string[] | false;
-    progress?: boolean;
-    model?: string;
-    skills?: string[] | false;
-  } | undefined>;
-  runInBackground?: boolean;
-}
+export type ExtensionUIMethod = "select" | "confirm" | "input" | "editor" | "notify" | "setStatus";
 
 export interface ExtensionUIRequest {
   id: string;
@@ -219,10 +189,6 @@ export interface ExtensionUIRequest {
   prefill?: string;
   timeout?: number;
   notifyType?: "info" | "warning" | "error";
-  // Clarify protocol fields
-  overlay?: boolean;
-  overlayOptions?: { anchor?: string; width?: number; maxHeight?: string };
-  clarifyData?: ClarifyData;
 }
 
 export interface ModelInfo {

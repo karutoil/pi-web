@@ -6,7 +6,6 @@ import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
 import { ChatHeader } from "./ChatHeader";
 import { ExtensionUIModal } from "./ExtensionUIModal";
-import { ClarifyDialog } from "./ClarifyDialog";
 import { Icon } from "./Icon";
 import { TerminalPanel } from "./TerminalPanel";
 import { GitPanel } from "./GitPanel";
@@ -357,17 +356,9 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
   </div>{/* end main content row */}
 
       {/* Extension UI Modal — dialog methods (confirm, select, input, editor) */}
-      {ws.pendingDialog && ws.pendingDialog.method !== "clarify" && (
+      {ws.pendingDialog && (
         <ExtensionUIModal
           request={ws.pendingDialog}
-          onRespond={ws.respondToUI}
-        />
-      )}
-
-      {/* Clarify Dialog — subagent confirm with step editing */}
-      {ws.pendingDialog && ws.pendingDialog.method === "clarify" && ws.pendingDialog.clarifyData && (
-        <ClarifyDialog
-          data={ws.pendingDialog.clarifyData}
           onRespond={ws.respondToUI}
         />
       )}

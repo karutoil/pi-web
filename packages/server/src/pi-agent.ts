@@ -223,19 +223,12 @@ class PIAgent {
       process.env.PATH || "",
     ].join(":");
 
-    // Inject RPC bridge preload to patch custom() for clarify support.
-    // Strip any inherited NODE_OPTIONS to prevent preload from leaking into
-    // pi's child processes (npm install, extension setup, etc.)
-    const bridgePath = join(import.meta.dir, "pi-web-rpc-bridge.cjs");
-    const { NODE_OPTIONS: _ignore, ...cleanEnv } = process.env;
-    const nodeOptions = `--require=${bridgePath}`;
-
     return new Promise<void>((resolve, reject) => {
       try {
         this.proc = spawn("pi", args, {
           cwd: this.options.cwd,
           stdio: ["pipe", "pipe", "pipe"],
-          env: { ...cleanEnv, PATH: envPath, NODE_OPTIONS: nodeOptions },
+          env: { ...process.env, PATH: envPath },
           detached: false,
         });
       } catch (err: any) {
@@ -364,9 +357,6 @@ class PIAgent {
               message: event.message, options: event.options,
               placeholder: event.placeholder, prefill: event.prefill,
               timeout: event.timeout, notifyType: event.notifyType,
-              // Clarify protocol fields
-              overlay: event.overlay, overlayOptions: event.overlayOptions,
-              clarifyData: event.clarifyData,
             },
           });
           break;
