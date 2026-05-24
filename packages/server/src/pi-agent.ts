@@ -64,6 +64,38 @@ export class PooledAgent {
     this.agent.doSend(msg);
   }
 
+  /** Restart the agent with a new session path. Detaches all clients first. */
+  async restartWithSession(sessionPath: string): Promise<void> {
+    this.cancelIdleTimer();
+    await this.agent.stop();
+    const opts = this.agent.getOptions();
+    this.agent = new PIAgent({
+      cwd: opts.cwd,
+      sessionPath,
+      provider: opts.provider,
+      model: opts.model,
+    });
+    this.agent.setHandler((msg) => this.broadcast(msg));
+    this.agent.setExitHandler((code) => {
+      console.log(`[pool] agent ${this.agentKey} exited (code ${code})`);
+      this.broadcast({ type: "error", message: `PI agent exited (code ${code}).` });
+      agentPool.delete(this.agentKey);
+    });
+    await this.agent.start();
+    // Re-send state to all attached clients
+    setTimeout(() => this.agent.getState(), 200);
+  }
+
+  /** Load a different session — wrapper that catches errors */
+  async loadSession(sessionPath: string): Promise<void> {
+    try {
+      await this.restartWithSession(sessionPath);
+    } catch (err: any) {
+      console.error(`[pool] failed to load session ${sessionPath}:`, err.message);
+      this.broadcast({ type: "error", message: `Failed to load session: ${err.message}` });
+    }
+  }
+
   /** Explicitly stop the agent (e.g., server shutdown) */
   async stop() {
     this.cancelIdleTimer();
@@ -101,7 +133,7 @@ export class PooledAgent {
 }
 
 // ─── Agent Pool ───
-// Global singleton. Keys are `${cwd}:${sessionPath}`.
+// Global singleton. Keys are `${cwd}` — one agent per project.
 
 const agentPool = new Map<string, PooledAgent>();
 
@@ -112,7 +144,8 @@ export function getOrCreateAgent(
   model?: string,
   newSessionId?: string,
 ): { agent: PooledAgent; isNew: boolean } {
-  const key = `${cwd}:${sessionPath || newSessionId || "__new__"}`;
+  // Pool by project only — one agent per project (cwd)
+  const key = cwd;
   const existing = agentPool.get(key);
   if (existing) {
     console.log(`[pool] reusing existing agent ${key} (${existing.clientCount} clients)`);
@@ -205,6 +238,10 @@ class PIAgent {
 
   setExitHandler(handler: (code: number | null) => void) {
     this.onExit = handler;
+  }
+
+  getOptions(): PIAgentOptions {
+    return this.options;
   }
 
   async start(): Promise<void> {
@@ -413,6 +450,12 @@ class PIAgent {
           break;
         case "set_session_name":
           handler({ type: "session_name_changed", name: event.data?.name || "" }); break;
+        case "new_session":
+          if (event.data) handler({ type: "session_loaded", session: event.data });
+          break;
+        case "load_session":
+          if (event.data) handler({ type: "session_loaded", session: event.data });
+          break;
       }
     } catch (err) {
       console.error("[pi] bridge error:", err);

@@ -23,6 +23,8 @@ export interface ToolEvent {
 export interface WSBridge {
   send: (msg: WSClientMessage) => void;
   sendPrompt: (text: string, images?: ImageAttachment[]) => void;
+  newSession: () => void;
+  loadSession: (sessionPath: string) => void;
   messages: ChatMessage[];
   liveMessages: Map<string, ChatMessage>;
   runningTools: Map<string, ToolEvent>;

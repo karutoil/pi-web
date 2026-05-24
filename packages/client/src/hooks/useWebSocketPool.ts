@@ -209,6 +209,28 @@ function createConnection(
       send({ type: "prompt", message: text, images });
       notify();
     },
+    newSession: () => {
+      send({ type: "new_session" });
+      messagesRef = [];
+      data.messages = [];
+      data.liveMessages = new Map();
+      data.runningTools = new Map();
+      data.isStreaming = false;
+      data.isActive = false;
+      data.state = null;
+      notify();
+    },
+    loadSession: (sessionPath: string) => {
+      send({ type: "load_session", sessionPath });
+      messagesRef = [];
+      data.messages = [];
+      data.liveMessages = new Map();
+      data.runningTools = new Map();
+      data.isStreaming = false;
+      data.isActive = false;
+      data.state = null;
+      notify();
+    },
     get messages() { return data.messages; },
     get liveMessages() { return data.liveMessages; },
     get runningTools() { return data.runningTools; },

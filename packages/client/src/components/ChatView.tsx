@@ -123,11 +123,11 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
   const liveMsg = ws.liveMessages.get("current");
   const cwd = sessionDetail?.cwd || project?.path || "";
   const sessionName = ws.state?.sessionName || session?.name || session?.lastMessage || null;
-  const hasHistoricalMessages = sessionDetail?.entries.some(e => e.message) || false;
+  const hasHistoricalMessages = sessionDetail?.entries?.some(e => e.message) || false;
 
   // Map entry IDs for fork support on historical messages
   const entryMap = new Map<string, string>();
-  sessionDetail?.entries.forEach(e => { if (e.id && e.message?.role === "user") entryMap.set(e.id, e.id); });
+  sessionDetail?.entries?.forEach(e => { if (e.id && e.message?.role === "user") entryMap.set(e.id, e.id); });
 
   // Group messages into turns for context menu copy
   // A turn = user message + all toolResults + final assistant response

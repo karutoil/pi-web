@@ -506,8 +506,8 @@ app.get(
           const { agent, isNew } = getOrCreateAgent(cwd, sessionPath || null, provider || undefined, model || undefined, newSessionId || undefined);
           const raw = (ws as any).raw as ServerWebSocket;
 
-          // Track which agent this WS belongs to
-          const agentKey = `${cwd}:${sessionPath || newSessionId || "__new__"}`;
+          // Track which agent this WS belongs to — keyed by project (cwd) only
+          const agentKey = cwd;
           wsToAgent.set(raw, agentKey);
 
           // Attach this client to the pooled agent
@@ -528,7 +528,7 @@ app.get(
         }
       },
 
-      onMessage(event, ws) {
+      async onMessage(event, ws) {
         const raw = (ws as any).raw as ServerWebSocket;
         const agentKey = wsToAgent.get(raw);
         if (!agentKey) return;
@@ -547,6 +547,7 @@ app.get(
             case "steer": agent.send({ type: "steer", message: msg.message }); break;
             case "follow_up": agent.send({ type: "follow_up", message: msg.message }); break;
             case "new_session": agent.send({ type: "new_session" }); break;
+            case "load_session": await agent.loadSession(msg.sessionPath); break;
             case "set_model": agent.send({ type: "set_model", provider: msg.provider, modelId: msg.modelId }); break;
             case "set_thinking": agent.send({ type: "set_thinking_level", level: msg.level }); break;
             case "fork": agent.send({ type: "fork", entryId: msg.entryId }); break;

@@ -132,6 +132,7 @@ export type WSClientMessage =
   | { type: "steer"; message: string }
   | { type: "follow_up"; message: string }
   | { type: "new_session" }
+  | { type: "load_session"; sessionPath: string }
   | { type: "set_model"; provider: string; modelId: string }
   | { type: "set_thinking"; level: string }
   | { type: "delete_session"; sessionId: string }

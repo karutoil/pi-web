@@ -29,9 +29,11 @@ export default function App() {
 
   // WebSocket pool — multiple concurrent connections, agents keep streaming when navigating away
   const wsPool = useWebSocketPool();
+  // WS connection is keyed by project only — session switching happens via
+  // loadSession command on the same connection (avoids spawning new pi process)
   const ws = wsPool.getOrConnect(
     selectedProject?.id || null,
-    activeSession?.filePath || null,
+    null, // sessionPath — switching handled via loadSession command
     newSessionId,
   );
 
@@ -50,7 +52,29 @@ export default function App() {
   useEffect(() => {
     if (!ws) return;
     const handleSessionLoaded = (session: SessionDetail) => {
-      setActiveSession(prev => prev ? { ...prev, filePath: session.filePath } : prev);
+      setActiveSession(prev => prev ? {
+        ...prev,
+        filePath: session.filePath,
+        name: session.name || prev.name,
+        id: session.id || prev.id,
+      } : {
+        id: session.id,
+        name: session.name || "New Session",
+        filePath: session.filePath,
+        cwd: selectedProject?.path || "",
+        timestamp: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        lastActiveAt: new Date().toISOString(),
+        lastMessage: null,
+        model: null,
+        messageCount: 0,
+        firstMessage: null,
+        totalCost: 0,
+        totalTokens: 0,
+        tokenCount: 0,
+        cost: 0,
+        isRecentlyActive: true,
+      });
       setSessionDetail(session);
       setNewSessionId(null);
     };
@@ -149,6 +173,11 @@ export default function App() {
     setView("chat");
     if (isMobile) setTimeout(() => setShowSidebar(false), 150);
 
+    // If we have an existing project connection, reuse it — just load the session
+    if (ws && ws.isConnected) {
+      ws.loadSession(session.filePath);
+    }
+
     // Load session detail — check cache first
     const cached = sessionCacheRef.current.get(session.filePath);
     if (cached && Date.now() - cached.timestamp < SESSION_CACHE_TTL) {
@@ -169,19 +198,35 @@ export default function App() {
         console.error("Failed to load session detail:", e);
       }
     }
-  }, [isMobile]);
+  }, [ws, isMobile]);
 
   const handleNewSession = useCallback(() => {
-    // Generate a unique ID for the new session — this creates a fresh WS/agent
-    const id = crypto.randomUUID();
-    setNewSessionId(id);
-    setActiveSession(null);
-    setSessionDetail(null);
+    // If we have an existing project connection, reuse it by sending new_session
+    // This avoids spawning a new pi process (5-10s delay) and instead creates
+    // a new session within the already-running agent (~instant)
+    if (ws && ws.isConnected) {
+      ws.newSession();
+      setActiveSession(prev => prev ? {
+        ...prev,
+        name: "New Session",
+        lastMessage: null,
+        messageCount: 0,
+        firstMessage: null,
+        isRecentlyActive: true,
+      } : null);
+      setSessionDetail(null);
+    } else {
+      // Fallback: create a fresh connection (no existing agent)
+      const id = crypto.randomUUID();
+      setNewSessionId(id);
+      setActiveSession(null);
+      setSessionDetail(null);
+    }
     setView("chat");
     if (isMobile) setTimeout(() => setShowSidebar(false), 150);
     // Refresh session list after PI creates the new session file
     setTimeout(() => fetchSessions(), SESSION_FETCH_DELAY_MS);
-  }, [fetchSessions, isMobile]);
+  }, [ws, fetchSessions, isMobile]);
 
   const handleBack = useCallback(() => {
     if (view === "chat") {
