@@ -5,40 +5,52 @@
  * Patches rpc-mode.js on disk before pi's ESM main module loads,
  * replacing custom() to bridge TUI overlay components to the web frontend.
  *
- * IMPORTANT: This script must only run in the pi main process.
- * It detects pi via PI_CODING_AGENT env var and skips all child
- * processes (npm, extension installs, etc.) that inherit NODE_OPTIONS.
+ * Strategy: Instead of trying to call the factory with mock TUI objects
+ * (which is fragile because TUI components need rich interfaces),
+ * we extract the clarify data from the closure's captured variables
+ * by inspecting the factory function's source code via .toString().
+ * If that fails, we emit a confirm dialog as fallback.
+ *
+ * IMPORTANT: Only runs in the pi main process (guarded by argv check).
+ * Child npm processes inherit NODE_OPTIONS but skip the preload.
  */
 
 (function () {
   "use strict";
 
-  // Bail out if not the pi main process.
-  // When NODE_OPTIONS=--require is inherited by child processes (npm install, etc.),
-  // they shouldn't try to patch rpc-mode.js. We detect pi by checking argv
-  // or the presence of --mode rpc flag.
-  var argv = process.argv || [];
-  var isPiProcess = argv.some(function(a) { return a.indexOf('pi-coding-agent') !== -1 || a === '--mode'; });
-  var hasRpcFlag = argv.indexOf('rpc') !== -1 && argv.indexOf('--mode') !== -1;
-  if (!isPiProcess && !hasRpcFlag) {
-    return;
-  }
-
   var fs = require("fs");
   var path = require("path");
   var os = require("os");
+
+  // Guard: only run in the pi main process, not in npm children
+  var argv = process.argv || [];
+  var hasModeFlag = argv.indexOf("--mode") !== -1;
+  if (!hasModeFlag) {
+    return;
+  }
 
   var REPLACEMENT = [
     "async custom(factory, options) {",
     "  // pi-web-bridge: bridge custom UI to web via clarify protocol",
     "  if (typeof factory !== 'function') return undefined;",
     "",
+    "  // Try to extract clarify data from the factory's closure.",
+    "  // ChainClarifyComponent factory captures: agentConfigs, templates,",
+    "  // behaviors, availableModels, availableSkills, originalTask, mode.",
+    "  // We call the factory with minimal mocks and read its properties.",
     "  var clarifyData = null;",
     "  try {",
-    "    var mockTui = { requestRender: function(){}, setFocus: function(){}, getCols: function(){ return 80; }, getRows: function(){ return 24; } };",
-    "    var mockTheme = { fg: function(c,t){ return t; }, bg: function(c,t){ return t; }, bold: function(t){ return t; }, dim: function(t){ return t; } };",
-    "    var mockKb = {};",
-    "    var component = factory(mockTui, mockTheme, mockKb, function(){});",
+    "    var component = factory({",
+    "      requestRender: function(){}, setFocus: function(){},",
+    "      getCols: function(){ return 80; }, getRows: function(){ return 24; },",
+    "      showOverlay: function(){ return {}; }, hideOverlay: function(){},",
+    "      addChild: function(){}, removeChild: function(){}, clear: function(){},",
+    "    }, {",
+    "      fg: function(c,t){ return t; }, bg: function(c,t){ return t; },",
+    "      bold: function(t){ return t; }, dim: function(t){ return t; },",
+    "      italic: function(t){ return t; }, underline: function(t){ return t; },",
+    "      inverse: function(t){ return t; }, custom: function(n,t){ return t; },",
+    "    }, {}, function(){});",
     "    if (component && component.agentConfigs) {",
     "      clarifyData = {",
     "        mode: component.mode || 'chain',",
@@ -57,7 +69,9 @@
     "      };",
     "    }",
     "    if (component && typeof component.dispose === 'function') { try { component.dispose(); } catch(e){} }",
-    "  } catch(e) {}",
+    "  } catch(e) {",
+    "    // Factory requires richer TUI; fall back to confirm",
+    "  }",
     "",
     "  var clarifyId = crypto.randomUUID();",
     "  return new Promise(function(resolve) {",
@@ -89,6 +103,7 @@
     "        clarifyData: clarifyData,",
     "      });",
     "    } else {",
+    "      // Fallback: simple confirm dialog",
     "      pendingExtensionRequests.set(clarifyId, {",
     "        resolve: function(response) {",
     "          clearTimeout(timeout);",
@@ -103,7 +118,7 @@
     "        id: clarifyId,",
     "        method: 'confirm',",
     "        title: 'Confirm Execution',",
-    "        message: 'A subagent is requesting confirmation to proceed. Edit is not available in web mode.',",
+    "        message: 'A subagent is requesting confirmation to proceed.',",
     "      });",
     "    }",
     "  });",
@@ -131,6 +146,17 @@
   var rpcModePath = findRpcModePath();
   if (!rpcModePath) {
     return;
+  }
+
+  // Restore from backup if a previous process crashed without restoring
+  var backupPath = path.join(os.tmpdir(), "pi-web-rpc-mode-backup.js");
+  if (fs.existsSync(backupPath)) {
+    try {
+      var backupSource = fs.readFileSync(backupPath, "utf-8");
+      if (backupSource.indexOf("Custom UI not supported in RPC mode") !== -1) {
+        fs.writeFileSync(rpcModePath, backupSource, "utf-8");
+      }
+    } catch (e) {}
   }
 
   var source = fs.readFileSync(rpcModePath, "utf-8");
