@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { join } from "node:path";
 import type { WSServerMessage } from "@pi-web/shared";
 import type { ServerWebSocket } from "bun";
 
@@ -222,12 +223,19 @@ class PIAgent {
       process.env.PATH || "",
     ].join(":");
 
+    // Inject RPC bridge preload to patch custom() for clarify support
+    const bridgePath = join(__dirname, "pi-web-rpc-bridge.js");
+    const nodeOptions = [
+      process.env.NODE_OPTIONS || "",
+      `--require=${bridgePath}`,
+    ].filter(Boolean).join(" ");
+
     return new Promise<void>((resolve, reject) => {
       try {
         this.proc = spawn("pi", args, {
           cwd: this.options.cwd,
           stdio: ["pipe", "pipe", "pipe"],
-          env: { ...process.env, PATH: envPath },
+          env: { ...process.env, PATH: envPath, NODE_OPTIONS: nodeOptions },
           detached: false,
         });
       } catch (err: any) {
@@ -356,6 +364,9 @@ class PIAgent {
               message: event.message, options: event.options,
               placeholder: event.placeholder, prefill: event.prefill,
               timeout: event.timeout, notifyType: event.notifyType,
+              // Clarify protocol fields
+              overlay: event.overlay, overlayOptions: event.overlayOptions,
+              clarifyData: event.clarifyData,
             },
           });
           break;

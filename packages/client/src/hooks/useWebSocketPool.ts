@@ -154,7 +154,7 @@ function createConnection(
         if (onSessionEventRef.current) onSessionEventRef.current(msg);
         break;
       case "extension_ui_request": {
-        const dialogMethods = ["select", "confirm", "input", "editor"];
+        const dialogMethods = ["select", "confirm", "input", "editor", "clarify"];
         if (!dialogMethods.includes(msg.ui.method) && msg.ui.method !== "notify") break;
         if (msg.ui.method === "notify") {
           data.pendingNotification = msg.ui;
