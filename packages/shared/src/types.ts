@@ -145,7 +145,7 @@ export type WSClientMessage =
   | { type: "set_session_name"; name: string }
   | { type: "compact" }
   | { type: "get_state" }
-  | { type: "extension_ui_response"; id: string; value?: string; confirmed?: boolean; cancelled?: boolean };
+  | { type: "extension_ui_response"; id: string; value?: string; confirmed?: boolean; cancelled?: boolean; templates?: string[]; behaviorOverrides?: ClarifyResult["behaviorOverrides"]; runInBackground?: boolean };
 
 export type WSServerMessage =
   | { type: "state"; data: AgentState }

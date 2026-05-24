@@ -557,7 +557,7 @@ app.get(
             case "get_fork_messages": agent.send({ type: "get_fork_messages" }); break;
             case "get_session_stats": agent.send({ type: "get_session_stats" }); break;
             case "set_session_name": agent.send({ type: "set_session_name", name: msg.name }); break;
-            case "extension_ui_response": agent.send({ type: "extension_ui_response", id: msg.id, value: msg.value, confirmed: msg.confirmed, cancelled: msg.cancelled }); break;
+            case "extension_ui_response": agent.send({ type: "extension_ui_response", id: msg.id, value: msg.value, confirmed: msg.confirmed, cancelled: msg.cancelled, templates: msg.templates, behaviorOverrides: msg.behaviorOverrides, runInBackground: msg.runInBackground }); break;
             case "delete_session": {
               const sessionId = msg.sessionId;
               const proj = projectId ? getProject(projectId) : null;
