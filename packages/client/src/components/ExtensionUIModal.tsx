@@ -95,17 +95,18 @@ export function ExtensionUIModal({ request, onRespond }: Props) {
               }}
               placeholder={request.placeholder}
               className="w-full bg-ink-900 border border-ink-700 rounded-lg px-3 py-2 text-ink-100 text-sm font-mono placeholder-ink-500 outline-none focus:border-amber-500"
+              enterKeyHint="done"
             />
             <div className="flex gap-2">
               <button
                 onClick={() => onRespond({ value: value || undefined })}
-                className="flex-1 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-ink-950 text-sm font-medium transition-theme"
+                className="flex-1 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-ink-950 text-sm font-medium transition-theme min-h-[44px]"
               >
                 Submit
               </button>
               <button
                 onClick={handleCancel}
-                className="flex-1 py-2 rounded-lg bg-ink-850 hover:bg-ink-800 text-ink-400 text-sm transition-theme border border-ink-700"
+                className="flex-1 py-2 rounded-lg bg-ink-850 hover:bg-ink-800 text-ink-400 text-sm transition-theme border border-ink-700 min-h-[44px]"
               >
                 Cancel
               </button>
@@ -124,19 +125,18 @@ export function ExtensionUIModal({ request, onRespond }: Props) {
                 if (e.key === "Escape") onRespond({ cancelled: true });
               }}
               placeholder={request.placeholder}
-              rows={8}
-              className="w-full bg-ink-900 border border-ink-700 rounded-lg px-3 py-2 text-ink-100 text-sm font-mono placeholder-ink-500 outline-none focus:border-amber-500 resize-none"
+              className="w-full bg-ink-900 border border-ink-700 rounded-lg px-3 py-2 text-ink-100 text-sm font-mono placeholder-ink-500 outline-none focus:border-amber-500 resize-none min-h-[120px] md:min-h-[200px]"
             />
             <div className="flex gap-2">
               <button
                 onClick={() => onRespond({ value: value || undefined })}
-                className="flex-1 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-ink-950 text-sm font-medium transition-theme"
+                className="flex-1 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-ink-950 text-sm font-medium transition-theme min-h-[44px]"
               >
                 Submit
               </button>
               <button
                 onClick={handleCancel}
-                className="flex-1 py-2 rounded-lg bg-ink-850 hover:bg-ink-800 text-ink-400 text-sm transition-theme border border-ink-700"
+                className="flex-1 py-2 rounded-lg bg-ink-850 hover:bg-ink-800 text-ink-400 text-sm transition-theme border border-ink-700 min-h-[44px]"
               >
                 Cancel
               </button>
@@ -203,7 +203,7 @@ export function ExtensionUIModal({ request, onRespond }: Props) {
         {/* Header */}
         <div className="px-5 py-4 border-b border-ink-800 flex items-center justify-between">
           <h3 className="text-ink-200 font-medium text-sm">{request.title || "Extension"}</h3>
-          <button onClick={handleCancel} className="text-ink-500 hover:text-ink-400 transition-theme" aria-label="Close">
+          <button onClick={handleCancel} className="text-ink-500 hover:text-ink-400 transition-theme p-1.5 touch-target-sm" aria-label="Close">
             <Icon name="close" size={16} />
           </button>
         </div>

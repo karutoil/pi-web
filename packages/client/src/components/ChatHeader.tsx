@@ -73,14 +73,14 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
   };
 
   return (
-    <div className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2.5 border-b border-ink-800 bg-ink-900/30 shrink-0">
+    <div className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2.5 border-b border-ink-800 bg-ink-900/30 shrink-0 mobile-safe-top overflow-hidden">
       {/* Logo + Session name */}
       <div className="flex-1 min-w-0 flex items-center gap-2">
         {/* Sidebar toggle (mobile: always show when sidebar hidden) */}
         {onToggleSidebar && !showSidebar && (
           <button
             onClick={onToggleSidebar}
-            className="text-ink-400 hover:text-ink-200 transition-theme touch-target-sm p-1"
+            className="icon-btn"
             aria-label="Show sidebar"
             title="Show sidebar (⌘B)"
           >
@@ -111,7 +111,7 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
       </div>
 
       {/* Connection & streaming indicators */}
-      <div className="flex items-center gap-1 md:gap-2 shrink-0">
+      <div className="flex items-center gap-1 shrink-0">
         {!ws.isConnected && (
           <span className="flex items-center gap-1 text-rose-500 text-xs font-mono">
             <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
@@ -141,7 +141,7 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
         {onToggleSidebar && !showSidebar && !isMobile && (
           <button
             onClick={onToggleSidebar}
-            className="text-xs font-mono px-2 py-1 rounded border bg-ink-850 border-ink-750 hover:border-ink-600 text-ink-400 hover:text-ink-200 transition-theme"
+            className="icon-btn"
             aria-label="Show sidebar"
             title="Show sidebar (⌘B)"
           >
@@ -153,7 +153,7 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
         {onSessionActions && (
           <button
             onClick={onSessionActions}
-            className="text-xs font-mono px-2 py-1 rounded bg-ink-850 border border-ink-750 hover:border-ink-600 text-ink-400 hover:text-ink-200 transition-theme"
+            className="icon-btn"
             aria-label="Session actions"
             title="Export, clone, compact..."
           >
@@ -165,8 +165,8 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
         {onToggleGit && (
           <button
             onClick={onToggleGit}
-            className={`text-xs font-mono px-2 py-1 rounded border transition-theme touch-target-sm ${
-              showGit ? "bg-amber-600/20 border-amber-500/30 text-amber-500" : "bg-ink-850 border-ink-750 hover:border-ink-600 text-ink-400"
+            className={`icon-btn ${
+              showGit ? "icon-btn-active" : ""
             }`}
             aria-label="Toggle git panel"
             title="Source Control"
@@ -180,7 +180,7 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
         <div ref={thinkingRef} className="relative">
           <button
             onClick={() => { setThinkingOpen(o => !o); setModelOpen(false); }}
-            className="text-xs font-mono px-2 py-1 rounded bg-ink-850 border border-ink-750 hover:border-ink-600 text-ink-400 transition-theme"
+            className="icon-btn"
             aria-label="Thinking level"
           >
             {ws.state?.thinkingLevel || "off"}
@@ -204,10 +204,10 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
         )}
 
         {/* Model selector */}
-        <div ref={modelRef} className="relative">
+        <div ref={modelRef} className="relative flex items-center gap-0.5">
           <button
             onClick={() => { setModelOpen(o => !o); setThinkingOpen(false); }}
-            className="text-xs font-mono px-2 py-1 rounded bg-ink-850 border border-ink-750 hover:border-ink-600 text-ink-300 transition-theme max-w-[100px] md:max-w-[160px] truncate"
+            className="icon-btn max-w-[100px] md:max-w-[160px] truncate text-xs font-mono"
             aria-label="Select model"
           >
             {currentModel?.name || ws.state?.model || (ws.models.length === 0 && ws.isConnected ? "Loading…" : "Model")}
@@ -215,7 +215,7 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
           {/* Cycle model button */}
           <button
             onClick={() => ws.cycleModel()}
-            className="ml-0.5 text-xs font-mono px-1 py-1 rounded bg-ink-850 border border-ink-750 hover:border-ink-600 text-ink-400 hover:text-ink-200 transition-theme"
+            className="icon-btn"
             title="Cycle to next model (Tab)"
             aria-label="Cycle model"
           >↻</button>

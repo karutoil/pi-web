@@ -150,7 +150,7 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
         style={{ maxHeight: "80vh" }}
       >
         {/* ── Header ── */}
-        <div className="px-5 pt-5 pb-3 flex items-center justify-between">
+        <div className="px-5 pt-5 pb-3 flex items-center justify-between mobile-safe-top">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-lg bg-amber-600/15 flex items-center justify-center">
               <Icon name="plus" size={14} className="text-amber-500" />
@@ -159,7 +159,7 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
           </div>
           <button
             onClick={onCancel}
-            className="w-7 h-7 rounded-lg flex items-center justify-center text-ink-400 hover:text-ink-300 hover:bg-ink-800/50 transition-theme"
+            className="w-7 h-7 rounded-lg flex items-center justify-center text-ink-400 hover:text-ink-300 hover:bg-ink-800/50 transition-theme touch-target-sm"
             aria-label="Close"
           >
             <Icon name="close" size={14} />
@@ -178,13 +178,15 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
               onKeyDown={e => {
                 if (e.key === "Escape") { onCancel(); e.stopPropagation(); }
               }}
-              className="flex-1 bg-transparent text-ink-200 text-xs font-mono placeholder-ink-500 outline-none min-w-0"
+              className="flex-1 bg-transparent text-ink-200 text-xs font-mono placeholder-ink-500 outline-none min-w-0 min-h-[44px]"
               placeholder="/home/user"
               spellCheck={false}
+              enterKeyHint="go"
+              autoCorrect="off"
             />
             <button
               type="submit"
-              className="shrink-0 text-ink-500 hover:text-amber-500 transition-theme"
+              className="shrink-0 text-ink-500 hover:text-amber-500 transition-theme p-1.5 touch-target-sm"
               aria-label="Go to path"
             >
               <Icon name="chevron-right" size={12} />
@@ -235,13 +237,12 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
                 const isSelected = selectedPath === item.path;
                 const isFocused = focusedIdx === idx;
                 return (
-                  <button
+                  <div
                     key={item.path}
                     role="option"
                     aria-selected={isSelected}
                     onClick={() => handleSelect(item)}
-                    onDoubleClick={() => handleEnterDirectory(item)}
-                    className={`w-full text-left flex items-center gap-2.5 px-3 py-3 md:py-2 transition-theme group ${
+                    className={`w-full text-left flex items-center gap-2.5 px-3 py-3 md:py-2 transition-theme group cursor-pointer ${
                       isSelected
                         ? "bg-amber-500/10 border-l-2 border-l-amber-500"
                         : isFocused
@@ -267,14 +268,28 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
                       </div>
                     </div>
                     {/* Enter arrow */}
-                    <Icon
-                      name="chevron-right-sm"
-                      size={8}
-                      className={`shrink-0 transition-theme ${
-                        isSelected ? "text-amber-500/60" : "text-ink-500 group-hover:text-ink-400"
-                      }`}
-                    />
-                  </button>
+                    {item.isDirectory ? (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleEnterDirectory(item); }}
+                        className="shrink-0 p-1 touch-target-sm"
+                        aria-label="Open directory"
+                      >
+                        <Icon
+                          name="chevron-right-sm"
+                          size={8}
+                          className={isSelected ? "text-amber-500/60" : "text-ink-500 group-hover:text-ink-400"}
+                        />
+                      </button>
+                    ) : (
+                      <Icon
+                        name="chevron-right-sm"
+                        size={8}
+                        className={`shrink-0 transition-theme ${
+                          isSelected ? "text-amber-500/60" : "text-ink-500 group-hover:text-ink-400"
+                        }`}
+                      />
+                    )}
+                  </div>
                 );
               })
             )}
@@ -282,7 +297,7 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
         </div>
 
         {/* ── Footer: selection + display name + submit ── */}
-        <div className="px-5 pt-3 pb-4 mt-3 border-t border-ink-800/40">
+        <div className="px-5 pt-3 pb-4 mt-3 border-t border-ink-800/40 mobile-safe-bottom">
           {/* Selected path preview */}
           {selectedPath && (
             <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/5 border border-amber-500/15">
@@ -313,7 +328,7 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
             <button
               onClick={handleSubmit}
               disabled={!selectedPath || isAdding}
-              className={`flex-1 py-2 rounded-lg text-xs font-medium transition-theme ${
+              className={`flex-1 py-2 rounded-lg text-xs font-medium transition-theme min-h-[44px] ${
                 selectedPath && !isAdding
                   ? "bg-amber-600 hover:bg-amber-500 text-ink-950"
                   : "bg-ink-800/40 text-ink-400 cursor-not-allowed"
@@ -323,7 +338,7 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
             </button>
             <button
               onClick={onCancel}
-              className="px-4 py-2 rounded-lg bg-ink-800/30 hover:bg-ink-800/50 text-ink-400 hover:text-ink-200 text-xs transition-theme"
+              className="px-4 py-2 rounded-lg bg-ink-800/30 hover:bg-ink-800/50 text-ink-400 hover:text-ink-200 text-xs transition-theme min-h-[44px]"
             >
               Cancel
             </button>

@@ -21,7 +21,10 @@ export default function App() {
   const [showAddProject, setShowAddProject] = useState(false);
   const [newSessionId, setNewSessionId] = useState<string | null>(null);
   const [isAddingProject, setIsAddingProject] = useState(false);
-  const [showSidebar, setShowSidebar] = useState(window.innerWidth >= 768);
+  const [showSidebar, setShowSidebar] = useState(false);
+  useEffect(() => {
+    setShowSidebar(window.innerWidth >= 768);
+  }, []);
   const isMobile = useIsMobile();
 
   // Session detail cache with 30s TTL
@@ -430,7 +433,7 @@ function SessionWelcome({ project, sessions, onSelectSession }: {
 }) {
   const isMobileScreen = useIsMobile();
   return (
-    <div className="flex-1 flex flex-col items-center justify-center p-4 md:p-8">
+    <div className="flex-1 flex flex-col items-center justify-center p-4 md:p-8 mobile-safe-top">
       <div className="max-w-lg w-full text-center animate-fade-in-up">
         {/* Mobile back hint */}
         {isMobileScreen && (

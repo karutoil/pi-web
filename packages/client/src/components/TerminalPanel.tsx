@@ -19,6 +19,7 @@ function TerminalInstance({ tab }: { tab: TerminalTab }) {
   const termRef = useRef<any>(null); // xterm Terminal instance
   const wsRef = useRef<WebSocket | null>(null);
   const fitAddonRef = useRef<any>(null);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     const container = containerRef.current;
@@ -39,7 +40,7 @@ function TerminalInstance({ tab }: { tab: TerminalTab }) {
 
       term = new Terminal({
         cursorBlink: true,
-        fontSize: 13,
+        fontSize: isMobile ? 14 : 13,
         fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
         theme: {
           background: "#0d0c0a",
@@ -298,6 +299,29 @@ export function TerminalPanel({ projectId, projectPath, visible, onClose }: Term
     document.addEventListener("mouseup", handleMouseUp);
   }, [height]);
 
+  const handleResizeTouchStart = useCallback((e: React.TouchEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+    startYRef.current = e.touches[0].clientY;
+    startHeightRef.current = height;
+
+    const handleTouchMove = (ev: TouchEvent) => {
+      const delta = startYRef.current - ev.touches[0].clientY;
+      const newHeight = Math.max(120, Math.min(window.innerHeight * 0.7, startHeightRef.current + delta));
+      setHeight(newHeight);
+    };
+
+    const handleTouchEnd = () => {
+      setIsResizing(false);
+      document.removeEventListener("touchmove", handleTouchMove);
+      document.removeEventListener("touchend", handleTouchEnd);
+      requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+    };
+
+    document.addEventListener("touchmove", handleTouchMove);
+    document.addEventListener("touchend", handleTouchEnd);
+  }, [height]);
+
   if (!visible) return null;
 
   const activeTab = tabs.find(t => t.id === activeTabId);
@@ -311,15 +335,16 @@ export function TerminalPanel({ projectId, projectPath, visible, onClose }: Term
     <div
       ref={panelRef}
       className={`flex flex-col bg-ink-950 border-t border-ink-800/60 select-none ${
-        isMobile ? "fixed bottom-0 left-0 right-0 z-40 border-t-0 rounded-t-xl" : ""
+        isMobile ? "fixed bottom-0 left-0 right-0 z-40 border-t-0 rounded-t-xl mobile-safe-bottom" : ""
       }`}
-      style={isMobile ? { height: `${mobileSnap * 100}vh` } : { height: `${height}px` }}
+      style={{ touchAction: "manipulation", ...(isMobile ? { height: `${mobileSnap * 100}vh` } : { height: `${height}px` }) }}
     >
       {/* ── Resize handle (desktop: drag, mobile: touch drag bottom sheet) ── */}
       {!isMobile ? (
       <div
         className="h-1.5 cursor-ns-resize flex items-center justify-center group hover:bg-amber-500/10 transition-theme"
         onMouseDown={handleResizeMouseDown}
+        onTouchStart={handleResizeTouchStart}
       >
         <div className={`w-8 h-0.5 rounded-full transition-theme ${isResizing ? "bg-amber-500" : "bg-ink-700 group-hover:bg-ink-500"}`} />
       </div>
@@ -445,7 +470,7 @@ function TabButton({ tab, isActive, onSelect, onClose, onRename }: {
       )}
       <button
         onClick={(e) => { e.stopPropagation(); onClose(); }}
-        className="opacity-0 group-hover:opacity-100 sm:opacity-40 sm:group-hover:opacity-100 text-ink-500 hover:text-rose-400 transition-all ml-0.5"
+        className="opacity-100 md:opacity-0 md:group-hover:opacity-100 text-ink-500 hover:text-rose-400 transition-all ml-0.5 p-1 touch-target-sm"
         aria-label={`Close ${tab.name}`}
       >
         <Icon name="close" size={8} />

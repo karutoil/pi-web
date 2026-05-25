@@ -65,7 +65,7 @@ export function GitBranchSelector({ cwd, currentBranch, ahead, behind, onRefresh
   // Close on click outside or Escape
   useEffect(() => {
     if (!open) return;
-    const handleClick = (e: MouseEvent) => {
+    const handleClick = (e: MouseEvent | TouchEvent) => {
       if (
         dropdownRef.current &&
         !dropdownRef.current.contains(e.target as Node) &&
@@ -79,9 +79,11 @@ export function GitBranchSelector({ cwd, currentBranch, ahead, behind, onRefresh
       if (e.key === "Escape") setOpen(false);
     };
     document.addEventListener("mousedown", handleClick);
+    document.addEventListener("touchend", handleClick);
     document.addEventListener("keydown", handleKey);
     return () => {
       document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("touchend", handleClick);
       document.removeEventListener("keydown", handleKey);
     };
   }, [open]);
@@ -186,7 +188,7 @@ export function GitBranchSelector({ cwd, currentBranch, ahead, behind, onRefresh
       {open && (
         <div
           ref={dropdownRef}
-          className="absolute left-0 top-full mt-1 bg-ink-900 border border-ink-800 rounded-lg shadow-2xl z-40 min-w-[200px] md:min-w-[240px] max-w-[320px] animate-fade-in-up"
+          className="absolute left-0 top-full mt-1 bg-ink-900 border border-ink-800 rounded-lg shadow-2xl z-40 min-w-[200px] md:min-w-[240px] max-w-[calc(100vw-1rem)] right-0 animate-fade-in-up"
         >
           {/* Create branch input */}
           <div className="px-2 py-2 border-b border-ink-800">
@@ -203,11 +205,13 @@ export function GitBranchSelector({ cwd, currentBranch, ahead, behind, onRefresh
                 className="flex-1 bg-ink-850 border border-ink-700 rounded px-2 py-1 text-ink-200 text-xs font-mono placeholder-ink-500 outline-none focus:border-amber-500 transition-theme"
                 aria-label="Create new branch"
                 disabled={creating}
+                enterKeyHint="done"
+                autoCorrect="off"
               />
               <button
                 onClick={handleCreate}
                 disabled={!createInput.trim() || creating}
-                className={`shrink-0 px-2 py-1 rounded text-xs font-medium transition-theme ${
+                className={`shrink-0 px-2 py-1 min-h-[44px] rounded text-xs font-medium transition-theme ${
                   createInput.trim() && !creating
                     ? "bg-amber-600 hover:bg-amber-500 text-ink-950"
                     : "bg-ink-800/40 text-ink-400 cursor-not-allowed"
@@ -236,7 +240,7 @@ export function GitBranchSelector({ cwd, currentBranch, ahead, behind, onRefresh
                 key={branch}
                 onClick={() => handleCheckout(branch)}
                 disabled={checkingOut}
-                className={`w-full text-left px-3 py-1.5 text-xs font-mono hover:bg-ink-850 transition-theme flex items-center gap-2 ${
+                className={`w-full text-left px-3 py-1.5 text-xs font-mono hover:bg-ink-850 transition-theme flex items-center gap-2 min-h-[44px] ${
                   branch === currentBranch ? "text-amber-400 bg-amber-500/5" : "text-ink-300"
                 }`}
               >
@@ -264,7 +268,7 @@ export function GitBranchSelector({ cwd, currentBranch, ahead, behind, onRefresh
                     key={tag}
                     onClick={() => handleCheckoutTag(tag)}
                     disabled={checkingOut}
-                    className="w-full text-left px-3 py-1 text-xs font-mono text-ink-400 hover:bg-ink-850 hover:text-ink-200 transition-theme truncate"
+                    className="w-full text-left px-3 py-1 text-xs font-mono text-ink-400 hover:bg-ink-850 hover:text-ink-200 transition-theme truncate min-h-[44px]"
                   >
                     {tag}
                   </button>

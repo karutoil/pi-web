@@ -60,14 +60,14 @@ export function MessageBubble({ message, showThinking, toolResultsMap, inlineToo
   }
 
   return (
-    <div onContextMenu={handleContextMenu} {...longPress} className={`animate-fade-in-up ${isUser ? "flex justify-end" : "flex gap-2 md:gap-3"}`}>
+    <div onContextMenu={handleContextMenu} {...longPress} className={`animate-fade-in-up min-w-0 ${isUser ? "flex justify-end" : "flex gap-2 md:gap-3"}`}>
       {!isUser && (
         <div className="shrink-0 w-6 h-6 md:w-7 md:h-7 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center mt-1">
           <Icon name="pi-avatar" size={12} />
         </div>
       )}
       
-      <div className={`max-w-[90%] md:max-w-[80%] ${isUser ? "" : "min-w-0 flex-1"}`}>
+      <div className={`max-w-[90%] md:max-w-[80%] overflow-hidden ${isUser ? "" : "min-w-0 flex-1"}`}>
         {/* Tool execution */}
         {isTool && (
           <ToolResultBubble message={message} />
@@ -162,7 +162,7 @@ function UserBubble({ message, entryId, onFork }: { message: ChatMessage; entryI
               key={i}
               src={`data:${img.mimeType};base64,${img.data}`}
               alt={`Attachment ${i + 1}`}
-              className="max-h-48 rounded-lg border border-amber-500/20 object-contain"
+              className="max-h-32 md:max-h-48 rounded-lg border border-amber-500/20 object-contain"
             />
           ))}
         </div>

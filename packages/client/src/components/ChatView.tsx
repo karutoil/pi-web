@@ -213,19 +213,19 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
   }, []);
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 relative">
+    <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden relative">
       <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} onToggleGit={() => setShowGit(v => !v)} showGit={showGit} onToggleSidebar={onToggleSidebar} showSidebar={showSidebar} onSessionActions={() => setShowSessionActions(true)} />
 
       <div aria-live="polite" className="sr-only">{srAnnouncement}</div>
 
       {/* Main content row: chat area + git panel */}
-      <div className="flex-1 flex min-h-0">
+      <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* Chat column */}
-        <div className="flex-1 flex flex-col min-h-0">
+        <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
           <div
             ref={scrollRef}
             onScroll={handleScroll}
-            className="flex-1 overflow-y-auto custom-scrollbar px-3 md:px-5 pt-6 pb-4"
+            className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar px-3 md:px-5 pt-6 pb-4"
           >
         <div ref={contentRef} className="max-w-3xl mx-auto space-y-4 md:space-y-5">
           {/* Load earlier messages */}
@@ -299,7 +299,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
         </div>
 
         {ws.messages.length === 0 && !liveMsg && !hasHistoricalMessages && (
-          <div className="flex flex-col items-center justify-center py-20 text-center animate-fade-in-up">
+          <div className="flex flex-col items-center justify-center py-16 md:py-20 text-center animate-fade-in-up">
             <Icon name="pi-logo" size={48} className="mb-6 opacity-40" />
             <h3 className="text-ink-300 text-lg font-medium mb-2">Start a conversation</h3>
             <p className="text-ink-500 text-sm max-w-sm italic">

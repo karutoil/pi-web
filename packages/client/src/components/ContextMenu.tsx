@@ -56,11 +56,12 @@ export function ContextMenuPortal({
 
   useEffect(() => {
     const close = () => onClose();
-    const handler = (e: MouseEvent) => {
+    const handler = (e: MouseEvent | TouchEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) close();
     };
     const timer = setTimeout(() => {
       document.addEventListener("mousedown", handler);
+      document.addEventListener("touchend", handler);
       document.addEventListener("contextmenu", handler);
     }, 10);
     const keyHandler = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
@@ -68,33 +69,32 @@ export function ContextMenuPortal({
     return () => {
       clearTimeout(timer);
       document.removeEventListener("mousedown", handler);
+      document.removeEventListener("touchend", handler);
       document.removeEventListener("contextmenu", handler);
       document.removeEventListener("keydown", keyHandler);
     };
   }, [onClose]);
 
   // Pre-calculate safe position — estimate menu size to avoid off-screen placement
-  const MENU_WIDTH = 200;
-  const MENU_HEIGHT = 160;
   const vw = typeof window !== "undefined" ? window.innerWidth : 800;
   const vh = typeof window !== "undefined" ? window.innerHeight : 600;
-  const safeX = x + MENU_WIDTH > vw ? Math.max(4, x - MENU_WIDTH) : Math.max(4, x);
-  const safeY = y + MENU_HEIGHT > vh ? Math.max(4, y - MENU_HEIGHT) : Math.max(4, y);
 
-  const [pos, setPos] = useState({ x: safeX, y: safeY });
+  const [pos, setPos] = useState({ x: Math.max(8, x), y: Math.max(8, y) });
   useEffect(() => {
     if (!menuRef.current) return;
     const rect = menuRef.current.getBoundingClientRect();
-    const cx = x + rect.width > vw ? x - rect.width : x;
-    const cy = y + rect.height > vh ? y - rect.height : y;
-    setPos({ x: Math.max(4, cx), y: Math.max(4, cy) });
-  }, [x, y]);
+    const maxLeft = vw - rect.width - 8;
+    const maxTop = vh - rect.height - 8;
+    const clampedLeft = Math.min(Math.max(x, 8), maxLeft);
+    const clampedTop = Math.min(Math.max(y, 8), maxTop);
+    setPos({ x: clampedLeft, y: clampedTop });
+  }, [x, y, vw, vh]);
 
   return createPortal(
     <div
       ref={menuRef}
       style={{ position: "fixed", left: pos.x, top: pos.y, zIndex: 50 }}
-      className="bg-ink-900 border border-ink-700 rounded-lg shadow-2xl py-1 min-w-[160px] animate-fade-in-up"
+      className="bg-ink-900 border border-ink-700 rounded-lg shadow-2xl py-1 min-w-[160px] animate-fade-in-up touch-none"
     >
       {children}
     </div>,
@@ -118,7 +118,7 @@ export function ContextMenuItem({
   return (
     <button
       onClick={e => { e.stopPropagation(); onClick(); }}
-      className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2.5 transition-theme ${
+      className={`w-full text-left px-3 py-2.5 min-h-[44px] text-xs flex items-center gap-2.5 transition-theme ${
         danger
           ? "text-rose-400 hover:bg-rose-600/10 hover:text-rose-300"
           : "text-ink-300 hover:bg-ink-800 hover:text-ink-100"
@@ -126,7 +126,7 @@ export function ContextMenuItem({
     >
       {icon && <span className="shrink-0 w-3 flex justify-center">{icon}</span>}
       <span className="flex-1">{label}</span>
-      {shortcut && <span className="text-ink-500 text-[0.65rem] font-mono ml-2">{shortcut}</span>}
+      {shortcut && <span className="text-ink-500 text-[0.65rem] font-mono ml-2 hidden sm:block">{shortcut}</span>}
     </button>
   );
 }

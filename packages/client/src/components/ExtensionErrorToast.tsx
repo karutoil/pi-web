@@ -11,7 +11,7 @@ export function ExtensionErrorToast({ errors, onDismiss }: ExtensionErrorToastPr
   if (recent.length === 0) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-40 flex flex-col gap-2 max-w-sm">
+    <div className="fixed bottom-4 right-4 z-40 flex flex-col gap-2 max-w-sm mobile-safe-bottom">
       {recent.map((err, i) => {
         const idx = errors.length - recent.length + i;
         return (
@@ -30,7 +30,7 @@ export function ExtensionErrorToast({ errors, onDismiss }: ExtensionErrorToastPr
                 </div>
               </div>
               <button onClick={() => onDismiss(idx)}
-                className="text-red-400 hover:text-red-200 shrink-0 text-xs">✕</button>
+                className="text-red-400 hover:text-red-200 shrink-0 text-xs p-1.5 touch-target-sm">✕</button>
             </div>
           </div>
         );

@@ -41,7 +41,7 @@ export function CommandCompleter({ commands, filter, onSelect, onClose }: Props)
         <button
           key={c.name}
           onClick={() => onSelect(c.name)}
-          className="w-full text-left px-3 py-2 hover:bg-ink-850 transition-theme flex items-start gap-2"
+          className="w-full text-left px-3 py-2 hover:bg-ink-850 transition-theme flex items-start gap-2 min-h-[44px]"
         >
           <span className="text-xs shrink-0 mt-0.5">{sourceIcons[c.source] || "•"}</span>
           <div className="min-w-0">

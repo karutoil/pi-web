@@ -128,6 +128,7 @@ export function GitStash({ cwd, stashCount, onRefresh }: GitStashProps) {
                 if (e.key === "Escape") setShowStashInput(false);
               }}
               autoFocus
+              enterKeyHint="done"
             />
             <button
               onClick={handleStash}
@@ -228,7 +229,7 @@ function StashRow({
           <button
             onClick={onApply}
             disabled={acting}
-            className="px-2 py-1 md:px-1.5 md:py-0.5 text-[0.6rem] font-mono text-ink-400 hover:text-amber-500 hover:bg-ink-800/50 rounded transition-theme disabled:opacity-40 min-h-[28px] md:min-h-0"
+            className="px-2 py-1 md:px-1.5 md:py-0.5 text-xs md:text-[0.65rem] font-mono text-ink-400 hover:text-amber-500 hover:bg-ink-800/50 rounded transition-theme disabled:opacity-40 min-h-[44px] md:min-h-0"
             title="Apply stash"
           >
             Apply
@@ -236,7 +237,7 @@ function StashRow({
           <button
             onClick={onPop}
             disabled={acting}
-            className="px-2 py-1 md:px-1.5 md:py-0.5 text-[0.6rem] font-mono text-ink-400 hover:text-amber-500 hover:bg-ink-800/50 rounded transition-theme disabled:opacity-40 min-h-[28px] md:min-h-0"
+            className="px-2 py-1 md:px-1.5 md:py-0.5 text-xs md:text-[0.65rem] font-mono text-ink-400 hover:text-amber-500 hover:bg-ink-800/50 rounded transition-theme disabled:opacity-40 min-h-[44px] md:min-h-0"
             title="Pop stash"
           >
             Pop
@@ -244,7 +245,7 @@ function StashRow({
           <button
             onClick={onDrop}
             disabled={acting}
-            className="px-2 py-1 md:px-1.5 md:py-0.5 text-[0.6rem] font-mono text-ink-400 hover:text-rose-400 hover:bg-ink-800/50 rounded transition-theme disabled:opacity-40 min-h-[28px] md:min-h-0"
+            className="px-2 py-1 md:px-1.5 md:py-0.5 text-xs md:text-[0.65rem] font-mono text-ink-400 hover:text-rose-400 hover:bg-ink-800/50 rounded transition-theme disabled:opacity-40 min-h-[44px] md:min-h-0"
             title="Drop stash"
           >
             Drop

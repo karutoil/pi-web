@@ -20,7 +20,7 @@ export function SessionActions({ onCompact, onExportHtml, onClone, onSetAutoComp
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh] bg-black/60" onClick={onClose}>
-      <div className="w-full max-w-xs bg-ink-900 border border-ink-700 rounded-xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-xs bg-ink-900 border border-ink-700 rounded-xl shadow-2xl overflow-hidden mobile-safe-top max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="px-4 py-3 border-b border-ink-800 text-ink-200 text-sm font-medium">Session Actions</div>
         <div className="py-1">
           {actions.map(a => (
@@ -32,7 +32,7 @@ export function SessionActions({ onCompact, onExportHtml, onClone, onSetAutoComp
             </button>
           ))}
         </div>
-        <div className="px-4 py-2 border-t border-ink-800 text-xs text-ink-500">Esc to close</div>
+        <div className="px-4 py-2 border-t border-ink-800 text-xs text-ink-500 hidden sm:block">Esc to close</div>
       </div>
     </div>
   );

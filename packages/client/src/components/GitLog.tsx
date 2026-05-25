@@ -108,7 +108,7 @@ function CommitDiffViewer({ diff, hash, onClose }: { diff: string; hash: string;
         <span className="flex-1" />
         <button onClick={onClose} className="px-2.5 py-1 text-xs text-ink-400 hover:text-ink-200 bg-ink-800/40 hover:bg-ink-800/60 rounded transition-theme">Back</button>
       </div>
-      <div className="flex-1 overflow-y-auto custom-scrollbar font-mono text-xs leading-5 bg-ink-950">
+      <div className="flex-1 overflow-y-auto overflow-x-auto custom-scrollbar font-mono text-xs leading-5 bg-ink-950">
         {lines.map((line, i) => {
           let cls = "text-ink-400";
           if (line.startsWith("+++ ") || line.startsWith("--- ") || line.startsWith("diff ")) cls = "text-amber-500 font-bold";
@@ -149,7 +149,7 @@ function CommitRow({
 
   return (
     <div
-      className={`border-b border-ink-800/20 transition-theme cursor-pointer ${
+      className={`border-b border-ink-800/20 transition-theme cursor-pointer min-h-[44px] ${
         expanded ? "bg-ink-900/40" : "hover:bg-ink-900/30"
       }`}
       onClick={onToggle}

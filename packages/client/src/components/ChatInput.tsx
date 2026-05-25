@@ -62,8 +62,9 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
   const handleInput = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
+    const maxH = window.innerWidth < 768 ? 160 : 200;
     el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 200) + "px";
+    el.style.height = Math.min(el.scrollHeight, maxH) + "px";
   }, []);
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -128,15 +129,15 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
   const hasStatusRow = statusLeft || rightText;
 
   return (
-    <div className="px-2 md:px-4 pb-2 md:pb-4 pt-2 flex justify-center mobile-safe-bottom">
-      <div className="max-w-3xl w-full">
+    <div className="px-2 md:px-4 pb-2 md:pb-4 pt-2 flex justify-center mobile-safe-bottom shrink-0">
+      <div className="max-w-3xl w-full min-w-0">
         {/* Image previews */}
         {pendingImages.length > 0 && (
           <div className="flex gap-2 mb-2 flex-wrap px-2">
             {pendingImages.map((img, i) => (
               <div key={i} className="relative group">
                 <img src={`data:${img.mimeType};base64,${img.data}`} alt="Attachment" className="h-12 rounded-lg border border-ink-700 object-cover" />
-                <button onClick={() => removeImage(i)} className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-600 text-white text-xs flex items-center justify-center opacity-70 group-hover:opacity-100 transition-opacity" aria-label="Remove image">×</button>
+                <button onClick={() => removeImage(i)} className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-rose-600 text-white text-xs flex items-center justify-center opacity-70 group-hover:opacity-100 transition-opacity touch-target-sm" aria-label="Remove image">×</button>
               </div>
             ))}
           </div>
@@ -180,7 +181,8 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
                 placeholder={isStreaming ? "Steer..." : "Ask PI..."}
                 disabled={disabled}
                 rows={1}
-                className="flex-1 bg-transparent text-ink-100 text-sm placeholder-ink-500 resize-none outline-none max-h-[200px] leading-relaxed"
+                className="flex-1 bg-transparent text-ink-100 text-sm placeholder-ink-500 resize-none outline-none max-h-[160px] md:max-h-[200px] leading-relaxed"
+                enterKeyHint="send"
               />
               <div className="flex items-center gap-1 shrink-0">
                 {onToggleTerminal && (
@@ -203,7 +205,7 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
           <div className="flex items-center gap-2 mt-2 px-3 py-1.5 bg-amber-900/40 backdrop-blur-sm border border-amber-700/30 rounded-xl text-amber-200 text-xs">
             <span className="animate-spin-slow">⟳</span>
             <span>Retrying ({autoRetry.attempt}/{autoRetry.maxAttempts})</span>
-            <span className="text-amber-400/70 truncate max-w-32" title={stripAnsi(autoRetry.errorMessage)}>{stripAnsi(autoRetry.errorMessage).slice(0, 40)}</span>
+            <span className="text-amber-400/70 truncate max-w-24 sm:max-w-32" title={stripAnsi(autoRetry.errorMessage)}>{stripAnsi(autoRetry.errorMessage).slice(0, 40)}</span>
             <button onClick={onAbortRetry} className="ml-auto text-amber-400 hover:text-amber-200 transition-colors">Cancel</button>
           </div>
         )}

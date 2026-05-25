@@ -77,7 +77,7 @@ function createConnection(
       reconnectAttempts = 0;
       notify();
       // Request current state and commands on connect
-      setTimeout(() => { send({ type: "get_state" }); send({ type: "get_commands" }); }, 200);
+      setTimeout(() => { console.log('[ws] onopen: requesting state+models+commands'); send({ type: "get_state" }); send({ type: "get_available_models" }); send({ type: "get_commands" }); }, 200);
     };
     ws.onclose = () => {
       data.isConnected = false;
@@ -158,7 +158,7 @@ function createConnection(
         if (!(msg as any).success) console.warn(`Command ${(msg as any).command} failed:`, (msg as any).error);
         break;
       case "session_loaded": if (msg.session && onSessionLoadedRef.current) onSessionLoadedRef.current(msg.session); break;
-      case "available_models": data.models = msg.models; break;
+      case "available_models": console.log('[ws] available_models:', msg.models?.length, 'models'); data.models = msg.models; break;
       case "available_commands": data.commands = msg.commands; break;
       case "fork_messages": data.forkMessages = msg.messages; break;
       case "session_stats": data.sessionStats = msg.stats; break;

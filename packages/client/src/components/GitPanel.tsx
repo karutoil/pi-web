@@ -84,7 +84,7 @@ function DiffViewer({ diff, path, onClose, showBlame, showComparePrev }: {
         )}
         <button onClick={onClose} className="px-2.5 py-1 text-xs text-ink-400 hover:text-ink-200 bg-ink-800/40 hover:bg-ink-800/60 rounded transition-theme">Back</button>
       </div>
-      <div className="flex-1 overflow-y-auto custom-scrollbar font-mono text-xs leading-5 bg-ink-950">
+      <div className="flex-1 overflow-y-auto overflow-x-auto custom-scrollbar font-mono text-xs leading-5 bg-ink-950">
         {lines.map((line, i) => {
           let cls = "text-ink-400";
           if (line.startsWith("+++ ") || line.startsWith("--- ") || line.startsWith("diff ")) cls = "text-amber-500 font-bold";
@@ -110,9 +110,9 @@ function ConflictBanner({ path, onResolve }: { path: string; onResolve: (strateg
     <div className="px-3 py-2 bg-rose-500/5 border-b border-rose-500/20">
       <p className="text-rose-400 text-xs font-mono mb-1.5">Merge conflict: {path}</p>
       <div className="flex gap-1.5">
-        <button onClick={() => onResolve("ours")} className="px-2 py-1 text-[0.65rem] bg-ink-800/60 hover:bg-ink-800 text-ink-300 hover:text-ink-100 rounded transition-theme">Accept Current</button>
-        <button onClick={() => onResolve("theirs")} className="px-2 py-1 text-[0.65rem] bg-ink-800/60 hover:bg-ink-800 text-ink-300 hover:text-ink-100 rounded transition-theme">Accept Incoming</button>
-        <button onClick={() => onResolve("both")} className="px-2 py-1 text-[0.65rem] bg-ink-800/60 hover:bg-ink-800 text-ink-300 hover:text-ink-100 rounded transition-theme">Accept Both</button>
+        <button onClick={() => onResolve("ours")} className="px-2.5 py-1.5 text-xs min-h-[36px] bg-ink-800/60 hover:bg-ink-800 text-ink-300 hover:text-ink-100 rounded transition-theme">Accept Current</button>
+        <button onClick={() => onResolve("theirs")} className="px-2.5 py-1.5 text-xs min-h-[36px] bg-ink-800/60 hover:bg-ink-800 text-ink-300 hover:text-ink-100 rounded transition-theme">Accept Incoming</button>
+        <button onClick={() => onResolve("both")} className="px-2.5 py-1.5 text-xs min-h-[36px] bg-ink-800/60 hover:bg-ink-800 text-ink-300 hover:text-ink-100 rounded transition-theme">Accept Both</button>
       </div>
     </div>
   );
@@ -317,7 +317,7 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
 
   return (
     <div
-      className={`flex flex-col bg-ink-950 border-l border-ink-800/60 shrink-0 select-none h-full relative ${
+      className={`flex flex-col bg-ink-950 border-l border-ink-800/60 shrink-0 select-none h-full relative mobile-safe-top mobile-safe-bottom ${
         isMobile ? "fixed inset-0 border-l-0" : ""
       }`}
       style={isMobile ? { zIndex: 45 } : { width: `${width}px` }}
@@ -379,7 +379,7 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
       <div className="flex border-b border-ink-800/40 shrink-0">
         <button
           onClick={() => setView("changes")}
-          className={`flex-1 py-2 text-xs font-medium transition-theme border-b-2 ${
+          className={`flex-1 py-2 text-xs font-medium transition-theme border-b-2 min-h-[44px] ${
             view === "changes" ? "text-amber-400 border-b-amber-500" : "text-ink-500 border-b-transparent hover:text-ink-300"
           }`}
         >
@@ -387,7 +387,7 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
         </button>
         <button
           onClick={() => setView("log")}
-          className={`flex-1 py-2 text-xs font-medium transition-theme border-b-2 ${
+          className={`flex-1 py-2 text-xs font-medium transition-theme border-b-2 min-h-[44px] ${
             view === "log" ? "text-amber-400 border-b-amber-500" : "text-ink-500 border-b-transparent hover:text-ink-300"
           }`}
         >
@@ -399,9 +399,9 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
       {selectedFiles.size > 0 && view === "changes" && (
         <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/5 border-b border-amber-500/10 shrink-0">
           <span className="text-amber-400 text-[0.65rem] font-mono">{selectedFiles.size} selected</span>
-          <button onClick={handleStageSelected} className="px-2 py-0.5 text-[0.65rem] bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 rounded transition-theme">Stage</button>
-          <button onClick={handleUnstageSelected} className="px-2 py-0.5 text-[0.65rem] bg-ink-800/40 hover:bg-ink-800/60 text-ink-300 rounded transition-theme">Unstage</button>
-          <button onClick={() => setSelectedFiles(new Set())} className="ml-auto text-[0.65rem] text-ink-400 hover:text-ink-300 transition-theme">Clear</button>
+          <button onClick={handleStageSelected} className="px-2 py-1 text-xs min-h-[36px] bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 rounded transition-theme">Stage</button>
+          <button onClick={handleUnstageSelected} className="px-2 py-1 text-xs min-h-[36px] bg-ink-800/40 hover:bg-ink-800/60 text-ink-300 rounded transition-theme">Unstage</button>
+          <button onClick={() => setSelectedFiles(new Set())} className="ml-auto text-xs min-h-[36px] text-ink-400 hover:text-ink-300 transition-theme">Clear</button>
         </div>
       )}
 
@@ -462,13 +462,14 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
               onKeyDown={e => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); handleCommit(); }
               }}
+              enterKeyHint="send"
             />
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={handleCommit}
               disabled={!commitMsg.trim() || committing || (!amend && !status?.staged.length)}
-              className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-theme ${
+              className={`flex-1 py-1.5 min-h-[44px] rounded-md text-xs font-medium transition-theme ${
                 commitMsg.trim() && (amend || status?.staged.length) && !committing
                   ? "bg-amber-600 hover:bg-amber-500 text-ink-950"
                   : "bg-ink-800/40 text-ink-400 cursor-not-allowed"
@@ -714,10 +715,10 @@ function FileRow({ file, stats, staged, selected, onStage, onUnstage, onDiscard,
               <Icon name="undo" size={10} />
             </button>
           )}
-          {onBlame && file.status !== "?" && (
+          {onBlame && file.status !== "?" && !isMobile && (
             <button onClick={(e) => { e.stopPropagation(); onBlame(file.path); }} className="p-1 md:p-0.5 text-ink-500 hover:text-sky-400 transition-theme touch-target" aria-label="Blame" title="Blame">B</button>
           )}
-          {onComparePrev && file.status !== "?" && (
+          {onComparePrev && file.status !== "?" && !isMobile && (
             <button onClick={(e) => { e.stopPropagation(); onComparePrev(file.path); }} className="p-1 md:p-0.5 text-ink-500 hover:text-amber-400 transition-theme touch-target" aria-label="Compare with previous" title="Compare with previous">⇄</button>
           )}
         </div>

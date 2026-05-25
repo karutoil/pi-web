@@ -48,28 +48,30 @@ export function ConfirmDialog({
           aria-modal="true"
           aria-labelledby="confirm-title"
         >
-          <h3
-            id="confirm-title"
-            className="text-ink-100 text-sm font-semibold mb-2"
-          >
-            {title}
-          </h3>
-          <p className="text-ink-300 text-xs leading-relaxed mb-1">
-            {message}
-          </p>
-          <p className="text-ink-500 text-[0.65rem] italic">
-            This cannot be undone.
-          </p>
+          <div className="overflow-y-auto max-h-[calc(60vh-2.5rem)]">
+            <h3
+              id="confirm-title"
+              className="text-ink-100 text-sm font-semibold mb-2"
+            >
+              {title}
+            </h3>
+            <p className="text-ink-300 text-xs leading-relaxed mb-1">
+              {message}
+            </p>
+            <p className="text-ink-500 text-[0.65rem] italic">
+              This cannot be undone.
+            </p>
+          </div>
           <div className="flex justify-end gap-2 mt-4">
             <button
               onClick={onCancel}
-              className="px-3 py-1.5 text-ink-400 hover:text-ink-200 text-xs rounded-md hover:bg-ink-800/40 transition-theme"
+              className="px-3 py-1.5 min-h-[44px] text-ink-400 hover:text-ink-200 text-xs rounded-md hover:bg-ink-800/40 transition-theme"
             >
               Cancel
             </button>
             <button
               onClick={onConfirm}
-              className="px-3 py-1.5 bg-amber-600/90 hover:bg-amber-500 text-ink-950 text-xs font-medium rounded-md transition-theme"
+              className="px-3 py-1.5 min-h-[44px] bg-amber-600/90 hover:bg-amber-500 text-ink-950 text-xs font-medium rounded-md transition-theme"
             >
               {confirmLabel}
             </button>

@@ -81,7 +81,7 @@ export function GitBlame({ cwd, path, onClose }: GitBlameProps) {
       <div className="flex items-center gap-2 px-3 py-2 border-b border-ink-800/60 bg-ink-900/30 shrink-0">
         <button
           onClick={onClose}
-          className="p-1 text-ink-400 hover:text-ink-300 hover:bg-ink-800/50 rounded transition-theme"
+          className="p-1 text-ink-400 hover:text-ink-300 hover:bg-ink-800/50 rounded transition-theme touch-target"
           aria-label="Close blame"
         >
           <Icon name="chevron-left" size={12} />
@@ -112,7 +112,7 @@ export function GitBlame({ cwd, path, onClose }: GitBlameProps) {
           <p className="text-ink-500 text-xs font-mono">No blame data</p>
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto custom-scrollbar font-mono text-xs leading-5 bg-ink-950">
+        <div className="flex-1 overflow-y-auto overflow-x-auto custom-scrollbar font-mono text-xs leading-5 bg-ink-950">
           {lines.map((bl, i) => {
             const first = isNewGroup(lines, i);
             return (
@@ -138,8 +138,8 @@ export function GitBlame({ cwd, path, onClose }: GitBlameProps) {
                 {/* Mobile: compact inline metadata */}
                 {isMobile && first && (
                   <div className="shrink-0 px-2 py-px select-none border-r border-ink-800/40">
-                    <span className="text-amber-400 text-[0.6rem] font-medium">{bl.hash.slice(0, 7)}</span>
-                    <span className="text-ink-500 text-[0.55rem] ml-1">{bl.author.split(" ")[0]}</span>
+                    <span className="text-amber-400 text-[0.7rem] sm:text-xs font-medium">{bl.hash.slice(0, 7)}</span>
+                    <span className="text-ink-500 text-[0.65rem] sm:text-xs ml-1">{bl.author.split(" ")[0]}</span>
                   </div>
                 )}
 
@@ -149,7 +149,7 @@ export function GitBlame({ cwd, path, onClose }: GitBlameProps) {
                 </div>
 
                 {/* Line content */}
-                <div className="flex-1 py-px whitespace-pre-wrap break-words text-ink-200 min-w-0 text-[0.7rem]">
+                <div className="flex-1 py-px whitespace-pre-wrap break-words text-ink-200 min-w-0 text-xs sm:text-sm">
                   {bl.content}
                 </div>
               </div>

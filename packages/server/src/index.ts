@@ -588,7 +588,7 @@ app.get(
             case "fork": agent.send({ type: "fork", entryId: msg.entryId }); break;
             case "compact": agent.send({ type: "compact", ...(msg as any).customInstructions ? { customInstructions: (msg as any).customInstructions } : {} }); break;
             case "get_state": agent.send({ type: "get_state" }); break;
-            case "get_available_models": agent.send({ type: "get_available_models" }); break;
+            case "get_available_models": console.log('[ws] forwarding get_available_models to agent'); agent.send({ type: "get_available_models" }); break;
             case "get_commands": agent.send({ type: "get_commands" }); break;
             case "get_fork_messages": agent.send({ type: "get_fork_messages" }); break;
             case "get_messages": agent.send({ type: "get_messages" }); break;

@@ -347,6 +347,11 @@ class PIAgent {
     const handler = this.onMessage;
     if (!handler) return;
 
+    // Debug: log response events to trace model loading
+    if (event.type === "response" && event.command === "get_available_models") {
+      console.log(`[pi] get_available_models response: success=${event.success}, modelCount=${event.data?.models?.length}`);
+    }
+
     try {
       switch (event.type) {
         case "agent_start":
@@ -448,8 +453,13 @@ class PIAgent {
 
   private bridgeResponse(event: any, handler: (msg: WSServerMessage) => void) {
     try {
+      // Debug
+      if (event.command === "get_available_models") {
+        console.log(`[pi] bridgeResponse get_available_models: success=${event.success}, data=${JSON.stringify(event.data)?.slice(0, 200)}`);
+      }
       // Forward failed responses so client knows about failures
       if (!event.success) {
+        if (event.command === "get_available_models") console.log(`[pi] get_available_models FAILED:`, event.error);
         handler({ type: "response", command: event.command, success: false, error: event.error, id: event.id });
         return;
       }
