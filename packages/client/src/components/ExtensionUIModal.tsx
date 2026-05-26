@@ -147,50 +147,35 @@ export function ExtensionUIModal({ request, onRespond }: Props) {
   };
 
   if (isNotify) {
+    const notifyColors = {
+      error:   { dot: "bg-rose-500", text: "text-rose-300", subtext: "text-rose-400/70" },
+      warning: { dot: "bg-amber-500", text: "text-amber-300", subtext: "text-amber-400/70" },
+      success: { dot: "bg-teal-500", text: "text-teal-300", subtext: "text-teal-400/70" },
+      info:    { dot: "bg-ink-400", text: "text-ink-200", subtext: "text-ink-400" },
+    };
+    const variant = (request.notifyType && notifyColors[request.notifyType]) ? request.notifyType! : "info";
+    const c = notifyColors[variant];
+
     return (
-      <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-80 min-w-[280px] max-w-lg animate-fade-in-up mobile-safe-top`}>
-        <div className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl border backdrop-blur-md ${
-          request.notifyType === "error"
-            ? "bg-rose-500/15 border-rose-500/30 text-rose-300"
-            : request.notifyType === "warning"
-            ? "bg-amber-500/15 border-amber-500/30 text-amber-300"
-            : request.notifyType === "success"
-            ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-300"
-            : "bg-ink-900/90 border-ink-700/60 text-ink-300"
-        }`}>
-          {/* Icon */}
-          <div className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center ${
-            request.notifyType === "error"
-              ? "bg-rose-500/20"
-              : request.notifyType === "warning"
-              ? "bg-amber-500/20"
-              : request.notifyType === "success"
-              ? "bg-emerald-500/20"
-              : "bg-ink-700/50"
-          }`}>
-            <Icon name={
-              request.notifyType === "error" ? "close" :
-              request.notifyType === "warning" ? "check" :
-              request.notifyType === "success" ? "check" :
-              "check"
-            } size={14} />
-          </div>
-          {/* Content */}
+      <div className="absolute top-2 left-3 right-3 md:left-1/2 md:right-auto md:-translate-x-1/2 md:max-w-sm z-30 animate-fade-in-up pointer-events-auto">
+        <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-ink-900/95 border border-ink-800 shadow-lg backdrop-blur-sm">
+          <div className={`shrink-0 mt-1.5 w-1.5 h-1.5 rounded-full ${c.dot}`} />
           <div className="flex-1 min-w-0">
             {request.title && (
-              <p className="text-sm font-medium leading-snug">{request.title}</p>
+              <p className={`text-xs font-medium leading-tight ${c.text}`}>{request.title}</p>
             )}
-            <p className={`text-sm leading-snug ${request.title ? "text-ink-400 mt-0.5" : ""}`}>
+            <p className={`text-[11px] font-mono leading-snug ${request.title ? c.subtext : c.text} mt-0.5`}>
               {request.message || request.title}
             </p>
           </div>
-          {/* Dismiss button */}
           <button
             onClick={() => onRespond({ cancelled: true })}
-            className="shrink-0 w-6 h-6 rounded-md flex items-center justify-center text-ink-400 hover:text-ink-300 hover:bg-ink-800/50 transition-theme"
+            className="shrink-0 mt-0.5 text-ink-600 hover:text-ink-400 transition-colors p-1"
             aria-label="Dismiss notification"
           >
-            <Icon name="close" size={12} />
+            <svg width="8" height="8" viewBox="0 0 10 10" fill="none" className="stroke-current" strokeWidth="2" strokeLinecap="round">
+              <path d="M1.5 1.5l7 7M8.5 1.5l-7 7" />
+            </svg>
           </button>
         </div>
       </div>

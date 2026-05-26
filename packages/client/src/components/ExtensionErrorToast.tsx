@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import type { ExtensionErrorEntry } from "../lib/types";
 
 interface ExtensionErrorToastProps {
@@ -6,35 +7,90 @@ interface ExtensionErrorToastProps {
 }
 
 export function ExtensionErrorToast({ errors, onDismiss }: ExtensionErrorToastProps) {
-  // Show only the last 3 errors
+  const [collapsed, setCollapsed] = useState(false);
+  const [visible, setVisible] = useState(false);
+
   const recent = errors.slice(-3);
   if (recent.length === 0) return null;
 
+  // Stagger entrance on mount
+  useEffect(() => {
+    setVisible(true);
+  }, []);
+
   return (
-    <div className="fixed bottom-4 right-4 z-40 flex flex-col gap-2 max-w-sm mobile-safe-bottom">
-      {recent.map((err, i) => {
-        const idx = errors.length - recent.length + i;
-        return (
-          <div key={`${err.extensionPath}-${idx}`}
-            className="bg-red-900/90 border border-red-700 rounded-lg p-3 shadow-lg animate-fade-in-up">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0 flex-1">
-                <div className="text-red-200 text-xs font-medium truncate">
-                  Extension Error
-                </div>
-                <div className="text-red-300 text-xs mt-1 truncate" title={err.extensionPath}>
-                  {err.extensionPath.split("/").pop()}
-                </div>
-                <div className="text-red-400/80 text-xs mt-0.5 truncate" title={err.error}>
-                  {err.error}
-                </div>
-              </div>
-              <button onClick={() => onDismiss(idx)}
-                className="text-red-400 hover:text-red-200 shrink-0 text-xs p-1.5 touch-target-sm">✕</button>
+    <div
+      className={`px-3 md:px-5 pb-1.5 transition-all duration-300 ease-out ${visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2"}`}
+    >
+      {/* Collapsed: single pill */}
+      {recent.length > 1 && collapsed ? (
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setCollapsed(false)}
+            className="flex items-center gap-2 px-2.5 py-1.5 rounded-full bg-ink-900/95 border border-rose-500/20 text-ink-400 text-[11px] font-mono hover:border-rose-500/35 hover:text-ink-300 transition-all"
+            role="alert"
+          >
+            <span className="w-4 h-4 rounded-full bg-rose-500/20 border border-rose-500/40 flex items-center justify-center">
+              <span className="text-rose-400 text-[9px] leading-none font-bold">{recent.length}</span>
+            </span>
+            errors
+          </button>
+          <button
+            onClick={() => { recent.forEach((_, i) => onDismiss(errors.length - recent.length + i)); }}
+            className="text-ink-600 hover:text-ink-400 text-[10px] font-mono px-1 py-0.5 transition-colors"
+          >
+            clear all
+          </button>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1">
+          {recent.length > 1 && (
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={() => { recent.forEach((_, i) => onDismiss(errors.length - recent.length + i)); }}
+                className="text-ink-600 hover:text-ink-400 text-[10px] font-mono px-1 py-0.5 transition-colors"
+              >
+                clear all
+              </button>
+              <button
+                onClick={() => setCollapsed(true)}
+                className="text-ink-600 hover:text-ink-400 text-[10px] font-mono px-1 py-0.5 transition-colors"
+              >
+                collapse
+              </button>
             </div>
-          </div>
-        );
-      })}
+          )}
+          {recent.map((err, i) => {
+            const idx = errors.length - recent.length + i;
+            return (
+              <div
+                key={`${err.extensionPath}-${idx}`}
+                className="flex items-start gap-2 px-3 py-2 rounded-lg bg-ink-900/95 border border-rose-500/20"
+                role="alert"
+              >
+                <div className="shrink-0 mt-px w-1 h-1 rounded-full bg-rose-500" />
+                <div className="min-w-0 flex-1">
+                  <span className="text-ink-300 text-[11px] font-mono truncate" title={err.extensionPath}>
+                    {err.extensionPath.split("/").pop()}
+                  </span>
+                  <span className="text-ink-500 text-[11px] font-mono ml-1.5 line-clamp-1" title={err.error}>
+                    {err.error}
+                  </span>
+                </div>
+                <button
+                  onClick={() => onDismiss(idx)}
+                  className="shrink-0 text-ink-600 hover:text-ink-400 transition-colors p-0.5"
+                  aria-label="Dismiss"
+                >
+                  <svg width="8" height="8" viewBox="0 0 10 10" fill="none" className="stroke-current" strokeWidth="2" strokeLinecap="round">
+                    <path d="M1.5 1.5l7 7M8.5 1.5l-7 7" />
+                  </svg>
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

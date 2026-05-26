@@ -13,6 +13,29 @@ import { SessionActions } from "./SessionActions";
 import { CompactionIndicator } from "./CompactionIndicator";
 import { ExtensionErrorToast } from "./ExtensionErrorToast";
 
+// ─── Loading overlay: blurs chat + blocks interaction until PI is ready ───
+function SessionLoadingOverlay() {
+  return (
+    <div
+      className="absolute inset-0 z-[45] flex flex-col items-center justify-center bg-ink-950/70 backdrop-blur-md pointer-events-auto"
+      aria-busy="true"
+      aria-label="Starting PI"
+    >
+      <div className="flex flex-col items-center gap-4 animate-fade-in-up">
+        {/* Spinner ring */}
+        <div className="relative w-12 h-12">
+          <div className="absolute inset-0 rounded-full border-2 border-ink-700" />
+          <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-amber-500 animate-spin" />
+        </div>
+        <div className="text-center">
+          <p className="text-ink-200 text-sm font-medium tracking-wide">Starting PI…</p>
+          <p className="text-ink-500 text-xs font-mono mt-1">Loading session</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface ChatViewProps {
   ws: WSBridge;
   sessionDetail: { entries: SessionEntry[]; cwd: string } | null;
@@ -116,14 +139,16 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
     ws.setAutoCompaction(enabled);
   }, [ws]);
 
-  // Screen reader announcements for streaming state
+  // Screen reader announcements for streaming + loading state
   useEffect(() => {
-    if (ws.isStreaming) {
+    if (!ws.isConnected || !ws.state) {
+      setSrAnnouncement('Starting PI…');
+    } else if (ws.isStreaming) {
       setSrAnnouncement('PI is thinking...');
-    } else if (srAnnouncement) {
+    } else if (srAnnouncement && srAnnouncement !== 'Starting PI…') {
       setSrAnnouncement('PI responded');
     }
-  }, [ws.isStreaming]);
+  }, [ws.isConnected, ws.state, ws.isStreaming]);
 
   const liveMsg = ws.liveMessages.get("current");
   const cwd = sessionDetail?.cwd || project?.path || "";
@@ -205,6 +230,9 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
     return "";
   }, []);
 
+  // Determine if PI is still loading (not connected or no state received yet)
+  const isLoading = !ws.isConnected || !ws.state;
+
   const getTurnText = useCallback((turn: ChatMessage[]): string => {
     return turn.map(m => {
       const prefix = m.role === "user" ? "User" : m.role === "assistant" ? "Assistant" : m.role === "toolResult" ? `Tool (${m.toolName || "unknown"})` : m.role;
@@ -219,14 +247,24 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
       <div aria-live="polite" className="sr-only">{srAnnouncement}</div>
 
       {/* Main content row: chat area + git panel */}
-      <div className="flex-1 flex min-h-0 overflow-hidden">
+      <div className="flex-1 flex min-h-0 overflow-hidden relative">
+        {/* Loading overlay — blurs + blocks interaction until connected + state received */}
+        {isLoading && <SessionLoadingOverlay />}
+
         {/* Chat column */}
         <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
           <div
             ref={scrollRef}
             onScroll={handleScroll}
-            className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar px-3 md:px-5 pt-6 pb-4"
+            className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar px-3 md:px-5 pt-6 pb-4 relative"
           >
+        {/* Notification toast — absolute overlay pinned to top of scroll area */}
+        {ws.pendingNotification && (
+          <ExtensionUIModal
+            request={ws.pendingNotification}
+            onRespond={ws.dismissNotification}
+          />
+        )}
         <div ref={contentRef} className="max-w-3xl mx-auto space-y-4 md:space-y-5">
           {/* Load earlier messages */}
           {hasMoreHistory && (
@@ -358,6 +396,12 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
         onClose={() => setShowTerminal(false)}
       />
 
+      {/* Extension error toasts — inline above input */}
+      <ExtensionErrorToast
+        errors={extensionErrorList}
+        onDismiss={(idx) => setExtensionErrorList(prev => prev.filter((_, i) => i !== idx))}
+      />
+
       <ChatInput
         onSend={handleSend}
         onAbort={handleAbort}
@@ -390,14 +434,6 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
         />
       )}
 
-      {/* Extension UI Notifications — separate from dialogs so they don't overwrite each other */}
-      {ws.pendingNotification && (
-        <ExtensionUIModal
-          request={ws.pendingNotification}
-          onRespond={ws.dismissNotification}
-        />
-      )}
-
       {/* Session actions dropdown */}
       {showSessionActions && (
         <SessionActions
@@ -408,12 +444,6 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
           onClose={() => setShowSessionActions(false)}
         />
       )}
-
-      {/* Extension error toasts */}
-      <ExtensionErrorToast
-        errors={extensionErrorList}
-        onDismiss={(idx) => setExtensionErrorList(prev => prev.filter((_, i) => i !== idx))}
-      />
     </div>
   );
 }

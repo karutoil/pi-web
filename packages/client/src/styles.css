@@ -2,6 +2,7 @@
  * Z-index layers
  * z-30: sidebar overlays
  * z-40: dropdown menus (model selector, thinking level)
+ * z-45: session loading overlay (blurs + blocks chat)
  * z-50: context menus
  * z-60: modal backdrop
  * z-70: modal content
