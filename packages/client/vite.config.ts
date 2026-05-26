@@ -11,11 +11,11 @@ export default defineConfig({
     },
   },
   server: {
-    port: 3070,
+    port: parseInt(process.env.CLIENT_PORT || "3070", 10),
     proxy: {
-      "/api": "http://localhost:3069",
+      "/api": `http://localhost:${process.env.SERVER_PORT || "3069"}`,
       "/ws": {
-        target: "ws://localhost:3069",
+        target: `ws://localhost:${process.env.SERVER_PORT || "3069"}`,
         ws: true,
       },
     },

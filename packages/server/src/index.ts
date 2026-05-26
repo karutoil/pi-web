@@ -583,7 +583,13 @@ app.get(
             case "switch_session": agent.send({ type: "switch_session", sessionPath: (msg as any).sessionPath }); break;
             case "set_model": agent.send({ type: "set_model", provider: msg.provider, modelId: msg.modelId }); break;
             case "cycle_model": agent.send({ type: "cycle_model" }); break;
-            case "set_thinking": agent.send({ type: "set_thinking_level", level: msg.level }); break;
+            case "set_thinking": {
+              const level = msg.level;
+              // Optimistically broadcast so UI updates immediately
+              ws.send(JSON.stringify({ type: "thinking_changed", level }));
+              agent.send({ type: "set_thinking_level", level });
+              break;
+            }
             case "cycle_thinking_level": agent.send({ type: "cycle_thinking_level" }); break;
             case "fork": agent.send({ type: "fork", entryId: msg.entryId }); break;
             case "compact": agent.send({ type: "compact", ...(msg as any).customInstructions ? { customInstructions: (msg as any).customInstructions } : {} }); break;
@@ -701,7 +707,7 @@ app.get("*", async (c) => {
 });
 
 export default {
-  port: 3069,
+  port: parseInt(process.env.PORT || "3069", 10),
   fetch: app.fetch,
   websocket,
 };

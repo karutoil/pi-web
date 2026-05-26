@@ -11,7 +11,7 @@
     "dev:server": "bun run --cwd packages/server dev",
     "dev:client": "bun run --cwd packages/client dev",
     "build": "bun run --cwd packages/client build",
-    "start": "bun run packages/server/src/index.ts"
+    "start": "concurrently -n server,client -c blue,green \"PORT=3068 bun run dev:server\" \"SERVER_PORT=3068 CLIENT_PORT=3071 bun run dev:client\""
   },
   "devDependencies": {
     "@types/bun": "latest",
