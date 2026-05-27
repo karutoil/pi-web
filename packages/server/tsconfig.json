@@ -9,6 +9,7 @@
     "declaration": true,
     "declarationDir": "dist",
     "emitDeclarationOnly": true,
+    "outDir": "dist",
     "composite": true
   },
   "include": ["src"],

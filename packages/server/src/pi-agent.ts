@@ -174,6 +174,11 @@ export function detachFromAgent(agentKey: string, ws: ServerWebSocket) {
   if (agent) agent.detach(ws);
 }
 
+/** Delete an agent from the pool (#12: for cleanup on start failure) */
+export function deleteFromPool(agentKey: string) {
+  agentPool.delete(agentKey);
+}
+
 export function getPoolStats() {
   return {
     agents: agentPool.size,
@@ -193,23 +198,33 @@ export async function stopAllAgents() {
 // ─── PIAgent (internal, wraps PI RPC process) ───
 
 function createJsonlReader(stream: NodeJS.ReadableStream, onLine: (line: string) => void) {
-  let buffer = "";
+  // #13: Accumulate raw Buffer chunks, split on 0x0A newline byte,
+  // then decode each complete line to UTF-8. This prevents split-encoding
+  // corruption when multi-byte UTF-8 characters span chunk boundaries.
+  let buffer = Buffer.alloc(0);
   stream.on("data", (chunk: Buffer) => {
-    buffer += chunk.toString("utf-8");
+    buffer = Buffer.concat([buffer, chunk]);
     while (true) {
-      const idx = buffer.indexOf("\n");
+      const idx = buffer.indexOf(0x0A); // newline byte
       if (idx === -1) break;
-      let line = buffer.slice(0, idx);
+      let lineBuf = buffer.slice(0, idx);
       buffer = buffer.slice(idx + 1);
-      if (line.endsWith("\r")) line = line.slice(0, -1);
-      if (line.length > 0) onLine(line);
+      // Strip trailing CR if present
+      if (lineBuf.length > 0 && lineBuf[lineBuf.length - 1] === 0x0D) {
+        lineBuf = lineBuf.slice(0, -1);
+      }
+      if (lineBuf.length > 0) {
+        onLine(lineBuf.toString("utf-8"));
+      }
     }
   });
   stream.on("end", () => {
     if (buffer.length > 0) {
-      let line = buffer;
-      if (line.endsWith("\r")) line = line.slice(0, -1);
-      if (line.length > 0) onLine(line);
+      let lineBuf = buffer;
+      if (lineBuf.length > 0 && lineBuf[lineBuf.length - 1] === 0x0D) {
+        lineBuf = lineBuf.slice(0, -1);
+      }
+      if (lineBuf.length > 0) onLine(lineBuf.toString("utf-8"));
     }
   });
 }
@@ -253,9 +268,11 @@ class PIAgent {
     if (this.options.provider) args.push("--provider", this.options.provider);
     if (this.options.model) args.push("--model", this.options.model);
 
+    // #88: Use process.env.HOME for envPath instead of hardcoded paths
+    const home = process.env.HOME || process.env.USERPROFILE || "/root";
     const envPath = [
-      "/home/karutoil/.bun/bin",
-      "/home/karutoil/.nvm/versions/node/v22.22.2/bin",
+      join(home, ".bun/bin"),
+      join(home, ".nvm/versions/node/v22.22.2/bin"),
       "/usr/local/bin", "/usr/bin", "/bin",
       process.env.PATH || "",
     ].join(":");
@@ -583,16 +600,18 @@ class PIAgent {
     if (this.proc) {
       try { this.proc.stdin?.end(); } catch {}
       try { this.proc.kill("SIGTERM"); } catch {}
+      // #45: Remove listeners immediately after SIGTERM, before the 300ms sleep,
+      // to prevent old exit events from racing with new agent startup.
+      try {
+        this.proc.removeAllListeners();
+        this.proc.stdout?.removeAllListeners();
+        this.proc.stderr?.removeAllListeners();
+      } catch {}
       await new Promise(r => setTimeout(r, 300));
       try {
         if (this.proc && !this.proc.killed) {
           this.proc.kill("SIGKILL");
         }
-      } catch {}
-      try {
-        this.proc.removeAllListeners();
-        this.proc.stdout?.removeAllListeners();
-        this.proc.stderr?.removeAllListeners();
       } catch {}
       this.proc = null;
     }

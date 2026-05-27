@@ -143,6 +143,13 @@ export function Sidebar({
     return result;
   }, [groupedSessions]);
 
+  // Build id→index map for O(1) lookup instead of indexOf
+  const sessionIndexMap = useMemo(() => {
+    const map = new Map<string, number>();
+    flatSessions.forEach((s, i) => map.set(s.id, i));
+    return map;
+  }, [flatSessions]);
+
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (view !== "sessions" && view !== "chat") return;
     if (e.key === "ArrowDown") {
@@ -233,6 +240,7 @@ export function Sidebar({
             filteredSessions={filteredSessions}
             groupedSessions={groupedSessions}
             flatSessions={flatSessions}
+            sessionIndexMap={sessionIndexMap}
             activeSession={activeSession}
             focusedIdx={focusedIdx}
             search={sessionSearch}
@@ -380,6 +388,7 @@ function SessionList({
   filteredSessions,
   groupedSessions,
   flatSessions,
+  sessionIndexMap,
   activeSession,
   focusedIdx,
   search,
@@ -399,6 +408,7 @@ function SessionList({
   filteredSessions: SessionSummary[];
   groupedSessions: Record<DateGroup, SessionSummary[]>;
   flatSessions: SessionSummary[];
+  sessionIndexMap: Map<string, number>;
   activeSession: SessionSummary | null;
   focusedIdx: number;
   search: string;
@@ -493,7 +503,7 @@ function SessionList({
             </div>
             <div className="space-y-px">
               {items.map((s) => {
-                const globalIdx = flatSessions.indexOf(s);
+                const globalIdx = sessionIndexMap.get(s.id) ?? -1;
                 const isFocused = focusedIdx === globalIdx;
                 return (
                   <SessionItem

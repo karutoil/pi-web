@@ -10,6 +10,6 @@ export default defineConfig({
     globals: true,
   },
   resolve: {
-    alias: { '@pi-web/shared': path.resolve(__dirname, '../shared/src') },
+    alias: { '@pi-web/shared': path.resolve(__dirname, '../shared/src/index.ts') },
   },
 });

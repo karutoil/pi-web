@@ -161,7 +161,8 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
           // Fetch diff stats for each file
           const allFiles = [...(d.staged || []), ...(d.unstaged || [])];
           allFiles.forEach((f: GitFile) => {
-            fetch(`/api/git/diff-stats?cwd=${encodeURIComponent(cwd!)}&path=${encodeURIComponent(f.path)}&staged=false`)
+            const isStaged = (d.staged || []).some((sf: GitFile) => sf.path === f.path);
+            fetch(`/api/git/diff-stats?cwd=${encodeURIComponent(cwd!)}&path=${encodeURIComponent(f.path)}&staged=${isStaged}`)
               .then(r => r.json())
               .then(stats => {
                 setDiffStats(prev => new Map(prev).set(f.path, stats));
@@ -222,6 +223,7 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
 
   const handleDiscard = useCallback(async (path: string) => {
     if (!cwd) return;
+    if (!confirm(`Discard changes to ${path}? This cannot be undone.`)) return;
     await fetch("/api/git/discard", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd, path }) });
     refresh();
   }, [cwd, refresh]);
@@ -229,28 +231,43 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
   const handleCommit = useCallback(async () => {
     if (!cwd || !commitMsg.trim()) return;
     setCommitting(true);
-    const endpoint = amend ? "/api/git/amend" : "/api/git/commit";
-    const result = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd, message: commitMsg.trim() }) });
-    if (result.ok) { setCommitMsg(""); refresh(); }
-    setCommitting(false);
+    try {
+      const endpoint = amend ? "/api/git/amend" : "/api/git/commit";
+      const result = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd, message: commitMsg.trim() }) });
+      if (result.ok) { setCommitMsg(""); refresh(); }
+      else {
+        try { const d = await result.json(); setError(d.error || `Commit failed (${result.status})`); }
+        catch { setError(`Commit failed (${result.status})`); }
+      }
+    } catch (err) { setError(String(err)); }
+    finally { setCommitting(false); }
   }, [cwd, commitMsg, amend, refresh]);
 
   const handlePush = useCallback(async () => {
     if (!cwd) return;
-    await fetch("/api/git/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd }) });
-    refresh();
+    try {
+      const r = await fetch("/api/git/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd }) });
+      if (!r.ok) { try { const d = await r.json(); setError(d.error || `Push failed (${r.status})`); } catch { setError(`Push failed (${r.status})`); } }
+      else refresh();
+    } catch (err) { setError(String(err)); }
   }, [cwd, refresh]);
 
   const handlePull = useCallback(async () => {
     if (!cwd) return;
-    await fetch("/api/git/pull", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd }) });
-    refresh();
+    try {
+      const r = await fetch("/api/git/pull", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd }) });
+      if (!r.ok) { try { const d = await r.json(); setError(d.error || `Pull failed (${r.status})`); } catch { setError(`Pull failed (${r.status})`); } }
+      else refresh();
+    } catch (err) { setError(String(err)); }
   }, [cwd, refresh]);
 
   const handleFetch = useCallback(async () => {
     if (!cwd) return;
-    await fetch("/api/git/fetch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd }) });
-    refresh();
+    try {
+      const r = await fetch("/api/git/fetch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd }) });
+      if (!r.ok) { try { const d = await r.json(); setError(d.error || `Fetch failed (${r.status})`); } catch { setError(`Fetch failed (${r.status})`); } }
+      else refresh();
+    } catch (err) { setError(String(err)); }
   }, [cwd, refresh]);
 
   const handleViewDiff = useCallback(async (path: string, staged: boolean) => {
@@ -732,7 +749,7 @@ function FileRow({ file, stats, staged, selected, onStage, onUnstage, onDiscard,
 function formatRelativeDate(isoDate: string): string {
   const d = new Date(isoDate);
   const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
+  const diffMs = Math.max(0, now.getTime() - d.getTime());
   const diffMin = Math.floor(diffMs / 60000);
   if (diffMin < 1) return "just now";
   if (diffMin < 60) return `${diffMin}m ago`;

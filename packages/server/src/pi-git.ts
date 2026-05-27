@@ -1,4 +1,4 @@
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { join } from "node:path";
 
 // ─── Git API ───
@@ -54,26 +54,42 @@ export interface GitRemote {
   type: "fetch" | "push";
 }
 
-function runGit(cwd: string, ...args: string[]): string {
+// ─── Structured git result (#38) ───
+export interface GitResult {
+  ok: boolean;
+  stdout: string;
+  stderr?: string;
+}
+
+function runGit(cwd: string, ...args: string[]): GitResult {
   try {
-    // Escape args that contain special shell characters
-    const escapedArgs = args.map(a => /[%|;&<>()$`\!]/.test(a) ? `'${a.replace(/'/g, "'\\''")}'`  : a);
-    return execSync(`git ${escapedArgs.join(" ")}`, { cwd, encoding: "utf-8", maxBuffer: 5 * 1024 * 1024, stdio: ["pipe", "pipe", "pipe"] }).trim();
+    const stdout = execFileSync("git", args, {
+      cwd,
+      encoding: "utf-8",
+      maxBuffer: 5 * 1024 * 1024,
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim();
+    return { ok: true, stdout };
   } catch (e: any) {
-    return "";
+    return { ok: false, stdout: "", stderr: e.stderr?.toString()?.trim() || e.message };
   }
+}
+
+/** Convenience: return just the stdout string (empty on failure) */
+function runGitStr(cwd: string, ...args: string[]): string {
+  return runGit(cwd, ...args).stdout;
 }
 
 export function getGitStatus(cwd: string): GitStatus | null {
   // Check if it's a git repo
-  if (!runGit(cwd, "rev-parse", "--is-inside-work-tree")) return null;
+  if (!runGitStr(cwd, "rev-parse", "--is-inside-work-tree")) return null;
 
-  const branch = runGit(cwd, "rev-parse", "--abbrev-ref", "HEAD") || "HEAD";
-  const tracking = runGit(cwd, "rev-parse", "--abbrev-ref", "@{upstream}") || "";
+  const branch = runGitStr(cwd, "rev-parse", "--abbrev-ref", "HEAD") || "HEAD";
+  const tracking = runGitStr(cwd, "rev-parse", "--abbrev-ref", "@{upstream}") || "";
   
   let ahead = 0, behind = 0;
   if (tracking) {
-    const abRaw = runGit(cwd, "rev-list", "--left-right", "--count", `${tracking}...HEAD`);
+    const abRaw = runGitStr(cwd, "rev-list", "--left-right", "--count", `${tracking}...HEAD`);
     if (abRaw) {
       const [b, a] = abRaw.split("\t").map(Number);
       behind = b || 0;
@@ -82,7 +98,7 @@ export function getGitStatus(cwd: string): GitStatus | null {
   }
 
   // Porcelain status
-  const raw = runGit(cwd, "status", "--porcelain=v2", "--branch", "--renames");
+  const raw = runGitStr(cwd, "status", "--porcelain=v2", "--branch", "--renames");
   const staged: GitFile[] = [];
   const unstaged: GitFile[] = [];
   const untracked: string[] = [];
@@ -128,38 +144,37 @@ export function getGitStatus(cwd: string): GitStatus | null {
   }
 
   // Stash count
-  const stashList = runGit(cwd, "stash", "list");
+  const stashList = runGitStr(cwd, "stash", "list");
   const stashCount = stashList ? stashList.split("\n").length : 0;
 
   // HEAD commit
-  const headCommit = runGit(cwd, "rev-parse", "--short", "HEAD") || null;
-  const headMessage = headCommit ? runGit(cwd, "log", "-1", "--format=%s") : null;
+  const headCommit = runGitStr(cwd, "rev-parse", "--short", "HEAD") || null;
+  const headMessage = headCommit ? runGitStr(cwd, "log", "-1", "--format=%s") : null;
 
   return { branch, ahead, behind, staged, unstaged, untracked, stashCount, headCommit, headMessage };
 }
 
 export function getGitDiff(cwd: string, path: string, staged: boolean): string {
   if (staged) {
-    return runGit(cwd, "diff", "--cached", "--", path);
+    return runGitStr(cwd, "diff", "--cached", "--", path);
   }
-  return runGit(cwd, "diff", "--", path);
+  return runGitStr(cwd, "diff", "--", path);
 }
 
-export function gitStage(cwd: string, path: string): boolean {
-  return !!runGit(cwd, "add", "--", path);
+export function gitStage(cwd: string, path: string): GitResult {
+  return runGit(cwd, "add", "--", path);
 }
 
-export function gitUnstage(cwd: string, path: string): boolean {
-  return !!runGit(cwd, "reset", "HEAD", "--", path);
+export function gitUnstage(cwd: string, path: string): GitResult {
+  return runGit(cwd, "reset", "HEAD", "--", path);
 }
 
-export function gitCommit(cwd: string, message: string): string | null {
-  const result = runGit(cwd, "commit", "-m", JSON.stringify(message));
-  return result || null;
+export function gitCommit(cwd: string, message: string): GitResult {
+  return runGit(cwd, "commit", "-m", message);
 }
 
 export function gitLog(cwd: string, count: number = 50): GitLogEntry[] {
-  const raw = runGit(cwd, "log", `--max-count=${count}`, "--format=%H|%h|%an|%aI|%s%d");
+  const raw = runGitStr(cwd, "log", `--max-count=${count}`, "--format=%H|%h|%an|%aI|%s%d");
   if (!raw) return [];
   return raw.split("\n").map(line => {
     const [hash, shortHash, author, date, ...msgParts] = line.split("|");
@@ -167,70 +182,73 @@ export function gitLog(cwd: string, count: number = 50): GitLogEntry[] {
   });
 }
 
-export function gitCheckout(cwd: string, branch: string): string {
-  return runGit(cwd, "checkout", branch);
+// #38/#40: checkout now uses -- separator before user-controlled branch
+export function gitCheckout(cwd: string, branch: string): GitResult {
+  return runGit(cwd, "checkout", "--", branch);
 }
 
 export function gitDiscard(cwd: string, path: string): string {
   // Discard working tree changes
-  return runGit(cwd, "checkout", "--", path);
+  return runGitStr(cwd, "checkout", "--", path);
 }
 
 export function gitBranches(cwd: string): string[] {
-  const raw = runGit(cwd, "branch", "--format=%(refname:short)");
+  const raw = runGitStr(cwd, "branch", "--format=%(refname:short)");
   return raw ? raw.split("\n") : [];
 }
 
 // ── Push / Pull / Sync ──
 
-export function gitPush(cwd: string): string {
+export function gitPush(cwd: string): GitResult {
   return runGit(cwd, "push");
 }
 
-export function gitPull(cwd: string): string {
+export function gitPull(cwd: string): GitResult {
   return runGit(cwd, "pull");
 }
 
-export function gitFetch(cwd: string): string {
+export function gitFetch(cwd: string): GitResult {
   return runGit(cwd, "fetch");
 }
 
 // ── Branch operations ──
 
-export function gitCreateBranch(cwd: string, name: string, checkout: boolean = true): string {
-  const result = runGit(cwd, "branch", name);
-  if (checkout && result !== undefined) return runGit(cwd, "checkout", name);
+// #38: branch creation + checkout use -- separator
+export function gitCreateBranch(cwd: string, name: string, checkout: boolean = true): GitResult {
+  const result = runGit(cwd, "branch", "--", name);
+  if (checkout && result.ok) return runGit(cwd, "checkout", "--", name);
   return result;
 }
 
-export function gitDeleteBranch(cwd: string, name: string): string {
-  return runGit(cwd, "branch", "-d", name);
+// #38: deleteBranch uses -- separator
+export function gitDeleteBranch(cwd: string, name: string): GitResult {
+  return runGit(cwd, "branch", "-d", "--", name);
 }
 
-export function gitRenameBranch(cwd: string, oldName: string, newName: string): string {
-  return runGit(cwd, "branch", "-m", oldName, newName);
+export function gitRenameBranch(cwd: string, oldName: string, newName: string): GitResult {
+  return runGit(cwd, "branch", "-m", "--", oldName, newName);
 }
 
 // ── Tag operations ──
 
 export function gitTags(cwd: string): string[] {
-  const raw = runGit(cwd, "tag", "--sort=-creatordate");
+  const raw = runGitStr(cwd, "tag", "--sort=-creatordate");
   return raw ? raw.split("\n") : [];
 }
 
-export function gitCreateTag(cwd: string, name: string, message?: string): string {
-  if (message) return runGit(cwd, "tag", "-a", name, "-m", JSON.stringify(message));
-  return runGit(cwd, "tag", name);
+export function gitCreateTag(cwd: string, name: string, message?: string): GitResult {
+  if (message) return runGit(cwd, "tag", "-a", "--", name, "-m", message);
+  return runGit(cwd, "tag", "--", name);
 }
 
-export function gitDeleteTag(cwd: string, name: string): string {
-  return runGit(cwd, "tag", "-d", name);
+export function gitDeleteTag(cwd: string, name: string): GitResult {
+  return runGit(cwd, "tag", "-d", "--", name);
 }
 
 // ── Stash operations ──
 
 export function gitStashList(cwd: string): GitStashEntry[] {
-  const raw = runGit(cwd, "stash", "list");
+  const raw = runGitStr(cwd, "stash", "list");
   if (!raw) return [];
   return raw.split("\n").map((line, idx) => {
     // Format: stash@{0}: On branch: message
@@ -243,48 +261,49 @@ export function gitStashList(cwd: string): GitStashEntry[] {
   });
 }
 
-export function gitStashPush(cwd: string, message?: string): string {
-  if (message) return runGit(cwd, "stash", "push", "-m", JSON.stringify(message));
+export function gitStashPush(cwd: string, message?: string): GitResult {
+  if (message) return runGit(cwd, "stash", "push", "-m", message);
   return runGit(cwd, "stash", "push");
 }
 
-export function gitStashPop(cwd: string, index?: number): string {
+export function gitStashPop(cwd: string, index?: number): GitResult {
   if (index !== undefined) return runGit(cwd, "stash", "pop", `stash@{${index}}`);
   return runGit(cwd, "stash", "pop");
 }
 
-export function gitStashApply(cwd: string, index?: number): string {
+export function gitStashApply(cwd: string, index?: number): GitResult {
   if (index !== undefined) return runGit(cwd, "stash", "apply", `stash@{${index}}`);
   return runGit(cwd, "stash", "apply");
 }
 
-export function gitStashDrop(cwd: string, index: number): string {
+export function gitStashDrop(cwd: string, index: number): GitResult {
   return runGit(cwd, "stash", "drop", `stash@{${index}}`);
 }
 
 // ── Amend commit ──
 
-export function gitAmend(cwd: string, message?: string): string {
-  if (message) return runGit(cwd, "commit", "--amend", "-m", JSON.stringify(message));
+export function gitAmend(cwd: string, message?: string): GitResult {
+  if (message) return runGit(cwd, "commit", "--amend", "-m", message);
   return runGit(cwd, "commit", "--amend", "--no-edit");
 }
 
 // ── Cherry-pick / Revert ──
 
-export function gitCherryPick(cwd: string, hash: string): string {
-  return runGit(cwd, "cherry-pick", hash);
+// #38: cherry-pick and revert use -- separator before hash
+export function gitCherryPick(cwd: string, hash: string): GitResult {
+  return runGit(cwd, "cherry-pick", "--", hash);
 }
 
-export function gitRevert(cwd: string, hash: string, noCommit: boolean = false): string {
+export function gitRevert(cwd: string, hash: string, noCommit: boolean = false): GitResult {
   const args = ["revert"];
   if (noCommit) args.push("--no-commit");
-  args.push(hash);
+  args.push("--", hash);
   return runGit(cwd, ...args);
 }
 
 // ── Merge conflict resolution ──
 
-export function gitResolveConflict(cwd: string, path: string, strategy: "ours" | "theirs" | "both" | "none"): string {
+export function gitResolveConflict(cwd: string, path: string, strategy: "ours" | "theirs" | "both" | "none"): GitResult {
   if (strategy === "ours") {
     runGit(cwd, "checkout", "--ours", "--", path);
     return runGit(cwd, "add", "--", path);
@@ -304,8 +323,8 @@ export function gitResolveConflict(cwd: string, path: string, strategy: "ours" |
 
 export function getGitDiffStats(cwd: string, path: string, staged: boolean): GitDiffStats {
   const raw = staged
-    ? runGit(cwd, "diff", "--cached", "--numstat", "--", path)
-    : runGit(cwd, "diff", "--numstat", "--", path);
+    ? runGitStr(cwd, "diff", "--cached", "--numstat", "--", path)
+    : runGitStr(cwd, "diff", "--numstat", "--", path);
   
   if (!raw) return { additions: 0, deletions: 0 };
   const [add, del] = raw.split("\t").map(Number);
@@ -315,19 +334,20 @@ export function getGitDiffStats(cwd: string, path: string, staged: boolean): Git
 // ── Compare with previous commit ──
 
 export function gitDiffWithRef(cwd: string, path: string, ref: string): string {
-  return runGit(cwd, "diff", ref, "--", path);
+  return runGitStr(cwd, "diff", ref, "--", path);
 }
 
 // ── Commit diff (show full commit) ──
 
-export function gitShowCommit(cwd: string, hash: string): string {
-  return runGit(cwd, "show", "--stat", "-p", hash);
+// #38: show uses -- separator before hash
+export function gitShowCommit(cwd: string, hash: string): GitResult {
+  return runGit(cwd, "show", "--stat", "-p", "--", hash);
 }
 
 // ── Commit search ──
 
 export function gitLogSearch(cwd: string, query: string, count: number = 50): GitLogEntry[] {
-  const raw = runGit(cwd, "log", `--max-count=${count}`, `--grep=${query}`, "--format=%H|%h|%an|%aI|%s%d");
+  const raw = runGitStr(cwd, "log", `--max-count=${count}`, `--grep=${query}`, "--format=%H|%h|%an|%aI|%s%d");
   if (!raw) return [];
   return raw.split("\n").map(line => {
     const [hash, shortHash, author, date, ...msgParts] = line.split("|");
@@ -346,7 +366,7 @@ export interface GitBlameLine {
 }
 
 export function gitBlame(cwd: string, path: string): GitBlameLine[] {
-  const raw = runGit(cwd, "blame", "--porcelain", "--", path);
+  const raw = runGitStr(cwd, "blame", "--porcelain", "--", path);
   if (!raw) return [];
   
   const lines: GitBlameLine[] = [];
@@ -385,7 +405,7 @@ export function gitBlame(cwd: string, path: string): GitBlameLine[] {
 // ── Remotes ──
 
 export function gitRemotes(cwd: string): GitRemote[] {
-  const raw = runGit(cwd, "remote", "-v");
+  const raw = runGitStr(cwd, "remote", "-v");
   if (!raw) return [];
   const remotes: GitRemote[] = [];
   for (const line of raw.split("\n")) {
@@ -397,6 +417,6 @@ export function gitRemotes(cwd: string): GitRemote[] {
 
 // ── Unstage all ──
 
-export function gitUnstageAll(cwd: string): string {
+export function gitUnstageAll(cwd: string): GitResult {
   return runGit(cwd, "reset", "HEAD");
 }

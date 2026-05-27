@@ -4,12 +4,7 @@ import type { AutoRetryState } from "../lib/types";
 import { CommandCompleter } from "./CommandCompleter";
 import { Icon } from "./Icon";
 import { compressImage } from "../lib/imageUtils";
-
-/** Strip ANSI escape sequences */
-function stripAnsi(text: string): string {
-  // eslint-disable-next-line no-control-regex
-  return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "").replace(/\x1b\].*?\x07/g, "");
-}
+import { stripAnsi } from "../lib/stripAnsi";
 
 interface ChatInputProps {
   onSend: (text: string, images?: { data: string; mimeType: string }[]) => void;
@@ -39,13 +34,17 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
   useEffect(() => { textRef.current = text; }, [text]);
   const pendingImagesRef = useRef(pendingImages);
   useEffect(() => { pendingImagesRef.current = pendingImages; }, [pendingImages]);
+  const disabledRef = useRef(disabled);
+  useEffect(() => { disabledRef.current = disabled; }, [disabled]);
+  const mountedRef = useRef(true);
+  useEffect(() => { return () => { mountedRef.current = false; }; }, []);
 
   const slashIndex = text.lastIndexOf("/");
   const commandFilter = (showCommands && slashIndex >= 0) ? text.slice(slashIndex + 1) : "";
 
   const handleSend = useCallback(() => {
     const trimmed = textRef.current.trim();
-    if ((!trimmed && pendingImagesRef.current.length === 0) || disabled) return;
+    if ((!trimmed && pendingImagesRef.current.length === 0) || disabledRef.current) return;
     onSend(trimmed, pendingImagesRef.current.length > 0 ? pendingImagesRef.current : undefined);
     setText("");
     setPendingImages([]);
@@ -88,6 +87,7 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
         compressImage(blob).then((compressed) => {
           const reader = new FileReader();
           reader.onload = () => {
+            if (!mountedRef.current) return;
             const base64 = (reader.result as string).split(",")[1];
             setPendingImages(prev => [...prev, { data: base64, mimeType: compressed.type || "image/jpeg" }]);
           };

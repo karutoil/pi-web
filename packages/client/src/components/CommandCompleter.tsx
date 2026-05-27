@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import type { CommandInfo } from "@pi-web/shared";
 
 interface Props {
@@ -9,6 +9,8 @@ interface Props {
 }
 
 export function CommandCompleter({ commands, filter, onSelect, onClose }: Props) {
+  const [activeIdx, setActiveIdx] = useState(0);
+
   const filtered = useMemo(() => {
     if (!filter) return commands.slice(0, 12);
     const q = filter.toLowerCase();
@@ -16,6 +18,21 @@ export function CommandCompleter({ commands, filter, onSelect, onClose }: Props)
       .filter(c => c.name.toLowerCase().includes(q) || c.description?.toLowerCase().includes(q))
       .slice(0, 12);
   }, [commands, filter]);
+
+  // Reset active index when filter changes
+  useEffect(() => { setActiveIdx(0); }, [filter]);
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "ArrowDown") { e.preventDefault(); setActiveIdx(i => Math.min(i + 1, Math.max(filtered.length - 1, 0))); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); setActiveIdx(i => Math.max(i - 1, 0)); }
+      else if (e.key === "Enter" && filtered[activeIdx]) { e.preventDefault(); onSelect(filtered[activeIdx].name); onClose(); }
+      else if (e.key === "Escape") { onClose(); }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [filtered, activeIdx, onSelect, onClose]);
 
   if (filtered.length === 0) {
     return (
@@ -37,11 +54,13 @@ export function CommandCompleter({ commands, filter, onSelect, onClose }: Props)
       <div className="px-3 py-1.5 text-ink-500 text-[0.65rem] font-mono uppercase tracking-wider border-b border-ink-800">
         Commands {filter ? `matching "${filter}"` : ""}
       </div>
-      {filtered.map(c => (
+      {filtered.map((c, i) => (
         <button
           key={c.name}
           onClick={() => onSelect(c.name)}
-          className="w-full text-left px-3 py-2 hover:bg-ink-850 transition-theme flex items-start gap-2 min-h-[44px]"
+          className={`w-full text-left px-3 py-2 hover:bg-ink-850 transition-theme flex items-start gap-2 min-h-[44px] ${
+            i === activeIdx ? "bg-ink-850" : ""
+          }`}
         >
           <span className="text-xs shrink-0 mt-0.5">{sourceIcons[c.source] || "•"}</span>
           <div className="min-w-0">

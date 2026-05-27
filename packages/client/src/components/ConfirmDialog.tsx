@@ -72,6 +72,7 @@ export function ConfirmDialog({
             <button
               onClick={onConfirm}
               className="px-3 py-1.5 min-h-[44px] bg-amber-600/90 hover:bg-amber-500 text-ink-950 text-xs font-medium rounded-md transition-theme"
+              autoFocus
             >
               {confirmLabel}
             </button>

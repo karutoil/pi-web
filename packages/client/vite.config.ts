@@ -7,11 +7,13 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
-      "@pi-web/shared": path.resolve(__dirname, "../shared/src/index.ts"),
+      // Intentionally points to TypeScript source for HMR during development.
+      // Production builds use the compiled dist/ via workspace resolution.
+      '@pi-web/shared': path.resolve(__dirname, '../shared/src/index.ts'),
     },
   },
   server: {
-    port: parseInt(process.env.CLIENT_PORT || "3070", 10),
+    port: parseInt(process.env.CLIENT_PORT || "3070", 10) || 3070,
     proxy: {
       "/api": `http://localhost:${process.env.SERVER_PORT || "3069"}`,
       "/ws": {

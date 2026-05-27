@@ -222,7 +222,10 @@ export function GitLog({ cwd, onRefresh }: GitLogProps) {
     return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
   }, [searchQuery, cwd]);
 
-  // Expand commit → fetch diff
+  // Expand commit → fetch diff (with race protection)
+  const expandedHashRef = useRef<string | null>(null);
+  useEffect(() => { expandedHashRef.current = expandedHash; }, [expandedHash]);
+
   const handleExpand = useCallback(async (entry: GitLogEntry) => {
     if (expandedHash === entry.hash) {
       setExpandedHash(null);
@@ -235,11 +238,18 @@ export function GitLog({ cwd, onRefresh }: GitLogProps) {
     try {
       const r = await fetch(`/api/git/show?cwd=${encodeURIComponent(cwd)}&hash=${encodeURIComponent(entry.hash)}`);
       const d = await r.json();
-      setCommitDiff(d.diff || "");
+      // Verify this is still the expanded commit before updating state
+      if (expandedHashRef.current === entry.hash) {
+        setCommitDiff(d.diff || "");
+      }
     } catch {
-      setCommitDiff("Failed to load diff");
+      if (expandedHashRef.current === entry.hash) {
+        setCommitDiff("Failed to load diff");
+      }
     } finally {
-      setDiffLoading(false);
+      if (expandedHashRef.current === entry.hash) {
+        setDiffLoading(false);
+      }
     }
   }, [cwd, expandedHash]);
 
@@ -304,7 +314,7 @@ export function GitLog({ cwd, onRefresh }: GitLogProps) {
   // Keyboard shortcut: / to focus search
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "/" && !expandedHash && document.activeElement?.tagName !== "INPUT" && document.activeElement?.tagName !== "TEXTAREA") {
+      if (e.key === "/" && !expandedHash && document.activeElement?.tagName !== "INPUT" && document.activeElement?.tagName !== "TEXTAREA" && !(document.activeElement as HTMLElement)?.isContentEditable) {
         e.preventDefault();
         searchInputRef.current?.focus();
       }
@@ -423,7 +433,7 @@ export function GitLog({ cwd, onRefresh }: GitLogProps) {
 function formatRelativeDate(isoDate: string): string {
   const d = new Date(isoDate);
   const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
+  const diffMs = Math.max(0, now.getTime() - d.getTime());
   const diffMin = Math.floor(diffMs / 60000);
   if (diffMin < 1) return "just now";
   if (diffMin < 60) return `${diffMin}m ago`;

@@ -9,7 +9,6 @@ interface Props {
 
 export function ExtensionUIModal({ request, onRespond }: Props) {
   const [value, setValue] = useState(request.prefill || "");
-  const [selected, setSelected] = useState<string | undefined>(undefined);
   const inputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -47,11 +46,7 @@ export function ExtensionUIModal({ request, onRespond }: Props) {
               <button
                 key={opt}
                 onClick={() => onRespond({ value: opt })}
-                className={`w-full text-left px-3 py-2 rounded text-sm transition-theme ${
-                  selected === opt
-                    ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
-                    : "hover:bg-ink-850 text-ink-300"
-                }`}
+                className="w-full text-left px-3 py-2 rounded text-sm transition-theme hover:bg-ink-850 text-ink-300"
               >
                 {opt}
               </button>
@@ -143,6 +138,8 @@ export function ExtensionUIModal({ request, onRespond }: Props) {
             </div>
           </div>
         );
+      default:
+        return <div className="text-ink-500 text-sm">Unknown dialog type: {request.method}</div>;
     }
   };
 

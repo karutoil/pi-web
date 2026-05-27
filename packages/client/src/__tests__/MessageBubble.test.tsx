@@ -43,7 +43,7 @@ vi.mock('rehype-sanitize', () => ({ default: () => {} }));
 const userMessage: ChatMessage = {
   role: 'user',
   content: 'Hello, PI!',
-  timestamp: Date.now(),
+  timestamp: new Date().toISOString(),
 };
 
 const assistantMessage: ChatMessage = {
@@ -51,7 +51,7 @@ const assistantMessage: ChatMessage = {
   content: [{ type: 'text', text: 'Hi there!' }],
   model: 'claude-3',
   usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 },
-  timestamp: Date.now(),
+  timestamp: new Date().toISOString(),
 };
 
 const assistantWithThinking: ChatMessage = {
@@ -61,7 +61,7 @@ const assistantWithThinking: ChatMessage = {
     { type: 'text', text: 'Here is my answer.' },
   ],
   model: 'claude-3',
-  timestamp: Date.now(),
+  timestamp: new Date().toISOString(),
 };
 
 const toolResultMessage: ChatMessage = {
@@ -69,7 +69,7 @@ const toolResultMessage: ChatMessage = {
   content: 'file contents here',
   toolName: 'read',
   toolCallId: 'tc1',
-  timestamp: Date.now(),
+  timestamp: new Date().toISOString(),
 };
 
 const bashMessage: ChatMessage = {
@@ -78,13 +78,13 @@ const bashMessage: ChatMessage = {
   command: 'ls -la',
   output: 'file1.txt\nfile2.txt',
   exitCode: 0,
-  timestamp: Date.now(),
+  timestamp: new Date().toISOString(),
 };
 
 const systemMessage: ChatMessage = {
   role: 'compactionSummary',
   content: 'Context was compacted',
-  timestamp: Date.now(),
+  timestamp: new Date().toISOString(),
 };
 
 const abortedMessage: ChatMessage = {
@@ -92,7 +92,7 @@ const abortedMessage: ChatMessage = {
   content: [{ type: 'text', text: 'Partial...' }],
   stopReason: 'aborted',
   model: 'claude-3',
-  timestamp: Date.now(),
+  timestamp: new Date().toISOString(),
 };
 
 const erroredToolResult: ChatMessage = {
@@ -101,7 +101,7 @@ const erroredToolResult: ChatMessage = {
   toolName: 'bash',
   toolCallId: 'tc2',
   isError: true,
-  timestamp: Date.now(),
+  timestamp: new Date().toISOString(),
 };
 
 const defaultProps = {
@@ -179,7 +179,7 @@ describe('MessageBubble', () => {
       role: 'assistant',
       content: [{ type: 'toolCall', id: 'tc1', name: 'read', arguments: { path: 'foo.ts' } }],
       model: 'claude-3',
-      timestamp: Date.now(),
+      timestamp: new Date().toISOString(),
     };
     const toolResultsMap = new Map([['tc1', toolResultMessage]]);
     render(<MessageBubble message={assistantWithToolCall} {...defaultProps} toolResultsMap={toolResultsMap} />);
@@ -222,8 +222,6 @@ describe('MessageBubble', () => {
   });
 
   it('does not show context menu for tool results', () => {
-    render(<MessageBubble message={toolResultMessage} {...defaultProps} />);
-    // Tool result should not trigger context menu
     const { container } = render(<MessageBubble message={toolResultMessage} {...defaultProps} />);
     expect(container.querySelector('[data-testid="context-menu"]')).not.toBeInTheDocument();
   });

@@ -36,21 +36,23 @@ export function GitBranchSelector({ cwd, currentBranch, ahead, behind, onRefresh
   // Fetch branches, tags, remotes when dropdown opens
   useEffect(() => {
     if (!open) return;
+    const ctrl = new AbortController();
     const enc = encodeURIComponent(cwd);
-    fetch(`/api/git/branches?cwd=${enc}`)
+    fetch(`/api/git/branches?cwd=${enc}`, { signal: ctrl.signal })
       .then(r => r.json())
       .then(d => { if (d.branches) setBranches(d.branches); })
       .catch(() => {});
-    fetch(`/api/git/tags?cwd=${enc}`)
+    fetch(`/api/git/tags?cwd=${enc}`, { signal: ctrl.signal })
       .then(r => r.json())
       .then(d => { if (d.tags) setTags(d.tags); })
       .catch(() => {});
-    fetch(`/api/git/remotes?cwd=${enc}`)
+    fetch(`/api/git/remotes?cwd=${enc}`, { signal: ctrl.signal })
       .then(r => r.json())
       .then(d => { if (d.remotes) setRemotes(d.remotes); })
       .catch(() => {});
     setCreateInput("");
     setError(null);
+    return () => ctrl.abort();
   }, [open, cwd]);
 
   // Focus create input when dropdown opens

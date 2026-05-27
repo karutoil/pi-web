@@ -13,7 +13,7 @@ export function EmptyState({ projects, onSelectProject, onAddProject }: EmptySta
       <div className="max-w-md w-full text-center animate-fade-in-up">
         {/* Logo */}
         <div className="mb-8">
-          <img src="/pi-logo.svg" alt="PI" width="80" height="80" className="mx-auto w-16 h-16 md:w-20 md:h-20" />
+          <img src="/pi-logo.svg" alt="PI" className="mx-auto w-16 h-16 md:w-20 md:h-20" />
         </div>
 
         <h1 className="text-2xl md:text-3xl font-semibold text-ink-100 mb-3 tracking-tight">

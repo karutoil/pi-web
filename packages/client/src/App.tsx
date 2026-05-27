@@ -8,6 +8,9 @@ import { EmptyState } from "./components/EmptyState";
 import { useWebSocketPool } from "./hooks/useWebSocketPool";
 import { useTheme } from "./hooks/useTheme";
 import { useIsMobile } from "./hooks/useIsMobile";
+import { uuidV4 } from "./lib/uuid";
+
+const MAX_SESSION_CACHE = 50;
 
 export type ViewState = "projects" | "sessions" | "chat";
 
@@ -23,12 +26,25 @@ export default function App() {
   const [isAddingProject, setIsAddingProject] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
   useEffect(() => {
-    setShowSidebar(window.innerWidth >= 768);
+    setShowSidebar(typeof window !== "undefined" ? window.innerWidth >= 768 : false);
   }, []);
   const isMobile = useIsMobile();
 
-  // Session detail cache with 30s TTL
+  // Session detail cache with 30s TTL (capped at MAX_SESSION_CACHE entries)
   const sessionCacheRef = useRef<Map<string, { data: SessionDetail; timestamp: number }>>(new Map());
+
+  // AbortController for fetchSessions — aborts previous in-flight request (#29)
+  const fetchSessionsAbortRef = useRef<AbortController | null>(null);
+  // AbortController for session detail fetch — aborts previous in-flight request (#30)
+  const sessionDetailAbortRef = useRef<AbortController | null>(null);
+  // Timer refs for setTimeout callbacks — cleared on unmount (#62)
+  const timersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+
+  function safeTimeout(fn: () => void, ms: number): ReturnType<typeof setTimeout> {
+    const id = setTimeout(fn, ms);
+    timersRef.current.add(id);
+    return id;
+  }
 
   // WebSocket pool — multiple concurrent connections, agents keep streaming when navigating away
   const wsPool = useWebSocketPool();
@@ -39,6 +55,16 @@ export default function App() {
     null, // sessionPath — switching handled via loadSession command
     newSessionId,
   );
+
+  // #3 — Disconnect old WS connection when key changes
+  const prevWsKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    const currentKey = ws?.key ?? null;
+    if (prevWsKeyRef.current && prevWsKeyRef.current !== currentKey) {
+      wsPool.disconnect(prevWsKeyRef.current);
+    }
+    prevWsKeyRef.current = currentKey;
+  }, [ws?.key, wsPool]);
 
   // Compute which sessions are actively streaming from the pool
   // Must be inline (not useMemo) — pool is a ref Map, its identity never changes,
@@ -125,22 +151,29 @@ export default function App() {
   // Fetch sessions for selected project
   const fetchSessions = useCallback(() => {
     if (!selectedProject) return;
-    fetch(`/api/projects/${selectedProject.id}/sessions`)
+    // Abort previous in-flight request (#29)
+    fetchSessionsAbortRef.current?.abort();
+    const ctrl = new AbortController();
+    fetchSessionsAbortRef.current = ctrl;
+    fetch(`/api/projects/${selectedProject.id}/sessions`, { signal: ctrl.signal })
       .then(r => r.json())
       .then(d => setSessions(d.sessions || []))
-      .catch(console.error);
+      .catch(e => { if (e instanceof DOMException && e.name === 'AbortError') return; console.error(e); });
   }, [selectedProject]);
 
   // Refresh sessions when agent finishes a run
   const prevStreaming = useRef(false);
   useEffect(() => {
     if (prevStreaming.current && !ws?.isStreaming) {
-      setTimeout(() => fetchSessions(), 800);
+      safeTimeout(() => fetchSessions(), 800);
     }
     prevStreaming.current = ws?.isStreaming || false;
   }, [ws?.isStreaming, fetchSessions]);
 
-  // Invalidate session cache when streaming ends (agent_end)
+  // #27 — Clear session cache when project changes
+  useEffect(() => {
+    sessionCacheRef.current.clear();
+  }, [selectedProject?.id]);
   const prevWsStreaming = useRef(false);
   useEffect(() => {
     if (prevWsStreaming.current && !ws?.isStreaming && activeSession) {
@@ -168,13 +201,13 @@ export default function App() {
     setActiveSession(null);
     setSessionDetail(null);
     setView("sessions");
-    if (isMobile) setTimeout(() => setShowSidebar(false), 150);
+    if (isMobile) safeTimeout(() => setShowSidebar(false), 150);
   }, [isMobile]);
 
   const handleSelectSession = useCallback(async (session: SessionSummary) => {
     setActiveSession(session);
     setView("chat");
-    if (isMobile) setTimeout(() => setShowSidebar(false), 150);
+    if (isMobile) safeTimeout(() => setShowSidebar(false), 150);
 
     // If we have an existing project connection, reuse it — just load the session
     if (ws && ws.isConnected) {
@@ -187,15 +220,23 @@ export default function App() {
       setSessionDetail(cached.data);
     } else {
       try {
-        const r = await fetch(`/api/sessions/detail?path=${encodeURIComponent(session.filePath)}`);
+        // Abort previous session detail fetch (#30)
+        sessionDetailAbortRef.current?.abort();
+        const ctrl = new AbortController();
+        sessionDetailAbortRef.current = ctrl;
+        const r = await fetch(`/api/sessions/detail?path=${encodeURIComponent(session.filePath)}`, { signal: ctrl.signal });
         const d = await r.json();
         const detail = d.session || null;
         setSessionDetail(detail);
         if (detail) {
-          sessionCacheRef.current.set(session.filePath, {
-            data: detail,
-            timestamp: Date.now(),
-          });
+          // #27 — Cap session cache to MAX_SESSION_CACHE entries
+          const cache = sessionCacheRef.current;
+          if (cache.size >= MAX_SESSION_CACHE) {
+            // Evict oldest entry
+            const firstKey = cache.keys().next().value;
+            if (firstKey) cache.delete(firstKey);
+          }
+          cache.set(session.filePath, { data: detail, timestamp: Date.now() });
         }
       } catch (e) {
         console.error("Failed to load session detail:", e);
@@ -220,16 +261,17 @@ export default function App() {
       setSessionDetail(null);
     } else {
       // Fallback: create a fresh connection (no existing agent)
-      const id = crypto.randomUUID();
+      const id = uuidV4();
       setNewSessionId(id);
       setActiveSession(null);
       setSessionDetail(null);
     }
-    setView("chat");
-    if (isMobile) setTimeout(() => setShowSidebar(false), 150);
+    // #64 — Only set view to 'chat' when a project is selected (ws requires projectId)
+    if (selectedProject) setView("chat");
+    if (isMobile) safeTimeout(() => setShowSidebar(false), 150);
     // Refresh session list after PI creates the new session file
-    setTimeout(() => fetchSessions(), SESSION_FETCH_DELAY_MS);
-  }, [ws, fetchSessions, isMobile]);
+    safeTimeout(() => fetchSessions(), SESSION_FETCH_DELAY_MS);
+  }, [ws, fetchSessions, isMobile, selectedProject]);
 
   const handleBack = useCallback(() => {
     if (view === "chat") {
@@ -258,8 +300,12 @@ export default function App() {
         setProjects(prev => [d.project, ...prev]);
         setShowAddProject(false);
       } else {
-        const d = await r.json();
-        alert(d.error || "Failed to add project");
+        try {
+          const d = await r.json();
+          alert(d.error || "Failed to add project");
+        } catch {
+          alert(r.statusText || "Failed to add project");
+        }
       }
     } catch (e) {
       console.error(e);
@@ -269,25 +315,34 @@ export default function App() {
   }, []);
 
   const handleDeleteProject = useCallback(async (id: string) => {
-    await fetch(`/api/projects/${id}`, { method: "DELETE" });
-    setProjects(prev => prev.filter(p => p.id !== id));
-    if (selectedProject?.id === id) {
-      setSelectedProject(null);
-      setView("projects");
+    const r = await fetch(`/api/projects/${id}`, { method: "DELETE" });
+    if (r.ok) {
+      setProjects(prev => prev.filter(p => p.id !== id));
+      if (selectedProject?.id === id) {
+        setSelectedProject(null);
+        setView("projects");
+      }
+    } else {
+      alert("Failed to delete project");
     }
   }, [selectedProject]);
 
   // Delete session
   const handleDeleteSession = useCallback(async (session: SessionSummary) => {
     try {
-      await fetch(`/api/sessions/${encodeURIComponent(session.filePath)}`, { method: "DELETE" });
-      setSessions(prev => prev.filter(s => s.id !== session.id));
-      if (activeSession?.id === session.id) {
-        setActiveSession(null);
-        setView("sessions");
+      const r = await fetch(`/api/sessions/${encodeURIComponent(session.filePath)}`, { method: "DELETE" });
+      if (r.ok) {
+        setSessions(prev => prev.filter(s => s.id !== session.id));
+        if (activeSession?.id === session.id) {
+          setActiveSession(null);
+          setView("sessions");
+        }
+      } else {
+        alert("Failed to delete session");
       }
     } catch (e) {
       console.error("Failed to delete session:", e);
+      alert("Failed to delete session");
     }
   }, [activeSession]);
 
@@ -314,7 +369,7 @@ export default function App() {
   const handleForkSession = useCallback((entryId: string) => {
     if (ws) {
       ws.send({ type: "fork", entryId });
-      setTimeout(() => fetchSessions(), SESSION_FETCH_DELAY_MS);
+      safeTimeout(() => fetchSessions(), SESSION_FETCH_DELAY_MS);
     }
   }, [ws, fetchSessions]);
 
@@ -338,6 +393,8 @@ export default function App() {
         setSessions(event.sessions || []);
       }
     });
+    // #4 — Cleanup: remove handler from old connection on ws change
+    return () => ws.setOnSessionEvent(null);
   }, [ws]);
 
   // Cmd/Ctrl+N shortcut — new session
@@ -355,6 +412,14 @@ export default function App() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [handleNewSession]);
+
+  // #62 — Cleanup all safeTimeout timers on unmount
+  useEffect(() => {
+    return () => {
+      for (const id of timersRef.current) clearTimeout(id);
+      timersRef.current.clear();
+    };
+  }, []);
 
   return (
     <div className="flex h-screen overflow-hidden bg-ink-950">

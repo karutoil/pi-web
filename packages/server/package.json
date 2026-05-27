@@ -8,11 +8,17 @@
     "start": "bun run src/index.ts"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "latest",
-    "@homebridge/node-pty-prebuilt-multiarch": "^0.13.1",
+    "@earendil-works/pi-coding-agent": "^1.0.0",
     "@pi-web/shared": "workspace:*",
     "bun-pty": "^0.4.8",
     "hono": "^4.7.0",
     "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
   }
 }

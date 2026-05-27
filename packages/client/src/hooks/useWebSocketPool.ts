@@ -34,6 +34,7 @@ function createConnection(
     runningTools: new Map<string, ToolEvent>(),
     state: null as AgentState | null,
     isConnected: false,
+    lastError: null as string | null,
     isStreaming: false,
     isActive: false,
     models: [] as ModelInfo[],
@@ -75,7 +76,12 @@ function createConnection(
     ws = new WebSocket(`${protocol}://${location.host}/ws?${params}`);
     ws.onopen = () => {
       data.isConnected = true;
+      data.lastError = null;
       reconnectAttempts = 0;
+      // Clear stale messages on reconnect — server may have different history
+      messagesRef = [];
+      data.messages = [];
+      data.liveMessages = new Map();
       notify();
       // Request current state and commands on connect
       setTimeout(() => { send({ type: "get_state" }); send({ type: "get_available_models" }); send({ type: "get_commands" }); }, 200);
@@ -93,6 +99,10 @@ function createConnection(
           connect();
         }, delay);
       }
+    };
+    ws.onerror = (e) => {
+      data.lastError = "WebSocket connection error";
+      notify();
     };
     ws.onmessage = (event) => {
       try { handleMessage(JSON.parse(event.data)); } catch (e) { console.error("WS parse error:", e); }
@@ -163,15 +173,15 @@ function createConnection(
         data.compactionResult = {
           reason: msg.reason,
           aborted: msg.aborted,
-          result: (msg as any).result,
-          willRetry: (msg as any).willRetry,
-          errorMessage: (msg as any).errorMessage,
+          result: msg.result,
+          willRetry: msg.willRetry,
+          errorMessage: msg.errorMessage,
         };
         break;
       case "error": console.error("Agent error:", msg.message); data.isStreaming = false; break;
       case "response":
         // Generic command success/failure response — just log for now
-        if (!(msg as any).success) console.warn(`Command ${(msg as any).command} failed:`, (msg as any).error);
+        if (msg.success === false) console.warn(`Command ${msg.command} failed:`, msg.error);
         break;
       case "session_loaded": if (msg.session && onSessionLoadedRef.current) onSessionLoadedRef.current(msg.session); break;
       case "available_models": data.models = msg.models; break;
@@ -293,7 +303,7 @@ function createConnection(
         }
         content = blocks;
       }
-      const userMsg: ChatMessage = { role: "user", content, timestamp: Date.now() };
+      const userMsg: ChatMessage = { role: "user", content, timestamp: new Date().toISOString() };
       messagesRef = [...messagesRef, userMsg];
       data.messages = [...messagesRef];
       send({ type: "prompt", message: text, images });
@@ -343,6 +353,7 @@ function createConnection(
     get liveMessages() { return data.liveMessages; },
     get runningTools() { return data.runningTools; },
     get state() { return data.state; },
+    get lastError() { return data.lastError; },
     get isConnected() { return data.isConnected; },
     get isStreaming() { return data.isStreaming; },
     get isActive() { return data.isActive; },
@@ -383,7 +394,13 @@ function createConnection(
     },
     setOnSessionLoaded: (cb) => { onSessionLoadedRef.current = cb; },
     setOnSessionEvent: (cb) => { onSessionEventRef.current = cb; },
-    close: () => { intentionallyClosed = true; if (reconnectTimer) clearTimeout(reconnectTimer); ws?.close(); ws = null; },
+    close: () => {
+      intentionallyClosed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      const timer = (data as { notifyTimer?: ReturnType<typeof setTimeout> }).notifyTimer;
+      if (timer) { clearTimeout(timer); delete (data as { notifyTimer?: ReturnType<typeof setTimeout> }).notifyTimer; }
+      ws?.close(); ws = null;
+    },
     subscribe: (l) => listeners.add(l),
     unsubscribe: (l) => listeners.delete(l),
   };

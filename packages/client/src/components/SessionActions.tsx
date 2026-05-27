@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Icon } from "./Icon";
 
 interface SessionActionsProps {
@@ -9,9 +10,18 @@ interface SessionActionsProps {
 }
 
 export function SessionActions({ onCompact, onExportHtml, onClone, onSetAutoCompaction, onClose }: SessionActionsProps) {
+  // Escape key to close
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
   const actions = [
     { label: "Compact context", icon: "compress" as const, action: () => onCompact() },
-    { label: "Compact (custom)...", icon: "compress" as const, action: () => onCompact(undefined) },
+    { label: "Compact (custom)...", icon: "compress" as const, action: () => { const instructions = prompt("Custom compaction instructions:") || undefined; onCompact(instructions); } },
     { label: "Enable auto-compaction", icon: "auto-compact" as const, action: () => onSetAutoCompaction(true) },
     { label: "Disable auto-compaction", icon: "auto-compact" as const, action: () => onSetAutoCompaction(false) },
     { label: "Export HTML", icon: "export" as const, action: onExportHtml },

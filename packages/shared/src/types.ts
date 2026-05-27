@@ -67,7 +67,7 @@ export interface SessionEntry {
 export interface ChatMessage {
   role: string;
   content: string | ContentBlock[];
-  timestamp?: number;
+  timestamp: string;
   // assistant
   api?: string;
   provider?: string;

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useLayoutEffect, useCallback } from "react";
 
 export type Theme = "light" | "dark";
 
@@ -20,7 +20,7 @@ function apply(theme: Theme) {
 export function useTheme(): [Theme, () => void] {
   const [theme, setTheme] = useState<Theme>(getStored);
 
-  useEffect(() => { apply(theme); }, [theme]);
+  useLayoutEffect(() => { apply(theme); }, [theme]);
 
   const toggle = useCallback(() => {
     setTheme(t => (t === "light" ? "dark" : "light"));

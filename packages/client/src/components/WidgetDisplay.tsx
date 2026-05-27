@@ -1,12 +1,8 @@
+import { stripAnsi } from "../lib/stripAnsi";
+
 interface WidgetDisplayProps {
   widgets: Record<string, { lines: string[]; placement: string }>;
   placement: "aboveEditor" | "belowEditor";
-}
-
-/** Strip ANSI escape sequences from text */
-function stripAnsi(text: string): string {
-  // eslint-disable-next-line no-control-regex
-  return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "").replace(/\x1b\].*?\x07/g, "");
 }
 
 export function WidgetDisplay({ widgets, placement }: WidgetDisplayProps) {

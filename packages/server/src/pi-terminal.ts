@@ -76,7 +76,13 @@ class TerminalInstance {
 
 export function createTerminal(id: string, projectId: string, cwd: string, name: string): TerminalInfo {
   const existing = terminals.get(id);
-  if (existing) return existing.info;
+  if (existing) {
+    // #40: Validate projectId/cwd match on terminal ID reuse
+    if (existing.info.projectId !== projectId || existing.info.cwd !== cwd) {
+      throw new Error(`Terminal ID '${id}' already exists with different projectId/cwd`);
+    }
+    return existing.info;
+  }
 
   const pty = spawn(process.env.SHELL || "/bin/bash", [], {
     name: "xterm-256color",

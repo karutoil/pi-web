@@ -4,9 +4,10 @@ import type { ExtensionErrorEntry } from "../lib/types";
 interface ExtensionErrorToastProps {
   errors: ExtensionErrorEntry[];
   onDismiss: (index: number) => void;
+  onClearAll?: () => void;
 }
 
-export function ExtensionErrorToast({ errors, onDismiss }: ExtensionErrorToastProps) {
+export function ExtensionErrorToast({ errors, onDismiss, onClearAll }: ExtensionErrorToastProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [visible, setVisible] = useState(false);
 
@@ -36,7 +37,7 @@ export function ExtensionErrorToast({ errors, onDismiss }: ExtensionErrorToastPr
             errors
           </button>
           <button
-            onClick={() => { recent.forEach((_, i) => onDismiss(errors.length - recent.length + i)); }}
+            onClick={() => { if (onClearAll) onClearAll(); else recent.forEach((_, i) => onDismiss(errors.length - recent.length + i)); }}
             className="text-ink-600 hover:text-ink-400 text-[10px] font-mono px-1 py-0.5 transition-colors"
           >
             clear all
@@ -47,7 +48,7 @@ export function ExtensionErrorToast({ errors, onDismiss }: ExtensionErrorToastPr
           {recent.length > 1 && (
             <div className="flex items-center justify-end gap-2">
               <button
-                onClick={() => { recent.forEach((_, i) => onDismiss(errors.length - recent.length + i)); }}
+                onClick={() => { if (onClearAll) onClearAll(); else recent.forEach((_, i) => onDismiss(errors.length - recent.length + i)); }}
                 className="text-ink-600 hover:text-ink-400 text-[10px] font-mono px-1 py-0.5 transition-colors"
               >
                 clear all

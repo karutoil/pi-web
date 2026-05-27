@@ -1,7 +1,10 @@
 import { Database } from "bun:sqlite";
+import { join } from "node:path";
+import { homedir } from "node:os";
 import type { Project } from "@pi-web/shared";
 
-const DB_PATH = ".pi-web.db";
+// #80: Resolve DB path to $HOME/.pi-web/.pi-web.db
+const DB_PATH = join(homedir(), ".pi-web", ".pi-web.db");
 
 let db: Database;
 

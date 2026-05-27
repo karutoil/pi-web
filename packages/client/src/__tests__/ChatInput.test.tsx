@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { ChatInput } from '../components/ChatInput';
 import type { CommandInfo } from '@pi-web/shared';
 
@@ -37,7 +36,7 @@ describe('ChatInput', () => {
   it('calls onSend with trimmed text on Enter', () => {
     render(<ChatInput {...defaultProps} />);
     const textarea = screen.getByPlaceholderText('Ask PI...');
-    fireEvent.change(textarea, { target: { value: 'hello world' } });
+    fireEvent.change(textarea, { target: { value: '  hello world  ' } });
     fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false });
     expect(defaultProps.onSend).toHaveBeenCalledWith('hello world', undefined);
   });
@@ -63,6 +62,9 @@ describe('ChatInput', () => {
     fireEvent.change(textarea, { target: { value: 'hello' } });
     fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true });
     expect(defaultProps.onSend).not.toHaveBeenCalled();
+    // Browser default inserts newline on shift+Enter; value should remain intact
+    // (jsdom does not simulate native key insertion, so we only verify no send)
+    expect(textarea).toHaveValue('hello');
   });
 
   it('sends via click on send button', () => {

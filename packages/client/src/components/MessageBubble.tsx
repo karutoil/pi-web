@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSanitize from "rehype-sanitize";
@@ -201,11 +201,11 @@ function AssistantBubble({
   const [toolCallsExpanded, setToolCallsExpanded] = useState<Record<string, boolean>>({});
 
   // Default expanded for completed tool calls with results
-  const _initialExpanded = useState(() => {
+  const _initialExpanded = useMemo(() => {
     const init: Record<string, boolean> = {};
     content.filter(b => b.type === "toolCall" && b.id).forEach(b => { init[b.id!] = true; });
     return init;
-  })[0];
+  }, []);
 
   // Separate thinking blocks from text
   const thinkingBlocks = content.filter(b => b.type === "thinking");
@@ -358,6 +358,7 @@ function CombinedToolBubble({
   const detailsDiff = useMemo(() => {
     if (!toolResult?.details?.diff || typeof toolResult.details.diff !== "string") return null;
     const rawDiff: string = toolResult.details.diff;
+    if (rawDiff.trim() === '') return null;
     const rawLines = rawDiff.split("\n");
     const parts: string[] = [];
     parts.push("--- a/file");
@@ -465,6 +466,7 @@ function ToolResultBubble({ message }: { message: ChatMessage }) {
   const detailsDiff = useMemo(() => {
     if (!message.details?.diff || typeof message.details.diff !== "string") return null;
     const rawDiff: string = message.details.diff;
+    if (rawDiff.trim() === '') return null;
     const rawLines = rawDiff.split("\n");
     const parts: string[] = [];
     parts.push("--- a/file");
@@ -619,15 +621,22 @@ interface CodeBlockProps extends React.HTMLAttributes<HTMLPreElement> {
 
 function CodeBlock({ children, className, ...props }: CodeBlockProps) {
   const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Extract language from className (react-markdown adds "language-xxx" class)
   const lang = className?.replace("language-", "");
   const text = extractTextFromNode(children);
 
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => { if (copyTimerRef.current) clearTimeout(copyTimerRef.current); };
+  }, []);
+
   const handleCopy = () => {
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 1500);
     });
   };
 

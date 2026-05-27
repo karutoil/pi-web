@@ -36,7 +36,14 @@ export function useLongPress(onLongPress: (e: { clientX: number; clientY: number
     }
   };
 
-  return { onTouchStart, onTouchMove, onTouchEnd };
+  const onTouchCancel = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  return { onTouchStart, onTouchMove, onTouchEnd, onTouchCancel };
 }
 
 // ─── Portal-rendered right-click context menu at cursor position ───
@@ -53,6 +60,7 @@ export function ContextMenuPortal({
   children: React.ReactNode;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
+  const [activeIdx, setActiveIdx] = useState(-1);
 
   useEffect(() => {
     const close = () => onClose();
@@ -64,7 +72,15 @@ export function ContextMenuPortal({
       document.addEventListener("touchend", handler);
       document.addEventListener("contextmenu", handler);
     }, 10);
-    const keyHandler = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    const keyHandler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+      else if (e.key === "ArrowDown") { e.preventDefault(); setActiveIdx(i => i + 1); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); setActiveIdx(i => Math.max(0, i - 1)); }
+      else if (e.key === "Enter" && activeIdx >= 0) {
+        const items = menuRef.current?.querySelectorAll('[role="menuitem"]');
+        (items?.[activeIdx] as HTMLElement)?.click();
+      }
+    };
     document.addEventListener("keydown", keyHandler);
     return () => {
       clearTimeout(timer);
@@ -73,7 +89,7 @@ export function ContextMenuPortal({
       document.removeEventListener("contextmenu", handler);
       document.removeEventListener("keydown", keyHandler);
     };
-  }, [onClose]);
+  }, [onClose, activeIdx]);
 
   // Pre-calculate safe position — estimate menu size to avoid off-screen placement
   const vw = typeof window !== "undefined" ? window.innerWidth : 800;
@@ -95,6 +111,7 @@ export function ContextMenuPortal({
       ref={menuRef}
       style={{ position: "fixed", left: pos.x, top: pos.y, zIndex: 50 }}
       className="bg-ink-900 border border-ink-700 rounded-lg shadow-2xl py-1 min-w-[160px] animate-fade-in-up touch-none"
+      role="menu"
     >
       {children}
     </div>,
@@ -123,6 +140,7 @@ export function ContextMenuItem({
           ? "text-rose-400 hover:bg-rose-600/10 hover:text-rose-300"
           : "text-ink-300 hover:bg-ink-800 hover:text-ink-100"
       }`}
+      role="menuitem"
     >
       {icon && <span className="shrink-0 w-3 flex justify-center">{icon}</span>}
       <span className="flex-1">{label}</span>

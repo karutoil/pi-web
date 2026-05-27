@@ -2,21 +2,106 @@ import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { createBunWebSocket } from "hono/bun";
 import type { ServerWebSocket } from "bun";
-import { join, basename } from "node:path";
-import { existsSync, statSync, readdirSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { join, basename, resolve, normalize } from "node:path";
+import { existsSync, statSync, readdirSync, realpathSync } from "node:fs";
+import { readFile, writeFile, unlink, rename as renameFs } from "node:fs/promises";
 import { homedir } from "node:os";
 
 import { addProject, removeProject, listProjects, getProject, touchProject } from "./db";
 import { listProjectSessions, getSessionDetail } from "./pi-sessions";
-import { getOrCreateAgent, stopAllAgents, getPoolStats, lookupAgent, detachFromAgent } from "./pi-agent";
+import { getOrCreateAgent, stopAllAgents, getPoolStats, lookupAgent, detachFromAgent, deleteFromPool } from "./pi-agent";
 import { createTerminal, getTerminal, listTerminals, killTerminal } from "./pi-terminal";
 import { getGitStatus, getGitDiff, gitStage, gitUnstage, gitCommit, gitLog, gitCheckout, gitDiscard, gitBranches, gitPush, gitPull, gitFetch, gitCreateBranch, gitDeleteBranch, gitRenameBranch, gitTags, gitCreateTag, gitDeleteTag, gitStashList, gitStashPush, gitStashPop, gitStashApply, gitStashDrop, gitAmend, gitCherryPick, gitRevert, gitResolveConflict, getGitDiffStats, gitDiffWithRef, gitShowCommit, gitLogSearch, gitBlame, gitRemotes, gitUnstageAll } from "./pi-git";
+import type { GitResult } from "./pi-git";
 import type { WSClientMessage, WSServerMessage } from "@pi-web/shared";
 
 const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>();
 
 const app = new Hono();
+
+// ==================== Path Validation (#2) ====================
+
+const HOME = homedir();
+
+/** Known session roots for path validation */
+function getSessionRoots(projectPath?: string): string[] {
+  const roots = [join(HOME, ".pi", "agent", "sessions")];
+  if (projectPath) {
+    roots.push(join(projectPath, ".pi", "sessions"));
+  }
+  return roots;
+}
+
+/**
+ * Validates that a user-provided path resolves to a location inside one of
+ * the allowed session roots. Returns the resolved safe path or throws.
+ * Prevents path traversal and symlink attacks (#2, #14).
+ */
+function validateSessionPath(userPath: string, projectPath?: string): string {
+  const resolved = resolve(normalize(userPath));
+  const roots = getSessionRoots(projectPath);
+
+  // Follow symlinks via realpathSync (#14)
+  let realPath: string;
+  try {
+    realPath = realpathSync(resolved);
+  } catch {
+    throw new Error("Path does not exist");
+  }
+
+  // Verify the real path is inside at least one allowed root
+  const insideRoot = roots.some(root => {
+    const realRoot = realpathSync(root);
+    return realPath.startsWith(realRoot + "/") || realPath === realRoot;
+  });
+
+  if (!insideRoot) {
+    throw new Error("Path is outside allowed session directory");
+  }
+
+  // Verify it's a regular file (not a directory or symlink to directory) (#14)
+  const stat = statSync(realPath);
+  if (stat.isDirectory()) {
+    throw new Error("Path is a directory, not a file");
+  }
+
+  return realPath;
+}
+
+/** Validate a browse path is within home directory (#42) */
+function validateBrowsePath(dir: string): string {
+  const resolved = resolve(normalize(dir));
+  const realHome = realpathSync(HOME);
+  let realDir: string;
+  try {
+    realDir = realpathSync(resolved);
+  } catch {
+    // Path doesn't exist yet — still check the resolved path
+    realDir = resolved;
+  }
+  if (!realDir.startsWith(realHome + "/") && realDir !== realHome) {
+    throw new Error("Directory is outside allowed browse scope");
+  }
+  return resolved;
+}
+
+/** HTML-escape a string for safe interpolation (#84) */
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** Helper to format GitResult for REST responses (#38) */
+function gitResponse(result: GitResult) {
+  if (!result.ok) {
+    return { success: false as const, error: result.stderr || "Git operation failed", stdout: result.stdout };
+  }
+  return { success: true as const, result: result.stdout };
+}
 
 // ==================== REST API ====================
 
@@ -26,7 +111,7 @@ app.get("/api/projects", async (c) => {
   return c.json({ projects });
 });
 
-// Add project
+// Add project (#43: check isDirectory)
 app.post("/api/projects", async (c) => {
   const body = await c.req.json();
   const { path, name } = body;
@@ -35,9 +120,12 @@ app.post("/api/projects", async (c) => {
     return c.json({ error: "Path is required" }, 400);
   }
   
-  // Verify path exists
+  // Verify path exists and is a directory
   if (!existsSync(path)) {
     return c.json({ error: "Directory does not exist" }, 400);
+  }
+  if (!statSync(path).isDirectory()) {
+    return c.json({ error: "Path is not a directory" }, 400);
   }
   
   const dirName = name || basename(path);
@@ -52,9 +140,17 @@ app.post("/api/projects", async (c) => {
   }
 });
 
-// Remove project
+// Remove project (#90: cascade cleanup — stop agents/terminals)
 app.delete("/api/projects/:id", (c) => {
   const { id } = c.req.param();
+  const project = getProject(id);
+  if (project) {
+    // Stop any agents for this project
+    deleteFromPool(project.path);
+    // Kill terminals for this project
+    const terms = listTerminals(id);
+    for (const t of terms) killTerminal(t.id);
+  }
   const ok = removeProject(id);
   return c.json({ success: ok }, ok ? 200 : 404);
 });
@@ -69,54 +165,64 @@ app.get("/api/projects/:id/sessions", async (c) => {
   return c.json({ sessions, total: sessions.length });
 });
 
-// Get session detail (messages, entries)
+// Get session detail (#2: validate path)
 app.get("/api/sessions/detail", async (c) => {
   const filePath = c.req.query("path");
   if (!filePath) return c.json({ error: "path query required" }, 400);
   
-  const detail = await getSessionDetail(filePath);
-  if (!detail) return c.json({ error: "Session not found" }, 404);
-  
-  return c.json({ session: detail });
-});
-
-// Delete session file
-app.delete("/api/sessions/:path", async (c) => {
-  const sessionPath = decodeURIComponent(c.req.param("path"));
   try {
-    const { unlink } = await import("node:fs/promises");
-    await unlink(sessionPath);
-    return c.json({ success: true });
+    const safePath = validateSessionPath(filePath);
+    const detail = await getSessionDetail(safePath);
+    if (!detail) return c.json({ error: "Session not found" }, 404);
+    return c.json({ session: detail });
   } catch (e: any) {
-    if (e.code === "ENOENT") return c.json({ error: "Session not found" }, 404);
-    return c.json({ error: e.message }, 500);
+    return c.json({ error: e.message }, 403);
   }
 });
 
-// Rename session
+// Delete session file (#2: validate path)
+app.delete("/api/sessions/:path", async (c) => {
+  const sessionPath = decodeURIComponent(c.req.param("path"));
+  try {
+    const safePath = validateSessionPath(sessionPath);
+    await unlink(safePath);
+    return c.json({ success: true });
+  } catch (e: any) {
+    if (e.code === "ENOENT") return c.json({ error: "Session not found" }, 404);
+    return c.json({ error: e.message }, 403);
+  }
+});
+
+// Rename session (#2: validate path)
 app.patch("/api/sessions/rename", async (c) => {
   const { sessionPath, name } = await c.req.json();
   if (!sessionPath || !name) return c.json({ error: "sessionPath and name required" }, 400);
   
   try {
-    const { readFile: rf, writeFile } = await import("node:fs/promises");
-    const content = await rf(sessionPath, "utf-8");
-    const lines = content.trim().split("\n");
+    const safePath = validateSessionPath(sessionPath);
+    const content = await readFile(safePath, "utf-8");
     // Append a session_info entry with the name
     const renameEntry = JSON.stringify({ type: "session_info", name, timestamp: new Date().toISOString() });
     const newContent = content.trim() + "\n" + renameEntry + "\n";
-    await writeFile(sessionPath, newContent);
+    await writeFile(safePath, newContent);
     return c.json({ success: true, name });
   } catch (e: any) {
-    return c.json({ error: e.message }, 500);
+    return c.json({ error: e.message }, 403);
   }
 });
 
-// Browse filesystem directories
+// Browse filesystem directories (#42: validate against home dir)
 app.get("/api/fs/browse", async (c) => {
   let dir = c.req.query("dir") || homedir();
   // Expand ~ to home directory
   if (dir.startsWith("~")) dir = homedir() + dir.slice(1);
+
+  try {
+    dir = validateBrowsePath(dir);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 403);
+  }
+
   try {
     if (!existsSync(dir)) return c.json({ error: "Directory does not exist" }, 400);
     const stat = statSync(dir);
@@ -170,7 +276,7 @@ app.delete("/api/terminals/:id", (c) => {
   return c.json({ success: ok }, ok ? 200 : 404);
 });
 
-// ── Git API ──
+// ── Git API (#38: handle GitResult structured responses) ──
 app.get("/api/git/status", (c) => {
   const cwd = c.req.query("cwd");
   if (!cwd) return c.json({ error: "cwd required" }, 400);
@@ -190,14 +296,16 @@ app.get("/api/git/diff", (c) => {
 app.post("/api/git/stage", async (c) => {
   const { cwd, path } = await c.req.json();
   if (!cwd || !path) return c.json({ error: "cwd and path required" }, 400);
-  gitStage(cwd, path);
+  const result = gitStage(cwd, path);
+  if (!result.ok) return c.json({ success: false, error: result.stderr || "Stage failed" }, 500);
   return c.json({ success: true });
 });
 
 app.post("/api/git/unstage", async (c) => {
   const { cwd, path } = await c.req.json();
   if (!cwd || !path) return c.json({ error: "cwd and path required" }, 400);
-  gitUnstage(cwd, path);
+  const result = gitUnstage(cwd, path);
+  if (!result.ok) return c.json({ success: false, error: result.stderr || "Unstage failed" }, 500);
   return c.json({ success: true });
 });
 
@@ -205,8 +313,8 @@ app.post("/api/git/commit", async (c) => {
   const { cwd, message } = await c.req.json();
   if (!cwd || !message) return c.json({ error: "cwd and message required" }, 400);
   const result = gitCommit(cwd, message);
-  if (!result) return c.json({ error: "Commit failed" }, 500);
-  return c.json({ success: true, result });
+  if (!result.ok) return c.json({ error: result.stderr || "Commit failed" }, 500);
+  return c.json({ success: true, result: result.stdout });
 });
 
 app.get("/api/git/log", (c) => {
@@ -220,7 +328,8 @@ app.post("/api/git/checkout", async (c) => {
   const { cwd, branch } = await c.req.json();
   if (!cwd || !branch) return c.json({ error: "cwd and branch required" }, 400);
   const result = gitCheckout(cwd, branch);
-  return c.json({ success: true, result });
+  if (!result.ok) return c.json({ success: false, error: result.stderr || "Checkout failed" }, 500);
+  return c.json({ success: true, result: result.stdout });
 });
 
 app.post("/api/git/discard", async (c) => {
@@ -241,21 +350,24 @@ app.post("/api/git/push", async (c) => {
   const { cwd } = await c.req.json();
   if (!cwd) return c.json({ error: "cwd required" }, 400);
   const result = gitPush(cwd);
-  return c.json({ success: true, result });
+  if (!result.ok) return c.json({ success: false, error: result.stderr || "Push failed" }, 500);
+  return c.json({ success: true, result: result.stdout });
 });
 
 app.post("/api/git/pull", async (c) => {
   const { cwd } = await c.req.json();
   if (!cwd) return c.json({ error: "cwd required" }, 400);
   const result = gitPull(cwd);
-  return c.json({ success: true, result });
+  if (!result.ok) return c.json({ success: false, error: result.stderr || "Pull failed" }, 500);
+  return c.json({ success: true, result: result.stdout });
 });
 
 app.post("/api/git/fetch", async (c) => {
   const { cwd } = await c.req.json();
   if (!cwd) return c.json({ error: "cwd required" }, 400);
   const result = gitFetch(cwd);
-  return c.json({ success: true, result });
+  if (!result.ok) return c.json({ success: false, error: result.stderr || "Fetch failed" }, 500);
+  return c.json({ success: true, result: result.stdout });
 });
 
 // Create / Delete / Rename branch
@@ -263,21 +375,24 @@ app.post("/api/git/branch/create", async (c) => {
   const { cwd, name, checkout } = await c.req.json();
   if (!cwd || !name) return c.json({ error: "cwd and name required" }, 400);
   const result = gitCreateBranch(cwd, name, checkout !== false);
-  return c.json({ success: true, result });
+  if (!result.ok) return c.json({ success: false, error: result.stderr || "Branch creation failed" }, 500);
+  return c.json({ success: true, result: result.stdout });
 });
 
 app.post("/api/git/branch/delete", async (c) => {
   const { cwd, name } = await c.req.json();
   if (!cwd || !name) return c.json({ error: "cwd and name required" }, 400);
   const result = gitDeleteBranch(cwd, name);
-  return c.json({ success: true, result });
+  if (!result.ok) return c.json({ success: false, error: result.stderr || "Branch deletion failed" }, 500);
+  return c.json({ success: true, result: result.stdout });
 });
 
 app.post("/api/git/branch/rename", async (c) => {
   const { cwd, oldName, newName } = await c.req.json();
   if (!cwd || !oldName || !newName) return c.json({ error: "cwd, oldName, and newName required" }, 400);
   const result = gitRenameBranch(cwd, oldName, newName);
-  return c.json({ success: true, result });
+  if (!result.ok) return c.json({ success: false, error: result.stderr || "Branch rename failed" }, 500);
+  return c.json({ success: true, result: result.stdout });
 });
 
 // Tags
@@ -291,14 +406,16 @@ app.post("/api/git/tag/create", async (c) => {
   const { cwd, name, message } = await c.req.json();
   if (!cwd || !name) return c.json({ error: "cwd and name required" }, 400);
   const result = gitCreateTag(cwd, name, message);
-  return c.json({ success: true, result });
+  if (!result.ok) return c.json({ success: false, error: result.stderr || "Tag creation failed" }, 500);
+  return c.json({ success: true, result: result.stdout });
 });
 
 app.post("/api/git/tag/delete", async (c) => {
   const { cwd, name } = await c.req.json();
   if (!cwd || !name) return c.json({ error: "cwd and name required" }, 400);
   const result = gitDeleteTag(cwd, name);
-  return c.json({ success: true, result });
+  if (!result.ok) return c.json({ success: false, error: result.stderr || "Tag deletion failed" }, 500);
+  return c.json({ success: true, result: result.stdout });
 });
 
 // Stash
@@ -312,28 +429,32 @@ app.post("/api/git/stash/push", async (c) => {
   const { cwd, message } = await c.req.json();
   if (!cwd) return c.json({ error: "cwd required" }, 400);
   const result = gitStashPush(cwd, message);
-  return c.json({ success: true, result });
+  if (!result.ok) return c.json({ success: false, error: result.stderr || "Stash push failed" }, 500);
+  return c.json({ success: true, result: result.stdout });
 });
 
 app.post("/api/git/stash/pop", async (c) => {
   const { cwd, index } = await c.req.json();
   if (!cwd) return c.json({ error: "cwd required" }, 400);
   const result = gitStashPop(cwd, index);
-  return c.json({ success: true, result });
+  if (!result.ok) return c.json({ success: false, error: result.stderr || "Stash pop failed" }, 500);
+  return c.json({ success: true, result: result.stdout });
 });
 
 app.post("/api/git/stash/apply", async (c) => {
   const { cwd, index } = await c.req.json();
   if (!cwd) return c.json({ error: "cwd required" }, 400);
   const result = gitStashApply(cwd, index);
-  return c.json({ success: true, result });
+  if (!result.ok) return c.json({ success: false, error: result.stderr || "Stash apply failed" }, 500);
+  return c.json({ success: true, result: result.stdout });
 });
 
 app.post("/api/git/stash/drop", async (c) => {
   const { cwd, index } = await c.req.json();
   if (!cwd || index === undefined) return c.json({ error: "cwd and index required" }, 400);
   const result = gitStashDrop(cwd, index);
-  return c.json({ success: true, result });
+  if (!result.ok) return c.json({ success: false, error: result.stderr || "Stash drop failed" }, 500);
+  return c.json({ success: true, result: result.stdout });
 });
 
 // Amend commit
@@ -341,7 +462,8 @@ app.post("/api/git/amend", async (c) => {
   const { cwd, message } = await c.req.json();
   if (!cwd) return c.json({ error: "cwd required" }, 400);
   const result = gitAmend(cwd, message);
-  return c.json({ success: true, result });
+  if (!result.ok) return c.json({ success: false, error: result.stderr || "Amend failed" }, 500);
+  return c.json({ success: true, result: result.stdout });
 });
 
 // Cherry-pick / Revert
@@ -349,14 +471,16 @@ app.post("/api/git/cherry-pick", async (c) => {
   const { cwd, hash } = await c.req.json();
   if (!cwd || !hash) return c.json({ error: "cwd and hash required" }, 400);
   const result = gitCherryPick(cwd, hash);
-  return c.json({ success: true, result });
+  if (!result.ok) return c.json({ success: false, error: result.stderr || "Cherry-pick failed" }, 500);
+  return c.json({ success: true, result: result.stdout });
 });
 
 app.post("/api/git/revert", async (c) => {
   const { cwd, hash, noCommit } = await c.req.json();
   if (!cwd || !hash) return c.json({ error: "cwd and hash required" }, 400);
   const result = gitRevert(cwd, hash, noCommit);
-  return c.json({ success: true, result });
+  if (!result.ok) return c.json({ success: false, error: result.stderr || "Revert failed" }, 500);
+  return c.json({ success: true, result: result.stdout });
 });
 
 // Merge conflict resolution
@@ -364,7 +488,8 @@ app.post("/api/git/resolve-conflict", async (c) => {
   const { cwd, path, strategy } = await c.req.json();
   if (!cwd || !path || !strategy) return c.json({ error: "cwd, path, and strategy required" }, 400);
   const result = gitResolveConflict(cwd, path, strategy);
-  return c.json({ success: true, result });
+  if (!result.ok) return c.json({ success: false, error: result.stderr || "Conflict resolution failed" }, 500);
+  return c.json({ success: true, result: result.stdout });
 });
 
 // Diff stats
@@ -390,7 +515,9 @@ app.get("/api/git/show", (c) => {
   const cwd = c.req.query("cwd");
   const hash = c.req.query("hash");
   if (!cwd || !hash) return c.json({ error: "cwd and hash required" }, 400);
-  return c.json({ diff: gitShowCommit(cwd, hash) });
+  const result = gitShowCommit(cwd, hash);
+  if (!result.ok) return c.json({ error: result.stderr || "Show commit failed" }, 500);
+  return c.json({ diff: result.stdout });
 });
 
 // Log search
@@ -422,42 +549,43 @@ app.post("/api/git/unstage-all", async (c) => {
   const { cwd } = await c.req.json();
   if (!cwd) return c.json({ error: "cwd required" }, 400);
   const result = gitUnstageAll(cwd);
-  return c.json({ success: true, result });
+  if (!result.ok) return c.json({ success: false, error: result.stderr || "Unstage all failed" }, 500);
+  return c.json({ success: true, result: result.stdout });
 });
 
-// Export session HTML
+// Export session HTML (#2: validate path, #84: proper HTML escaping)
 app.post("/api/sessions/export-html", async (c) => {
   const { sessionPath } = await c.req.json();
   if (!sessionPath) return c.json({ error: "sessionPath required" }, 400);
-  // Ask the agent to export — response comes back via WS event
-  // For REST usage, we generate a simple HTML export server-side
   try {
-    const detail = await getSessionDetail(sessionPath);
+    const safePath = validateSessionPath(sessionPath);
+    const detail = await getSessionDetail(safePath);
     if (!detail) return c.json({ error: "Session not found" }, 404);
     const html = buildSessionHtml(detail);
     return c.json({ html });
   } catch (e: any) {
-    return c.json({ error: e.message }, 500);
+    return c.json({ error: e.message }, 403);
   }
 });
 
 // Health
 app.get("/api/health", (c) => c.json({ status: "ok", time: Date.now(), pool: getPoolStats() }));
 
-// Simple HTML export builder
+// Simple HTML export builder (#84: use escapeHtml for all interpolated values)
 function buildSessionHtml(detail: any): string {
   const entries = detail.entries || [];
   let body = "";
   for (const entry of entries) {
     if (!entry.message) continue;
     const msg = entry.message;
-    const role = msg.role || "unknown";
+    const role = escapeHtml(msg.role || "unknown");
     const content = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content);
-    const escaped = content.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
+    const escaped = escapeHtml(content).replace(/\n/g, "<br>");
     const bg = role === "user" ? "#1a1a2e" : role === "assistant" ? "#16213e" : "#0f3460";
     body += `<div style="padding:12px;margin:8px 0;border-radius:8px;background:${bg};"><b style="color:#a8d8ea">${role}</b><div style="color:#e2e2e2;margin-top:4px;">${escaped}</div></div>`;
   }
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${detail.name || "Session"}</title><style>body{font-family:system-ui;background:#0a0a0a;color:#e2e2e2;max-width:800px;margin:0 auto;padding:20px;}</style></head><body><h1>${detail.name || "Session Export"}</h1>${body}</body></html>`;
+  const safeName = escapeHtml(detail.name || "Session Export");
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(detail.name || "Session")}</title><style>body{font-family:system-ui;background:#0a0a0a;color:#e2e2e2;max-width:800px;margin:0 auto;padding:20px;}</style></head><body><h1>${safeName}</h1>${body}</body></html>`;
 }
 
 // ==================== WebSocket ====================
@@ -527,13 +655,31 @@ app.get(
     const model = c.req.query("model");
     const newSessionId = c.req.query("newSessionId");
 
+    // #83: Reject WS connections lacking valid projectId
+    if (!projectId) {
+      return {
+        onOpen(_event, ws) {
+          try { ws.send(JSON.stringify({ type: "error", message: "projectId is required" })); } catch {}
+          ws.close();
+        },
+        onMessage() {},
+        onClose() {},
+      };
+    }
+
     return {
       async onOpen(_event, ws) {
         try {
-          const project = projectId ? getProject(projectId) : null;
-          const cwd = project?.path || process.cwd();
+          const project = getProject(projectId);
+          // #2/#83: Reject if project not found — no fallback to process.cwd()
+          if (!project) {
+            try { ws.send(JSON.stringify({ type: "error", message: "Invalid projectId" })); } catch {}
+            ws.close();
+            return;
+          }
 
-          if (project) touchProject(project.id);
+          const cwd = project.path;
+          touchProject(project.id);
 
           const { agent, isNew } = getOrCreateAgent(cwd, sessionPath || null, provider || undefined, model || undefined, newSessionId || undefined);
           const raw = (ws as any).raw as ServerWebSocket;
@@ -546,11 +692,13 @@ app.get(
           agent.attach(raw);
 
           // If agent is new, start it
+          // #12: Delete from pool if start() fails
           if (isNew) {
             try {
               await agent.start();
             } catch (err: any) {
               console.error("Failed to start agent:", err.message || err);
+              deleteFromPool(agentKey);
               try { if (ws.readyState === 1) ws.send(JSON.stringify({ type: "error", message: `Failed to start agent: ${err.message}` })); } catch {}
             }
           }
@@ -590,8 +738,10 @@ app.get(
             case "cycle_model": agent.send({ type: "cycle_model" }); break;
             case "set_thinking": {
               const level = msg.level;
-              // Optimistically broadcast so UI updates immediately
-              ws.send(JSON.stringify({ type: "thinking_changed", level }));
+              // #91: Nested try/catch around ws.send for set_thinking
+              try {
+                if (ws.readyState === 1) ws.send(JSON.stringify({ type: "thinking_changed", level }));
+              } catch {}
               agent.send({ type: "set_thinking_level", level });
               break;
             }
@@ -616,38 +766,50 @@ app.get(
             case "bash": agent.send({ type: "bash", command: (msg as any).command }); break;
             case "abort_bash": agent.send({ type: "abort_bash" }); break;
             case "extension_ui_response": agent.send({ type: "extension_ui_response", id: msg.id, value: msg.value, confirmed: msg.confirmed, cancelled: msg.cancelled }); break;
+            // #14: delete_session with symlink/realpath validation
             case "delete_session": {
               const sessionId = msg.sessionId;
-              const proj = projectId ? getProject(projectId) : null;
+              const proj = getProject(projectId);
               if (proj) {
                 listProjectSessions(proj.path).then(list => {
                   const target = list.find(s => s.id === sessionId);
                   if (target) {
-                    import("node:fs/promises").then(({ unlink }) => unlink(target.filePath))
-                      .then(() => { if (raw.readyState === 1) raw.send(JSON.stringify({ type: "session_deleted", sessionId })); })
-                      .catch((e: any) => { if (raw.readyState === 1) raw.send(JSON.stringify({ type: "error", message: `Failed to delete: ${e.message}` })); });
+                    // Validate the resolved path is inside session roots (#14)
+                    try {
+                      const safePath = validateSessionPath(target.filePath, proj.path);
+                      unlink(safePath)
+                        .then(() => { if (raw.readyState === 1) raw.send(JSON.stringify({ type: "session_deleted", sessionId })); })
+                        .catch((e: any) => { if (raw.readyState === 1) raw.send(JSON.stringify({ type: "error", message: `Failed to delete: ${e.message}` })); });
+                    } catch (e: any) {
+                      if (raw.readyState === 1) raw.send(JSON.stringify({ type: "error", message: `Invalid session path: ${e.message}` }));
+                    }
                   }
                 });
               }
               break;
             }
+            // #14: rename_session with symlink/realpath validation
             case "rename_session": {
               const { sessionId, name } = msg;
-              const proj2 = projectId ? getProject(projectId) : null;
+              const proj2 = getProject(projectId);
               if (proj2) {
                 listProjectSessions(proj2.path).then(list => {
                   const target = list.find(s => s.id === sessionId);
                   if (target) {
-                    import("node:fs/promises").then(({ readFile: rf, writeFile: wf }) =>
-                      rf(target.filePath, "utf-8").then(content => {
+                    // Validate the resolved path is inside session roots (#14)
+                    try {
+                      const safePath = validateSessionPath(target.filePath, proj2.path);
+                      readFile(safePath, "utf-8").then(content => {
                         const renameEntry = JSON.stringify({ type: "session_info", name, timestamp: new Date().toISOString() });
-                        return wf(target.filePath, content.trim() + "\n" + renameEntry + "\n");
-                      })
-                    ).then(() => {
-                      if (raw.readyState === 1) raw.send(JSON.stringify({ type: "session_renamed", sessionId, name }));
-                    }).catch((e: any) => {
-                      if (raw.readyState === 1) raw.send(JSON.stringify({ type: "error", message: `Failed to rename: ${e.message}` }));
-                    });
+                        return writeFile(safePath, content.trim() + "\n" + renameEntry + "\n");
+                      }).then(() => {
+                        if (raw.readyState === 1) raw.send(JSON.stringify({ type: "session_renamed", sessionId, name }));
+                      }).catch((e: any) => {
+                        if (raw.readyState === 1) raw.send(JSON.stringify({ type: "error", message: `Failed to rename: ${e.message}` }));
+                      });
+                    } catch (e: any) {
+                      if (raw.readyState === 1) raw.send(JSON.stringify({ type: "error", message: `Invalid session path: ${e.message}` }));
+                    }
                   }
                 });
               }
@@ -711,8 +873,12 @@ app.get("*", async (c) => {
   }
 });
 
+// #41: Bind to 127.0.0.1 only (trusted local env)
+// Document: this server assumes a trusted local environment with no auth.
+// Binding to 127.0.0.1 prevents exposure on network interfaces.
 export default {
   port: parseInt(process.env.PORT || "3069", 10),
+  hostname: process.env.HOST || "127.0.0.1",
   fetch: app.fetch,
   websocket,
 };

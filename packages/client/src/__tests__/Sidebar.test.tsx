@@ -13,6 +13,7 @@ vi.mock('../components/ContextMenu', () => ({
     <button data-testid="ctx-item" onClick={onClick}>{label}</button>
   ),
   ContextMenuDivider: () => <hr data-testid="ctx-divider" />,
+  useLongPress: (cb: any) => ({ onMouseDown: cb, onTouchStart: cb }),
 }));
 
 const mockProject: Project = {

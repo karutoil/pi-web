@@ -1,5 +1,6 @@
-import { readdir, stat, readFile, writeFile, mkdir } from "node:fs/promises";
-import { join, basename } from "node:path";
+import { readdir, stat, readFile, writeFile, mkdir, rename } from "node:fs/promises";
+import { join, basename, resolve, normalize } from "node:path";
+import { homedir } from "node:os";
 import type { SessionSummary, SessionDetail, SessionEntry, ChatMessage } from "@pi-web/shared";
 
 // ─── Index Cache ───
@@ -32,17 +33,27 @@ function getIndexFilePath(projectPath: string): string {
 async function loadIndex(projectPath: string): Promise<SessionIndex> {
   try {
     const raw = await readFile(getIndexFilePath(projectPath), "utf-8");
-    return JSON.parse(raw);
+    const index = JSON.parse(raw);
+    // #85: Check index version mismatch — discard stale indexes
+    if (index.version !== INDEX_VERSION) {
+      console.log(`[sessions] index version mismatch (got ${index.version}, expected ${INDEX_VERSION}), rebuilding`);
+      return { version: INDEX_VERSION, updatedAt: "", entries: {} };
+    }
+    return index;
   } catch {
     return { version: INDEX_VERSION, updatedAt: "", entries: {} };
   }
 }
 
+// #89: Atomic index write — write to tmp file then rename
 async function saveIndex(projectPath: string, index: SessionIndex): Promise<void> {
   const dir = getIndexDir();
   await mkdir(dir, { recursive: true });
   index.updatedAt = new Date().toISOString();
-  await writeFile(getIndexFilePath(projectPath), JSON.stringify(index));
+  const targetPath = getIndexFilePath(projectPath);
+  const tmpPath = targetPath + ".tmp";
+  await writeFile(tmpPath, JSON.stringify(index));
+  await rename(tmpPath, targetPath);
 }
 
 // ─── List Sessions (with index cache) ───
@@ -171,8 +182,9 @@ async function parseSessionSummaryFull(filePath: string, mtime: string): Promise
             lastActiveAt = entry.timestamp || lastActiveAt;
             if (msg.model) model = msg.model;
             if (msg.usage) {
-              totalTokens += (msg.usage.totalTokens || msg.usage.input + msg.usage.output);
-              if (msg.usage.cost?.total) totalCost += msg.usage.cost.total;
+              // #37: Use ?? defaults to prevent NaN accumulation
+              totalTokens += (msg.usage.totalTokens ?? ((msg.usage.input ?? 0) + (msg.usage.output ?? 0)));
+              totalCost += (msg.usage.cost?.total ?? 0);
             }
           }
         } else if (entry.type === "session_info" && entry.name) {
@@ -273,9 +285,9 @@ function normalizeMessage(msg: any): ChatMessage {
   const normalized: ChatMessage = {
     role: msg.role || "unknown",
     content: msg.content || "",
+    timestamp: msg.timestamp || new Date().toISOString(),
   };
 
-  if (msg.timestamp) normalized.timestamp = msg.timestamp;
   if (msg.api) normalized.api = msg.api;
   if (msg.provider) normalized.provider = msg.provider;
   if (msg.model) normalized.model = msg.model;
@@ -292,7 +304,7 @@ function normalizeMessage(msg: any): ChatMessage {
   if (msg.cancelled !== undefined) normalized.cancelled = msg.cancelled;
   if (msg.truncated !== undefined) normalized.truncated = msg.truncated;
   if (msg.fullOutputPath) normalized.fullOutputPath = msg.fullOutputPath;
-  if (msg.tokensBefore) normalized.tokensBefore = msg.tokensBefore;
+  if (msg.tokensBefore !== undefined) normalized.tokensBefore = msg.tokensBefore;
   if (msg.thinking) normalized.thinking = msg.thinking;
 
   if (Array.isArray(normalized.content)) {
@@ -324,7 +336,9 @@ function findSessionName(entries: any[]): string | null {
 }
 
 function sanitizePath(p: string): string {
-  let s = p.replace(/^\//, "").replace(/\/$/, "");
+  // #86: Normalize to absolute path before sanitizing
+  const abs = resolve(normalize(p));
+  let s = abs.replace(/^\//, "").replace(/\/$/, "");
   s = s.replace(/\//g, "-");
   return `--${s || "root"}--`;
 }

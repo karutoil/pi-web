@@ -62,15 +62,15 @@ describe('DiffRenderer', () => {
     expect(screen.getByText('-1')).toBeInTheDocument();
   });
 
-  it('defaults to side-by-side view', () => {
+  it('defaults to unified view', () => {
     render(<DiffRenderer content={SAMPLE_DIFF} />);
-    expect(screen.getByText('Side-by-side').closest('button')).toHaveClass('bg-ink-800');
+    expect(screen.getByText('Unified').closest('button')).toHaveClass('bg-ink-800');
   });
 
-  it('switches to unified view on click', () => {
+  it('switches to side-by-side view on click', () => {
     render(<DiffRenderer content={SAMPLE_DIFF} />);
-    fireEvent.click(screen.getByText('Unified'));
-    expect(screen.getByText('Unified').closest('button')).toHaveClass('bg-ink-800');
+    fireEvent.click(screen.getByText('Side-by-side'));
+    expect(screen.getByText('Side-by-side').closest('button')).toHaveClass('bg-ink-800');
   });
 
   it('shows file meta lines', () => {

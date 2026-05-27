@@ -13,7 +13,7 @@ export function AutoRetryIndicator({ autoRetry, onAbort }: AutoRetryIndicatorPro
       <span className="animate-spin-slow">⟳</span>
       <span>Retrying ({autoRetry.attempt}/{autoRetry.maxAttempts})...</span>
       <span className="text-amber-400/70 truncate max-w-32" title={autoRetry.errorMessage}>
-        {autoRetry.errorMessage.slice(0, 40)}
+        {[...autoRetry.errorMessage].slice(0, 40).join('')}
       </span>
       <button onClick={onAbort}
         className="ml-auto text-amber-400 hover:text-amber-200 transition-colors">Cancel</button>

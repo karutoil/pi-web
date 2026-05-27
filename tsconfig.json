@@ -1,3 +1,5 @@
+// Root tsconfig — solution file for tsc -b project references.
+// Not a build target itself; only used to orchestrate child projects.
 {
   "compilerOptions": {
     "target": "ESNext",

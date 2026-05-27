@@ -62,6 +62,8 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
   const [showThinking, setShowThinking] = useState(true);
   const [srAnnouncement, setSrAnnouncement] = useState('');
   const [autoScroll, setAutoScroll] = useState(true);
+  const autoScrollRef = useRef(true);
+  useEffect(() => { autoScrollRef.current = autoScroll; }, [autoScroll]);
   const contentRef = useRef<HTMLDivElement>(null);
   const [showTerminal, setShowTerminal] = useState(false);
   const [showGit, setShowGit] = useState(false);
@@ -83,7 +85,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
     if (!content) return;
 
     const observer = new ResizeObserver(() => {
-      if (!autoScroll || !el) return;
+      if (!autoScrollRef.current || !el) return;
       // Direct scrollTop — O(1), no layout recalculation
       el.scrollTop = el.scrollHeight;
     });
@@ -210,7 +212,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
       groups.get(turnStart)!.push(msg);
     }
     return groups;
-  }, [allChatMsgs.length]);
+  }, [allChatMsgs]);
 
   const getTurnForMsg = useCallback((idx: number): ChatMessage[] => {
     // Find which turn this message belongs to
@@ -292,8 +294,8 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
                 isHistorical={true}
                 entryId={isUser ? entry.id : undefined}
                 onFork={isUser ? handleFork : undefined}
-                onCopyTurn={() => navigator.clipboard.writeText(getTurnText(turn))}
-                onCopyResponse={() => navigator.clipboard.writeText(getFinalResponse(turn))}
+                onCopyTurn={() => navigator.clipboard.writeText(getTurnText(turn)).catch(() => {})}
+                onCopyResponse={() => navigator.clipboard.writeText(getFinalResponse(turn)).catch(() => {})}
               />
             );
           })}
@@ -311,12 +313,12 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
               onCopyTurn={() => {
                 const histLen = historicalMsgs.length;
                 const turn = getTurnForMsg(histLen + i);
-                navigator.clipboard.writeText(getTurnText(turn));
+                navigator.clipboard.writeText(getTurnText(turn)).catch(() => {});
               }}
               onCopyResponse={() => {
                 const histLen = historicalMsgs.length;
                 const turn = getTurnForMsg(histLen + i);
-                navigator.clipboard.writeText(getFinalResponse(turn));
+                navigator.clipboard.writeText(getFinalResponse(turn)).catch(() => {});
               }}
             />
           ))}
@@ -400,6 +402,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
       <ExtensionErrorToast
         errors={extensionErrorList}
         onDismiss={(idx) => setExtensionErrorList(prev => prev.filter((_, i) => i !== idx))}
+        onClearAll={() => setExtensionErrorList([])}
       />
 
       <ChatInput

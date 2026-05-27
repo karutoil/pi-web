@@ -26,7 +26,7 @@ export function ModelSelector({ models, currentModel, thinkingLevel, onSelect, o
   useEffect(() => { setSelectedIndex(0); }, [filter]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "ArrowDown") { e.preventDefault(); setSelectedIndex(i => Math.min(i + 1, filtered.length - 1)); }
+    if (e.key === "ArrowDown") { e.preventDefault(); setSelectedIndex(i => Math.min(i + 1, Math.max(filtered.length - 1, 0))); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setSelectedIndex(i => Math.max(i - 1, 0)); }
     else if (e.key === "Enter" && filtered[selectedIndex]) {
       onSelect(filtered[selectedIndex].provider, filtered[selectedIndex].id);
@@ -50,7 +50,7 @@ export function ModelSelector({ models, currentModel, thinkingLevel, onSelect, o
             className="w-full bg-ink-800 text-ink-100 px-3 py-2 rounded-lg border border-ink-700 focus:border-accent-500 focus:outline-none text-sm"
           />
         </div>
-        <div className="max-h-64 overflow-y-auto">
+        <div className="max-h-64 overflow-y-auto" role="listbox">
           {filtered.length === 0 && (
             <div className="px-4 py-6 text-center text-ink-500 text-sm">No models found</div>
           )}
@@ -61,6 +61,8 @@ export function ModelSelector({ models, currentModel, thinkingLevel, onSelect, o
               className={`w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 transition-theme
                 ${i === selectedIndex ? "bg-ink-800" : "hover:bg-ink-850"}
                 ${currentModel === m.id ? "text-accent-400" : "text-ink-200"}`}
+              role="option"
+              aria-selected={i === selectedIndex}
             >
               <span className="flex-1 truncate">
                 <span className="font-medium">{m.name}</span>

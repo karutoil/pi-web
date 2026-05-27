@@ -10,11 +10,12 @@
     "dev": "concurrently -n server,client -c blue,green \"bun run dev:server\" \"bun run dev:client\"",
     "dev:server": "bun run --cwd packages/server dev",
     "dev:client": "bun run --cwd packages/client dev",
-    "build": "bun run --cwd packages/client build",
-    "start": "concurrently -n server,client -c blue,green \"PORT=3068 bun run dev:server\" \"SERVER_PORT=3068 CLIENT_PORT=3071 bun run dev:client\""
+    "build": "tsc -b && bun run --cwd packages/client build",
+    "start": "concurrently -n server,client -c blue,green \"PORT=3068 bun run dev:server\" \"SERVER_PORT=3068 CLIENT_PORT=3071 bun run dev:client\"",
+    "start:prod": "bun run --cwd packages/server start"
   },
   "devDependencies": {
-    "@types/bun": "latest",
+    "@types/bun": "^1.2.0",
     "concurrently": "^9.2.1",
     "typescript": "^5.7.0"
   }

@@ -66,6 +66,7 @@ export interface WSBridge {
   liveMessages: Map<string, ChatMessage>;
   runningTools: Map<string, ToolEvent>;
   state: AgentState | null;
+  lastError: string | null;
   isConnected: boolean;
   isStreaming: boolean;
   isActive: boolean;

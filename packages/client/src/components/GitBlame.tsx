@@ -22,7 +22,7 @@ interface GitBlameProps {
 
 /** Format ISO date to short readable form (e.g. "2024-03-15") */
 function shortDate(iso: string): string {
-  if (!iso) return "";
+  if (!iso || iso === 'null') return "";
   try {
     const d = new Date(iso);
     return d.toISOString().slice(0, 10);

@@ -81,7 +81,9 @@ function AgentProgressView({ progress, now }: { progress: AgentProgress; now: nu
   const isRunning = progress.status === "running";
   const isDone = progress.status === "completed";
   const isFailed = progress.status === "failed";
-  const elapsed = isRunning ? (now - progress.durationMs) : progress.durationMs;
+  // durationMs from server is cumulative duration; elapsed for running = now - startedAt
+  // Since server sends durationMs as cumulative, for running agents we add time since last update
+  const elapsed = isRunning ? progress.durationMs + (now - (progress.currentToolStartedAt || progress.durationMs)) : progress.durationMs;
 
   return (
     <div className="space-y-1.5">
@@ -225,13 +227,13 @@ export function SubagentProgressView({ details, isRunning }: { details: ToolDeta
                   {hasError ? "✗" : "✓"}
                 </span>
                 <span className="font-medium text-ink-300">{r.agent}</span>
-                {r.progressSummary && (
+                {r.progressSummary ? (
                   <>
                     <span className="text-ink-500">{r.progressSummary.toolCount} tools</span>
                     <span className="text-ink-500">{formatTokenCount(r.progressSummary.tokens)} tok</span>
                     <span className="text-ink-500">{formatDuration(r.progressSummary.durationMs)}</span>
                   </>
-                )}
+                ) : null}
               </div>
               {r.error && (
                 <div className="pl-4 text-xs font-mono text-rose-400 truncate">{r.error}</div>

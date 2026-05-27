@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Icon } from "./Icon";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { uuidV4 } from "../lib/uuid";
 
 // ─── Types ───
 
@@ -89,47 +90,52 @@ function TerminalInstance({ tab }: { tab: TerminalTab }) {
       };
       requestAnimationFrame(() => tryFit(0));
 
-      // Connect to terminal WS
-      const protocol = location.protocol === "https:" ? "wss" : "ws";
-      ws = new WebSocket(`${protocol}://${location.host}/ws?type=terminal&id=${encodeURIComponent(tab.id)}`);
-      wsRef.current = ws;
+      let retryCount = 0;
+      const MAX_RETRIES = 5;
 
-      ws.onopen = () => {
-        requestAnimationFrame(() => {
-          if (destroyed) return;
-          try { fitAddon.fit(); } catch {}
-          const dims = fitAddon.proposeDimensions();
-          if (dims && ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: "term_resize", cols: dims.cols, rows: dims.rows }));
-          }
-        });
-      };
+      const connectWs = () => {
+        const protocol = location.protocol === "https:" ? "wss" : "ws";
+        ws = new WebSocket(`${protocol}://${location.host}/ws?type=terminal&id=${encodeURIComponent(tab.id)}`);
+        wsRef.current = ws;
 
-      ws.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data);
-          if (msg.type === "term_output") {
-            term.write(msg.data);
-          } else if (msg.type === "term_exit") {
-            term.write(`\r\n\x1b[38;5;196m[Process exited with code ${msg.exitCode}]\x1b[0m\r\n`);
-            ws?.close();
-          }
-        } catch {}
-      };
-
-      ws.onclose = () => {
-        if (!destroyed) {
-          setTimeout(() => {
-            if (!destroyed && containerRef.current) {
-              const newWs = new WebSocket(`${protocol}://${location.host}/ws?type=terminal&id=${encodeURIComponent(tab.id)}`);
-              wsRef.current = newWs;
-              newWs.onopen = ws!.onopen;
-              newWs.onmessage = ws!.onmessage;
-              newWs.onclose = ws!.onclose;
+        ws.onopen = () => {
+          retryCount = 0; // reset on successful connect
+          requestAnimationFrame(() => {
+            if (destroyed) return;
+            try { fitAddon.fit(); } catch {}
+            const dims = fitAddon.proposeDimensions();
+            if (dims && ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: "term_resize", cols: dims.cols, rows: dims.rows }));
             }
-          }, 2000);
-        }
+          });
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === "term_output") {
+              term.write(msg.data);
+            } else if (msg.type === "term_exit") {
+              term.write(`\r\n\x1b[38;5;196m[Process exited with code ${msg.exitCode}]\x1b[0m\r\n`);
+              ws?.close();
+            }
+          } catch {}
+        };
+
+        ws.onclose = () => {
+          if (!destroyed && retryCount < MAX_RETRIES) {
+            retryCount++;
+            const delay = Math.min(2000 * Math.pow(2, retryCount - 1), 30000); // exponential backoff, cap 30s
+            setTimeout(() => {
+              if (!destroyed && containerRef.current) {
+                connectWs();
+              }
+            }, delay);
+          }
+        };
       };
+
+      connectWs();
 
       // Terminal input → WS
       term.onData((data: string) => {
@@ -243,7 +249,7 @@ export function TerminalPanel({ projectId, projectPath, visible, onClose }: Term
 
   const addTerminal = useCallback(async () => {
     if (!projectId || !projectPath) return;
-    const id = crypto.randomUUID();
+    const id = uuidV4();
     const name = `Terminal ${tabs.length + 1}`;
     try {
       const r = await fetch("/api/terminals", {

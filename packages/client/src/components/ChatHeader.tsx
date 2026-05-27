@@ -197,7 +197,7 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
                   {stats.contextUsage.percent.toFixed(0)}%
                 </span>
               )}
-              <span>${stats.cost.toFixed(2)}</span>
+              <span>${stats.cost?.toFixed(2) ?? '—'}</span>
             </div>
           )}
 

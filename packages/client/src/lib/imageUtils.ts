@@ -2,8 +2,11 @@ import { IMAGE_MAX_DIM, IMAGE_QUALITY } from "./constants";
 export async function compressImage(blob: Blob, maxDim = IMAGE_MAX_DIM, quality = IMAGE_QUALITY): Promise<Blob> {
   const img = new Image();
   const url = URL.createObjectURL(blob);
-  await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = url; });
-  URL.revokeObjectURL(url);
+  try {
+    await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = url; });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 
   let { width, height } = img;
   if (width > maxDim || height > maxDim) {

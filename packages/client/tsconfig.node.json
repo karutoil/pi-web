@@ -6,8 +6,7 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "composite": true,
-    "noEmit": false
+    "noEmit": true
   },
   "include": ["vite.config.ts"]
 }

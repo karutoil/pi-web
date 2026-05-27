@@ -8,6 +8,7 @@ export interface IconProps {
   name: keyof typeof SVG_PATHS;
   size?: number;
   className?: string;
+  "aria-hidden"?: boolean;
 }
 
 /* ─── Path definitions ─── */
@@ -423,7 +424,7 @@ const SVG_PATHS: Record<string, IconDef> = {
 
 /* ─── Component ─── */
 
-export function Icon({ name, size = 16, className }: IconProps) {
+export function Icon({ name, size = 16, className, "aria-hidden": ariaHidden = true }: IconProps) {
   const def = SVG_PATHS[name];
   if (!def) {
     if (process.env.NODE_ENV === "development") {
@@ -443,6 +444,7 @@ export function Icon({ name, size = 16, className }: IconProps) {
       strokeLinecap={def.strokeLinecap}
       strokeLinejoin={def.strokeLinejoin}
       className={className}
+      aria-hidden={ariaHidden}
     >
       {def.children}
     </svg>

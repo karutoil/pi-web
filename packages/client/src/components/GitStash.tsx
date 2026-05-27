@@ -70,8 +70,11 @@ export function GitStash({ cwd, stashCount, onRefresh }: GitStashProps) {
         setStashMsg("");
         setShowStashInput(false);
         onRefresh();
+      } else {
+        try { const d = await r.json(); setError(d.error || 'Stash failed'); } catch { setError('Stash failed'); }
       }
-    } finally {
+    } catch (err) { setError(String(err)); }
+    finally {
       setStashing(false);
     }
   }, [cwd, stashMsg, onRefresh]);
@@ -85,13 +88,15 @@ export function GitStash({ cwd, stashCount, onRefresh }: GitStashProps) {
         body: JSON.stringify({ cwd, index }),
       });
       if (r.ok) onRefresh();
-    } finally {
+      else { try { const d = await r.json(); setError(d.error || `${action} failed`); } catch { setError(`${action} failed`); } }
+    } catch (err) { setError(String(err)); }
+    finally {
       setActingIndex(null);
     }
   }, [cwd, onRefresh]);
 
   return (
-    <div>
+    <div className="relative">
       {/* ── Collapsible header ── */}
       <button
         onClick={() => setExpanded(v => !v)}

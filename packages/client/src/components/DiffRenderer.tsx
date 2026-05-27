@@ -18,6 +18,24 @@ interface Props {
   collapsible?: boolean;
 }
 
+// ─── Module-scope sub-components (avoid remounts on every render) ───
+
+function FileMeta({ line }: { line: DiffLine }) {
+  return (
+    <div className="px-3 py-1 bg-ink-900 text-ink-400 font-semibold text-xs font-mono border-b border-ink-800">
+      {line.content}
+    </div>
+  );
+}
+
+function HunkHeader({ line }: { line: DiffLine }) {
+  return (
+    <div className="px-3 py-1 bg-amber-500/5 text-amber-400 text-xs font-mono border-b border-ink-800">
+      {line.content}
+    </div>
+  );
+}
+
 export function DiffRenderer({ content, collapsible = true }: Props) {
   const [expanded, setExpanded] = useState(false);
   const isMobile = useIsMobile();
@@ -100,18 +118,6 @@ export function DiffRenderer({ content, collapsible = true }: Props) {
   const previewLimit = 20;
   const needsCollapse = collapsible && sideBySide.length > previewLimit;
   const displayRows = needsCollapse && !expanded ? sideBySide.slice(0, previewLimit) : sideBySide;
-
-  const FileMeta = ({ line }: { line: DiffLine }) => (
-    <div className="px-3 py-1 bg-ink-900 text-ink-400 font-semibold text-xs font-mono border-b border-ink-800">
-      {line.content}
-    </div>
-  );
-
-  const HunkHeader = ({ line }: { line: DiffLine }) => (
-    <div className="px-3 py-1 bg-amber-500/5 text-amber-400 text-xs font-mono border-b border-ink-800">
-      {line.content}
-    </div>
-  );
 
   const lineNumCell = (num?: number) => (
     <td className="w-10 text-right pr-2 select-none text-ink-500 text-[0.65rem] align-top py-px">
