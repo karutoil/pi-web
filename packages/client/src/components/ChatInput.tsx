@@ -127,26 +127,27 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
     textareaRef.current?.focus();
   }, [text]);
 
-  const handleSelectFile = useCallback((relativePath: string) => {
+  const handleSelectFile = useCallback((relativePath: string, isDirectory: boolean) => {
     // Find the @ that triggered the mention and replace from there
     const cursorPos = textareaRef.current?.selectionStart ?? text.length;
     const textBeforeCursor = text.slice(0, cursorPos);
     const atMatch = /(?:^|\s)@([^\s@]*)$/.exec(textBeforeCursor);
     if (atMatch) {
-      const atStart = atMatch.index + (atMatch[0].startsWith(" ") ? 1 : 0); // skip leading space if present
+      const atStart = atMatch.index + (atMatch[0].startsWith(" ") ? 1 : 0);
       const before = text.slice(0, atStart);
       const after = text.slice(cursorPos);
-      // Insert @path and a space after
-      const insertion = `@${relativePath} `;
+      // For directories: insert @dir/ (trailing slash) so user can keep drilling
+      // For files: insert @path and a trailing space
+      const insertion = isDirectory ? `@${relativePath}/` : `@${relativePath} `;
       setText(before + insertion + after);
-      // Set cursor after insertion on next tick
       requestAnimationFrame(() => {
         const newCursorPos = before.length + insertion.length;
         textareaRef.current?.setSelectionRange(newCursorPos, newCursorPos);
         textareaRef.current?.focus();
       });
+      // Keep completer open for directories (user may continue typing path)
+      if (!isDirectory) setShowFileMentions(false);
     }
-    setShowFileMentions(false);
   }, [text]);
 
   // ── Status: first entry = left, second+ = right ──

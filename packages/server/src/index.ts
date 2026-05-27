@@ -588,12 +588,17 @@ app.get("/api/fs/search-files", (c) => {
   if (!existsSync(safeDir) || !statSync(safeDir).isDirectory()) return c.json({ files: [] });
 
   const q = query.toLowerCase();
-  const results: Array<{ path: string; name: string; relativePath: string }> = [];
+  const results: Array<{ path: string; name: string; relativePath: string; isDirectory: boolean }> = [];
   const MAX_RESULTS = 30;
   const MAX_DEPTH = 5;
 
   // Directories to skip
   const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build", ".next", "target", "__pycache__", ".pi", ".cache", ".bun"]);
+
+  function matches(name: string, relPath: string): boolean {
+    if (!q) return true;
+    return name.toLowerCase().includes(q) || relPath.toLowerCase().includes(q);
+  }
 
   function walk(currentDir: string, depth: number, baseDir: string) {
     if (results.length >= MAX_RESULTS || depth > MAX_DEPTH) return;
@@ -601,19 +606,41 @@ app.get("/api/fs/search-files", (c) => {
     try { entries = readdirSync(currentDir, { withFileTypes: true }); }
     catch { return; } // permission denied
 
+    // Collect dirs and files separately so dirs appear first
+    const dirs: typeof entries = [];
+    const files: typeof entries = [];
     for (const entry of entries) {
-      if (results.length >= MAX_RESULTS) break;
       if (entry.name.startsWith(".")) continue;
+      if (entry.isDirectory() && SKIP_DIRS.has(entry.name)) continue;
+      if (entry.isDirectory()) dirs.push(entry); else if (entry.isFile()) files.push(entry);
+    }
+
+    // Add matching directories first (only direct children, not recursed)
+    for (const entry of dirs) {
+      if (results.length >= MAX_RESULTS) break;
       const fullPath = join(currentDir, entry.name);
       const relPath = fullPath.slice(baseDir.length + 1);
-
-      if (entry.isDirectory()) {
-        if (SKIP_DIRS.has(entry.name)) continue;
-        walk(fullPath, depth + 1, baseDir);
-      } else if (entry.isFile()) {
-        if (q && !entry.name.toLowerCase().includes(q) && !relPath.toLowerCase().includes(q)) continue;
-        results.push({ path: fullPath, name: entry.name, relativePath: relPath });
+      // For top-level walk without query, only show dirs from depth 0 to avoid noise
+      // With a query, show dirs at any depth if they match
+      if (q ? matches(entry.name, relPath) : depth === 0) {
+        results.push({ path: fullPath, name: entry.name, relativePath: relPath, isDirectory: true });
       }
+    }
+
+    // Add matching files
+    for (const entry of files) {
+      if (results.length >= MAX_RESULTS) break;
+      const fullPath = join(currentDir, entry.name);
+      const relPath = fullPath.slice(baseDir.length + 1);
+      if (matches(entry.name, relPath)) {
+        results.push({ path: fullPath, name: entry.name, relativePath: relPath, isDirectory: false });
+      }
+    }
+
+    // Recurse into non-skipped dirs
+    for (const entry of dirs) {
+      if (results.length >= MAX_RESULTS) break;
+      walk(join(currentDir, entry.name), depth + 1, baseDir);
     }
   }
 
@@ -627,13 +654,27 @@ app.get("/api/fs/search-files", (c) => {
       let subEntries;
       try { subEntries = readdirSync(subDir, { withFileTypes: true }); }
       catch { return c.json({ files: results }); }
+      const dirs: typeof subEntries = [];
+      const files: typeof subEntries = [];
       for (const entry of subEntries) {
-        if (results.length >= MAX_RESULTS) break;
         if (entry.name.startsWith(".")) continue;
+        if (entry.isDirectory() && SKIP_DIRS.has(entry.name)) continue;
+        if (entry.isDirectory()) dirs.push(entry); else if (entry.isFile()) files.push(entry);
+      }
+      for (const entry of dirs) {
+        if (results.length >= MAX_RESULTS) break;
         const fullPath = join(subDir, entry.name);
         const relPath = fullPath.slice(safeDir.length + 1);
-        if (entry.isFile() && (!filePart || entry.name.toLowerCase().includes(filePart))) {
-          results.push({ path: fullPath, name: entry.name, relativePath: relPath });
+        if (!filePart || entry.name.toLowerCase().includes(filePart)) {
+          results.push({ path: fullPath, name: entry.name, relativePath: relPath, isDirectory: true });
+        }
+      }
+      for (const entry of files) {
+        if (results.length >= MAX_RESULTS) break;
+        const fullPath = join(subDir, entry.name);
+        const relPath = fullPath.slice(safeDir.length + 1);
+        if (!filePart || entry.name.toLowerCase().includes(filePart)) {
+          results.push({ path: fullPath, name: entry.name, relativePath: relPath, isDirectory: false });
         }
       }
       return c.json({ files: results });
