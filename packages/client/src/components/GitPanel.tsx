@@ -539,22 +539,22 @@ function ChangesView({ cwd, status, loading, error, expandedStaged, expandedChan
         <div>
           <button
             onClick={onToggleStaged}
-            className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-ink-300 hover:bg-ink-900/30 transition-theme"
+            className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-ink-300 hover:bg-ink-900/30 transition-theme relative"
           >
             <Icon name={expandedStaged ? "chevron-down" : "chevron-right"} size={8} />
             Staged Changes
             <span className="text-ink-500 font-normal ml-auto">{status.staged.length}</span>
-            {status.staged.length > 0 && (
-              <button
-                onClick={(e) => { e.stopPropagation(); onUnstageAll(); }}
-                className="text-ink-500 hover:text-amber-500 transition-theme ml-1 p-0.5"
-                aria-label="Unstage all"
-                title="Unstage all"
-              >
-                <Icon name="minus" size={10} />
-              </button>
-            )}
           </button>
+          {status.staged.length > 0 && (
+            <button
+              onClick={onUnstageAll}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-500 hover:text-amber-500 transition-theme p-0.5"
+              aria-label="Unstage all"
+              title="Unstage all"
+            >
+              <Icon name="minus" size={10} />
+            </button>
+          )}
           {expandedStaged && status.staged.map(f => (
             <FileRow
               key={`staged-${f.path}`}
@@ -577,22 +577,22 @@ function ChangesView({ cwd, status, loading, error, expandedStaged, expandedChan
         <div>
           <button
             onClick={onToggleChanges}
-            className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-ink-300 hover:bg-ink-900/30 transition-theme"
+            className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-ink-300 hover:bg-ink-900/30 transition-theme relative"
           >
             <Icon name={expandedChanges ? "chevron-down" : "chevron-right"} size={8} />
             Changes
             <span className="text-ink-500 font-normal ml-auto">{status.unstaged.length + status.untracked.length}</span>
-            {status.unstaged.length + status.untracked.length > 0 && (
-              <button
-                onClick={(e) => { e.stopPropagation(); onStageAll(); }}
-                className="text-ink-500 hover:text-amber-500 transition-theme ml-1 p-0.5"
-                aria-label="Stage all changes"
-                title="Stage all"
-              >
-                <Icon name="plus" size={10} />
-              </button>
-            )}
           </button>
+          {status.unstaged.length + status.untracked.length > 0 && (
+            <button
+              onClick={onStageAll}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-500 hover:text-amber-500 transition-theme p-0.5"
+              aria-label="Stage all changes"
+              title="Stage all"
+            >
+              <Icon name="plus" size={10} />
+            </button>
+          )}
           {expandedChanges && (
             <>
               {status.unstaged.map(f => (

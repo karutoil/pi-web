@@ -554,6 +554,11 @@ app.get(
               try { if (ws.readyState === 1) ws.send(JSON.stringify({ type: "error", message: `Failed to start agent: ${err.message}` })); } catch {}
             }
           }
+
+          // If client requested a new session (fresh WS connection), tell pi to create one
+          if (newSessionId) {
+            agent.send({ type: "new_session" });
+          }
         } catch (fatalErr: any) {
           console.error("Fatal onOpen error:", fatalErr);
           try { ws.send(JSON.stringify({ type: "error", message: "Internal server error" })); } catch {}

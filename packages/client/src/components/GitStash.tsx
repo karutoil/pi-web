@@ -95,24 +95,24 @@ export function GitStash({ cwd, stashCount, onRefresh }: GitStashProps) {
       {/* ── Collapsible header ── */}
       <button
         onClick={() => setExpanded(v => !v)}
-        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-ink-300 hover:bg-ink-900/30 transition-theme"
+        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-ink-300 hover:bg-ink-900/30 transition-theme relative"
       >
         <Icon name={expanded ? "chevron-down" : "chevron-right"} size={8} />
         Stashes
         {stashCount > 0 && (
           <span className="text-ink-500 font-normal ml-auto">{stashCount}</span>
         )}
-        {stashCount > 0 && (
-          <button
-            onClick={(e) => { e.stopPropagation(); setShowStashInput(v => !v); }}
-            className="text-ink-500 hover:text-amber-500 transition-theme ml-1 p-0.5"
-            aria-label="New stash"
-            title="Stash"
-          >
-            <Icon name="plus" size={10} />
-          </button>
-        )}
       </button>
+      {stashCount > 0 && (
+        <button
+          onClick={() => setShowStashInput(v => !v)}
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-500 hover:text-amber-500 transition-theme p-0.5"
+          aria-label="New stash"
+          title="Stash"
+        >
+          <Icon name="plus" size={10} />
+        </button>
+      )}
 
       {/* ── Stash input ── */}
       {expanded && showStashInput && (

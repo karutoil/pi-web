@@ -10,13 +10,13 @@ export function ExtensionErrorToast({ errors, onDismiss }: ExtensionErrorToastPr
   const [collapsed, setCollapsed] = useState(false);
   const [visible, setVisible] = useState(false);
 
-  const recent = errors.slice(-3);
-  if (recent.length === 0) return null;
-
   // Stagger entrance on mount
   useEffect(() => {
     setVisible(true);
   }, []);
+
+  const recent = errors.slice(-3);
+  if (recent.length === 0) return null;
 
   return (
     <div

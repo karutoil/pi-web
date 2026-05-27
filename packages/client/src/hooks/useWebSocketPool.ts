@@ -56,6 +56,7 @@ function createConnection(
     compactionResult: null as { reason: string; aborted: boolean; result?: any; willRetry?: boolean; errorMessage?: string } | null,
   };
 
+  let pendingNewSession = false;
   const notify = () => listeners.forEach(l => l());
 
   // Auto-reconnect with exponential backoff
@@ -102,7 +103,22 @@ function createConnection(
 
   function handleMessage(msg: WSServerMessage) {
     switch (msg.type) {
-      case "state": if (msg.data) { data.state = msg.data as AgentState; data.isStreaming = (msg.data as AgentState).isStreaming; } break;
+      case "state": {
+        if (msg.data) {
+          data.state = msg.data as AgentState;
+          data.isStreaming = (msg.data as AgentState).isStreaming;
+          if (pendingNewSession) {
+            pendingNewSession = false;
+            // Session state arrived after new_session — emit session_loaded for App
+            if (onSessionLoadedRef.current) onSessionLoadedRef.current({
+              id: (msg.data as AgentState).sessionId,
+              name: (msg.data as AgentState).sessionName,
+              filePath: (msg.data as AgentState).sessionFile,
+            } as any);
+          }
+        }
+        break;
+      }
       case "agent_start":
         data.isStreaming = true;
         data.isActive = true;
@@ -285,6 +301,7 @@ function createConnection(
     },
     newSession: () => {
       send({ type: "new_session" });
+      pendingNewSession = true;
       messagesRef = [];
       data.messages = [];
       data.liveMessages = new Map();

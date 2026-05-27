@@ -39,6 +39,15 @@ const SVG_PATHS: Record<string, IconDef> = {
     children: <path d="M6 4 L10 8 L6 12" />,
   },
 
+  // ── Down chevron (viewBox 0 0 16 16) ──
+  "chevron-down": {
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "2.5",
+    children: <path d="M4 6 L8 10 L12 6" />,
+  },
+
   // ── Small caret (viewBox 0 0 10 10) used for collapsible sections ──
   "chevron-right-sm": {
     viewBox: "0 0 10 10",

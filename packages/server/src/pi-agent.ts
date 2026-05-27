@@ -491,7 +491,9 @@ class PIAgent {
         case "set_session_name":
           handler({ type: "session_name_changed", name: event.data?.name || "" }); break;
         case "new_session":
-          if (event.data) handler({ type: "session_loaded", session: event.data });
+          // new_session response only has {cancelled: false} — no session data.
+          // Request get_state to fetch actual new session details.
+          if (event.success && !event.data?.cancelled) this.getState();
           break;
         case "load_session":
           if (event.data) handler({ type: "session_loaded", session: event.data });
