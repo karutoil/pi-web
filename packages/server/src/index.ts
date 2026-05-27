@@ -568,6 +568,82 @@ app.post("/api/sessions/export-html", async (c) => {
   }
 });
 
+// Search files in a project directory for @ mentions
+app.get("/api/fs/search-files", (c) => {
+  const dir = c.req.query("dir");
+  const query = c.req.query("query") || "";
+  if (!dir) return c.json({ error: "dir query required" }, 400);
+
+  try {
+    const safeDir = validateBrowsePath(dir.startsWith("~") ? homedir() + dir.slice(1) : dir);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 403);
+  }
+
+  const safeDir = (() => {
+    try { return validateBrowsePath(dir.startsWith("~") ? homedir() + dir.slice(1) : dir); }
+    catch (e: any) { return null; }
+  })();
+  if (!safeDir) return c.json({ error: "Directory not allowed" }, 403);
+  if (!existsSync(safeDir) || !statSync(safeDir).isDirectory()) return c.json({ files: [] });
+
+  const q = query.toLowerCase();
+  const results: Array<{ path: string; name: string; relativePath: string }> = [];
+  const MAX_RESULTS = 30;
+  const MAX_DEPTH = 5;
+
+  // Directories to skip
+  const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build", ".next", "target", "__pycache__", ".pi", ".cache", ".bun"]);
+
+  function walk(currentDir: string, depth: number, baseDir: string) {
+    if (results.length >= MAX_RESULTS || depth > MAX_DEPTH) return;
+    let entries;
+    try { entries = readdirSync(currentDir, { withFileTypes: true }); }
+    catch { return; } // permission denied
+
+    for (const entry of entries) {
+      if (results.length >= MAX_RESULTS) break;
+      if (entry.name.startsWith(".")) continue;
+      const fullPath = join(currentDir, entry.name);
+      const relPath = fullPath.slice(baseDir.length + 1);
+
+      if (entry.isDirectory()) {
+        if (SKIP_DIRS.has(entry.name)) continue;
+        walk(fullPath, depth + 1, baseDir);
+      } else if (entry.isFile()) {
+        if (q && !entry.name.toLowerCase().includes(q) && !relPath.toLowerCase().includes(q)) continue;
+        results.push({ path: fullPath, name: entry.name, relativePath: relPath });
+      }
+    }
+  }
+
+  // If query has /, search from the implied subdirectory
+  if (q.includes("/")) {
+    const parts = q.split("/");
+    const dirParts = parts.slice(0, -1); // everything except the filename
+    const filePart = parts[parts.length - 1];
+    const subDir = join(safeDir, ...dirParts);
+    if (existsSync(subDir) && statSync(subDir).isDirectory()) {
+      let subEntries;
+      try { subEntries = readdirSync(subDir, { withFileTypes: true }); }
+      catch { return c.json({ files: results }); }
+      for (const entry of subEntries) {
+        if (results.length >= MAX_RESULTS) break;
+        if (entry.name.startsWith(".")) continue;
+        const fullPath = join(subDir, entry.name);
+        const relPath = fullPath.slice(safeDir.length + 1);
+        if (entry.isFile() && (!filePart || entry.name.toLowerCase().includes(filePart))) {
+          results.push({ path: fullPath, name: entry.name, relativePath: relPath });
+        }
+      }
+      return c.json({ files: results });
+    }
+  }
+
+  walk(safeDir, 0, safeDir);
+  return c.json({ files: results });
+});
+
 // Health
 app.get("/api/health", (c) => c.json({ status: "ok", time: Date.now(), pool: getPoolStats() }));
 

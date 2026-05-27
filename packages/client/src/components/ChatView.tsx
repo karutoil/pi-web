@@ -418,6 +418,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
         widgets={ws.widgets}
         autoRetry={ws.autoRetry}
         onAbortRetry={() => ws.abortRetry()}
+        projectPath={cwd}
       />
     </div>{/* end chat column */}
 

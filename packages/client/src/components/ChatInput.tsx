@@ -5,6 +5,7 @@ import { CommandCompleter } from "./CommandCompleter";
 import { Icon } from "./Icon";
 import { compressImage } from "../lib/imageUtils";
 import { stripAnsi } from "../lib/stripAnsi";
+import { FileMentionCompleter } from "./FileMentionCompleter";
 
 interface ChatInputProps {
   onSend: (text: string, images?: { data: string; mimeType: string }[]) => void;
@@ -20,13 +21,16 @@ interface ChatInputProps {
   widgets: Record<string, { lines: string[]; placement: string }>;
   autoRetry: AutoRetryState | null;
   onAbortRetry: () => void;
+  // Project path for @ file mentions
+  projectPath?: string;
 }
 
 interface PendingImage { data: string; mimeType: string; }
 
-export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, onRequestCommands, showTerminal, onToggleTerminal, statusEntries, widgets, autoRetry, onAbortRetry }: ChatInputProps) {
+export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, onRequestCommands, showTerminal, onToggleTerminal, statusEntries, widgets, autoRetry, onAbortRetry, projectPath }: ChatInputProps) {
   const [text, setText] = useState("");
   const [showCommands, setShowCommands] = useState(false);
+  const [showFileMentions, setShowFileMentions] = useState(false);
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inputContainerRef = useRef<HTMLDivElement>(null);
@@ -42,6 +46,10 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
   const slashIndex = text.lastIndexOf("/");
   const commandFilter = (showCommands && slashIndex >= 0) ? text.slice(slashIndex + 1) : "";
 
+  // @ mention: find the last @ that's not part of a word
+  const atMatch = showFileMentions ? /(?:^|\s)@([^\s@]*)$/.exec(text.slice(0, textareaRef.current?.selectionStart ?? text.length)) : null;
+  const fileMentionFilter = atMatch ? atMatch[1] : "";
+
   const handleSend = useCallback(() => {
     const trimmed = textRef.current.trim();
     if ((!trimmed && pendingImagesRef.current.length === 0) || disabledRef.current) return;
@@ -54,9 +62,11 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
-    if (e.key === "Escape") setShowCommands(false);
+    if (e.key === "Escape") { setShowCommands(false); setShowFileMentions(false); }
     if (e.key === "Backspace" && showCommands && slashIndex === text.length - 1) setShowCommands(false);
-  }, [handleSend, showCommands, slashIndex, text.length]);
+    // Close file mentions if backspace removes the @
+    if (e.key === "Backspace" && showFileMentions && !atMatch) setShowFileMentions(false);
+  }, [handleSend, showCommands, showFileMentions, slashIndex, text.length, atMatch]);
 
   const handleInput = useCallback(() => {
     const el = textareaRef.current;
@@ -73,7 +83,18 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
     if (val.endsWith("/")) { setShowCommands(true); onRequestCommands(); }
     const lastSlash = val.lastIndexOf("/");
     if (showCommands && lastSlash >= 0 && val.slice(lastSlash + 1).includes(" ")) setShowCommands(false);
-  }, [handleInput, showCommands, commands.length, onRequestCommands]);
+
+    // @ mention trigger: detect standalone @ (not inside a word)
+    const cursorPos = e.target.selectionStart ?? val.length;
+    const textBeforeCursor = val.slice(0, cursorPos);
+    const atTrigger = /(?:^|\s)@([^\s@]*)$/.exec(textBeforeCursor);
+    if (atTrigger) {
+      setShowFileMentions(true);
+    } else if (showFileMentions) {
+      // Check if we're still in an @ mention context
+      setShowFileMentions(false);
+    }
+  }, [handleInput, showCommands, showFileMentions, commands.length, onRequestCommands]);
 
   const handlePaste = useCallback((e: ClipboardEvent) => {
     const items = e.clipboardData?.items;
@@ -104,6 +125,28 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
     setText(text.slice(0, lastSlash) + "/" + name + " ");
     setShowCommands(false);
     textareaRef.current?.focus();
+  }, [text]);
+
+  const handleSelectFile = useCallback((relativePath: string) => {
+    // Find the @ that triggered the mention and replace from there
+    const cursorPos = textareaRef.current?.selectionStart ?? text.length;
+    const textBeforeCursor = text.slice(0, cursorPos);
+    const atMatch = /(?:^|\s)@([^\s@]*)$/.exec(textBeforeCursor);
+    if (atMatch) {
+      const atStart = atMatch.index + (atMatch[0].startsWith(" ") ? 1 : 0); // skip leading space if present
+      const before = text.slice(0, atStart);
+      const after = text.slice(cursorPos);
+      // Insert @path and a space after
+      const insertion = `@${relativePath} `;
+      setText(before + insertion + after);
+      // Set cursor after insertion on next tick
+      requestAnimationFrame(() => {
+        const newCursorPos = before.length + insertion.length;
+        textareaRef.current?.setSelectionRange(newCursorPos, newCursorPos);
+        textareaRef.current?.focus();
+      });
+    }
+    setShowFileMentions(false);
   }, [text]);
 
   // ── Status: first entry = left, second+ = right ──
@@ -156,6 +199,7 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
 
         <div ref={inputContainerRef} className="relative">
           {showCommands && <CommandCompleter commands={commands} filter={commandFilter} onSelect={handleSelectCommand} onClose={() => setShowCommands(false)} />}
+          {showFileMentions && atMatch && <FileMentionCompleter projectPath={projectPath} filter={fileMentionFilter} onSelect={handleSelectFile} onClose={() => setShowFileMentions(false)} />}
 
           <div className="bg-ink-950/80 backdrop-blur-md border border-ink-800/60 rounded-2xl px-3 md:px-4 shadow-lg focus-within:border-amber-500/60 focus-within:shadow-[0_0_32px_rgba(192,141,14,0.08)] transition-all">
             {/* Status row — same div, above the textarea */}
@@ -211,10 +255,10 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
         )}
 
         <p className="text-ink-500 text-[0.65rem] font-mono mt-1.5 text-center opacity-50 hidden md:block">
-          {isStreaming ? "PI is working · type to steer" : disabled ? "Connecting..." : "Paste images · / for commands"}
+          {isStreaming ? "PI is working · type to steer" : disabled ? "Connecting..." : "Paste images · / for commands · @ for files"}
         </p>
         <p className="text-ink-500 text-[0.65rem] font-mono mt-1.5 text-center opacity-50 md:hidden">
-          {isStreaming ? "Type to steer" : disabled ? "Connecting..." : "Type a message..."}
+          {isStreaming ? "Type to steer" : disabled ? "Connecting..." : "Type · / commands · @ files"}
         </p>
       </div>
     </div>
