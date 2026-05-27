@@ -975,6 +975,21 @@ const CLIENT_DIST = join(import.meta.dir, "..", "..", "client", "dist");
 // serveStatic passes through if file not found, so API routes are unaffected
 app.use("/*", serveStatic({ root: CLIENT_DIST }));
 
+// Service Worker must be served with correct headers (no cache)
+app.get("/sw.js", async (c) => {
+  const swPath = join(CLIENT_DIST, "sw.js");
+  try {
+    const content = await readFile(swPath, "utf-8");
+    return c.text(content, 200, {
+      "Content-Type": "application/javascript; charset=utf-8",
+      "Service-Worker-Allowed": "/",
+      "Cache-Control": "no-cache, no-store, must-revalidate",
+    });
+  } catch {
+    return c.notFound();
+  }
+});
+
 // SPA fallback — serve index.html for any unmatched route
 app.get("*", async (c) => {
   try {

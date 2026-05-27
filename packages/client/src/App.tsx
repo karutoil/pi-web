@@ -8,6 +8,7 @@ import { EmptyState } from "./components/EmptyState";
 import { useWebSocketPool } from "./hooks/useWebSocketPool";
 import { useTheme } from "./hooks/useTheme";
 import { useIsMobile } from "./hooks/useIsMobile";
+import { PWABanner } from "./components/PWABanner";
 import { uuidV4 } from "./lib/uuid";
 
 const MAX_SESSION_CACHE = 50;
@@ -423,6 +424,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-ink-950">
+      <PWABanner />
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-0 focus:left-0 focus:z-80 focus:bg-ink-900 focus:p-4 focus:text-amber-500">Skip to chat</a>
       {showSidebar && (
       <>
