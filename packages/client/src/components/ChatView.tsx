@@ -10,6 +10,7 @@ import { Icon } from "./Icon";
 import { TerminalPanel } from "./TerminalPanel";
 import { GitPanel } from "./GitPanel";
 import { SessionActions } from "./SessionActions";
+import { GitBranchSelector } from "./GitBranchSelector";
 import { CompactionIndicator } from "./CompactionIndicator";
 import { ExtensionErrorToast } from "./ExtensionErrorToast";
 
@@ -154,6 +155,24 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
 
   const liveMsg = ws.liveMessages.get("current");
   const cwd = sessionDetail?.cwd || project?.path || "";
+
+  // Git branch status for the branch bar below input
+  const [gitStatus, setGitStatus] = useState<{ branch: string; ahead: number; behind: number } | null>(null);
+  const refreshGitStatus = useCallback(() => {
+    if (!cwd) return;
+    fetch(`/api/git/status?cwd=${encodeURIComponent(cwd)}`)
+      .then(r => r.json())
+      .then(d => {
+        if (!d.error) setGitStatus({ branch: d.branch, ahead: d.ahead ?? 0, behind: d.behind ?? 0 });
+      })
+      .catch(() => {});
+  }, [cwd]);
+  useEffect(() => {
+    refreshGitStatus();
+    const t = setInterval(refreshGitStatus, 15000);
+    return () => clearInterval(t);
+  }, [refreshGitStatus]);
+
   const sessionName = ws.state?.sessionName || session?.name || session?.lastMessage || null;
   const hasHistoricalMessages = sessionDetail?.entries?.some(e => e.message) || false;
 
@@ -419,7 +438,27 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
         autoRetry={ws.autoRetry}
         onAbortRetry={() => ws.abortRetry()}
         projectPath={cwd}
+        ws={ws}
+        sessionStats={ws.sessionStats}
       />
+
+      {/* Branch / worktree selector below input */}
+      {gitStatus && (
+        <div className="max-w-3xl w-full mx-auto flex items-center justify-between px-4 md:px-5 pb-2 md:pb-3 shrink-0">
+          <span className="text-ink-500 text-xs font-mono flex items-center gap-1.5">
+            <Icon name="folder" size={12} />
+            Worktree
+          </span>
+          <GitBranchSelector
+            cwd={cwd}
+            currentBranch={gitStatus.branch}
+            ahead={gitStatus.ahead}
+            behind={gitStatus.behind}
+            onRefresh={refreshGitStatus}
+            dropdownPosition="above"
+          />
+        </div>
+      )}
     </div>{/* end chat column */}
 
     {/* Git panel */}

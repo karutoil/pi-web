@@ -13,6 +13,13 @@ const defaultCommands: CommandInfo[] = [
   { name: 'compact', description: 'Compact context', source: 'skill' },
 ];
 
+const mockWs = {
+  models: [],
+  state: { model: null, thinkingLevel: 'off' },
+  cycleThinkingLevel: vi.fn(),
+  isConnected: true,
+} as unknown as import('../lib/types').WSBridge;
+
 const defaultProps = {
   onSend: vi.fn(),
   onAbort: vi.fn(),
@@ -24,6 +31,8 @@ const defaultProps = {
   widgets: {},
   autoRetry: null,
   onAbortRetry: vi.fn(),
+  ws: mockWs,
+  sessionStats: null,
 };
 
 describe('ChatInput', () => {
@@ -120,7 +129,7 @@ describe('ChatInput', () => {
 
   it('shows connecting message when disabled', () => {
     render(<ChatInput {...defaultProps} disabled={true} />);
-    expect(screen.getAllByText('Connecting...').length).toBeGreaterThan(0);
+    expect(screen.getByPlaceholderText('Ask PI...')).toBeDisabled();
   });
 
   // ─── Command completion ───

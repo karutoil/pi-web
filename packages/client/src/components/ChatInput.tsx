@@ -1,8 +1,9 @@
 import { useState, useRef, useCallback, useEffect, type KeyboardEvent, type ClipboardEvent } from "react";
-import type { CommandInfo } from "@pi-web/shared";
-import type { AutoRetryState } from "../lib/types";
+import type { CommandInfo, SessionStats } from "@pi-web/shared";
+import type { AutoRetryState, WSBridge } from "../lib/types";
 import { CommandCompleter } from "./CommandCompleter";
 import { Icon } from "./Icon";
+import { ModelSelectorDropdown } from "./ModelSelectorDropdown";
 import { compressImage } from "../lib/imageUtils";
 import { stripAnsi } from "../lib/stripAnsi";
 import { FileMentionCompleter } from "./FileMentionCompleter";
@@ -23,15 +24,19 @@ interface ChatInputProps {
   onAbortRetry: () => void;
   // Project path for @ file mentions
   projectPath?: string;
+  // Model / thinking / stats (moved from ChatHeader)
+  ws: WSBridge;
+  sessionStats: SessionStats | null;
 }
 
 interface PendingImage { data: string; mimeType: string; }
 
-export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, onRequestCommands, showTerminal, onToggleTerminal, statusEntries, widgets, autoRetry, onAbortRetry, projectPath }: ChatInputProps) {
+export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, onRequestCommands, showTerminal, onToggleTerminal, statusEntries, widgets, autoRetry, onAbortRetry, projectPath, ws, sessionStats }: ChatInputProps) {
   const [text, setText] = useState("");
   const [showCommands, setShowCommands] = useState(false);
   const [showFileMentions, setShowFileMentions] = useState(false);
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
+  const [modelOpen, setModelOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inputContainerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef(text);
@@ -172,6 +177,12 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
 
   const hasStatusRow = statusLeft || rightText;
 
+  // ── Model / reasoning helpers ──
+  const currentModel = ws.models.find(m => m.id === ws.state?.model);
+  const thinkingLevel = ws.state?.thinkingLevel || "off";
+  const tokenCount = sessionStats?.contextUsage?.tokens ?? sessionStats?.tokens?.totalTokens ?? null;
+  const contextPercent = sessionStats?.contextUsage?.percent ?? null;
+
   return (
     <div className="px-2 md:px-4 pb-2 md:pb-4 pt-2 flex justify-center mobile-safe-bottom shrink-0">
       <div className="max-w-3xl w-full min-w-0">
@@ -202,10 +213,14 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
           {showCommands && <CommandCompleter commands={commands} filter={commandFilter} onSelect={handleSelectCommand} onClose={() => setShowCommands(false)} />}
           {showFileMentions && atMatch && <FileMentionCompleter projectPath={projectPath} filter={fileMentionFilter} onSelect={handleSelectFile} onClose={() => setShowFileMentions(false)} />}
 
-          <div className="bg-ink-950/80 backdrop-blur-md border border-ink-800/60 rounded-2xl px-3 md:px-4 shadow-lg focus-within:border-amber-500/60 focus-within:shadow-[0_0_32px_rgba(192,141,14,0.08)] transition-all">
-            {/* Status row — same div, above the textarea */}
+          {/* Upward-opening model selector dropdown */}
+          <ModelSelectorDropdown ws={ws} open={modelOpen} onClose={() => setModelOpen(false)} />
+
+          {/* ── Main rounded input container ── */}
+          <div className="bg-ink-900/40 backdrop-blur-md border border-ink-700/50 rounded-2xl px-3 md:px-4 shadow-lg focus-within:border-amber-500/40 focus-within:shadow-[0_0_32px_rgba(192,141,14,0.06)] transition-all">
+            {/* Status row */}
             {hasStatusRow && (
-              <div className="flex items-center justify-between pt-2 pb-1 text-ink-500 text-[11px] font-mono">
+              <div className="flex items-center justify-between pt-2.5 pb-1 text-ink-500 text-[11px] font-mono">
                 <span className="truncate max-w-[45%]">
                   {statusLeft ? stripAnsi(statusLeft[1]) : ""}
                 </span>
@@ -215,7 +230,7 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
               </div>
             )}
 
-            {/* Input row */}
+            {/* Textarea */}
             <div className="flex items-end gap-2 py-2 md:py-2.5">
               <textarea
                 ref={textareaRef}
@@ -229,18 +244,77 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
                 className="flex-1 bg-transparent text-ink-100 text-sm placeholder-ink-500 resize-none outline-none max-h-[160px] md:max-h-[200px] leading-relaxed"
                 enterKeyHint="send"
               />
-              <div className="flex items-center gap-1 shrink-0">
-                {onToggleTerminal && (
-                  <button onClick={onToggleTerminal} className={`p-1.5 rounded-full transition-theme touch-target ${showTerminal ? "bg-amber-600/20 text-amber-500" : "text-ink-400 hover:text-ink-400 hover:bg-ink-800/40"}`} title="Toggle terminal" aria-label="Toggle terminal">
-                    <Icon name="terminal" size={14} />
-                  </button>
-                )}
-                {isStreaming ? (
-                  <button onClick={onAbort} className="p-1.5 rounded-full bg-rose-600/20 text-rose-500 hover:bg-rose-600/30 transition-theme touch-target" title="Abort" aria-label="Abort"><Icon name="abort" size={14} /></button>
-                ) : (
-                  <button onClick={handleSend} disabled={(!text.trim() && pendingImages.length === 0) || disabled} className="p-1.5 rounded-full bg-amber-600 text-ink-950 hover:bg-amber-500 disabled:opacity-30 disabled:cursor-not-allowed transition-theme touch-target" title="Send" aria-label="Send message"><Icon name="send" size={14} /></button>
-                )}
-              </div>
+            </div>
+
+            {/* Bottom toolbar: model | thinking | spacer | tokens | terminal | send */}
+            <div className="flex items-center gap-1.5 md:gap-2 pb-2.5 md:pb-3 pt-0.5">
+              {/* Model pill */}
+              <button
+                onClick={() => setModelOpen(true)}
+                className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-ink-800/50 border border-ink-750 text-ink-300 text-xs font-mono hover:border-ink-600 hover:text-ink-200 transition-theme min-h-[28px] shrink-0"
+                aria-label="Select model"
+              >
+                <Icon name="pi-logo" size={10} className="text-amber-500" />
+                <span className="truncate max-w-[100px] md:max-w-[140px]">
+                  {currentModel?.name || ws.state?.model || (ws.models.length === 0 && ws.isConnected ? "Loading…" : "Model")}
+                </span>
+              </button>
+
+              {/* Reasoning / thinking level pill */}
+              <button
+                onClick={() => ws.cycleThinkingLevel()}
+                className="px-2 py-1 rounded-full bg-ink-800/50 border border-ink-750 text-ink-300 text-xs font-mono hover:border-ink-600 hover:text-ink-200 transition-theme min-h-[28px] shrink-0"
+                title="Cycle thinking level"
+                aria-label="Cycle thinking level"
+              >
+                {thinkingLevel === "off" ? "No think" : thinkingLevel}
+              </button>
+
+              <div className="flex-1" />
+
+              {/* Token count */}
+              {tokenCount !== null && (
+                <span
+                  className={`text-xs font-mono shrink-0 ${contextPercent && contextPercent > 80 ? "text-rose-400" : contextPercent && contextPercent > 60 ? "text-amber-400" : "text-ink-500"}`}
+                  title={contextPercent ? `${contextPercent.toFixed(0)}% context used` : `${tokenCount.toLocaleString()} tokens`}
+                >
+                  {tokenCount.toLocaleString()}
+                </span>
+              )}
+
+              {/* Terminal toggle */}
+              {onToggleTerminal && (
+                <button
+                  onClick={onToggleTerminal}
+                  className={`p-2 rounded-full transition-theme touch-target ${showTerminal ? "bg-amber-600/20 text-amber-500" : "text-ink-400 hover:text-ink-200 hover:bg-ink-800/40"}`}
+                  title="Toggle terminal"
+                  aria-label="Toggle terminal"
+                >
+                  <Icon name="terminal" size={14} />
+                </button>
+              )}
+
+              {/* Send / Abort */}
+              {isStreaming ? (
+                <button
+                  onClick={onAbort}
+                  className="p-2 rounded-full bg-rose-600/20 text-rose-500 hover:bg-rose-600/30 transition-theme touch-target shrink-0"
+                  title="Abort"
+                  aria-label="Abort"
+                >
+                  <Icon name="abort" size={14} />
+                </button>
+              ) : (
+                <button
+                  onClick={handleSend}
+                  disabled={(!text.trim() && pendingImages.length === 0) || disabled}
+                  className="p-2 rounded-full bg-amber-600 text-ink-950 hover:bg-amber-500 disabled:opacity-30 disabled:cursor-not-allowed transition-theme touch-target shrink-0"
+                  title="Send"
+                  aria-label="Send message"
+                >
+                  <Icon name="send" size={14} />
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -254,14 +328,8 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
             <button onClick={onAbortRetry} className="ml-auto text-amber-400 hover:text-amber-200 transition-colors">Cancel</button>
           </div>
         )}
-
-        <p className="text-ink-500 text-[0.65rem] font-mono mt-1.5 text-center opacity-50 hidden md:block">
-          {isStreaming ? "PI is working · type to steer" : disabled ? "Connecting..." : "Paste images · / for commands · @ for files"}
-        </p>
-        <p className="text-ink-500 text-[0.65rem] font-mono mt-1.5 text-center opacity-50 md:hidden">
-          {isStreaming ? "Type to steer" : disabled ? "Connecting..." : "Type · / commands · @ files"}
-        </p>
       </div>
+
     </div>
   );
 }

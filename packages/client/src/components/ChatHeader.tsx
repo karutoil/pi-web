@@ -1,9 +1,8 @@
 import { useState, useEffect } from "react";
-import type { ModelInfo, SessionStats } from "@pi-web/shared";
+import type { SessionStats } from "@pi-web/shared";
 import type { WSBridge } from "../lib/types";
 import { Icon } from "./Icon";
 import { useIsMobile } from "../hooks/useIsMobile";
-import { ModelSelectorModal } from "./ModelSelectorModal";
 
 interface Props {
   ws: WSBridge;
@@ -17,7 +16,6 @@ interface Props {
 }
 
 export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggleSidebar, showSidebar, onSessionActions }: Props) {
-  const [modelOpen, setModelOpen] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(sessionName || "");
   const isMobile = useIsMobile();
@@ -38,7 +36,6 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
     }
   }, [ws.isStreaming, ws.isConnected]);
 
-  const currentModel = ws.models.find(m => m.id === ws.state?.model);
   const stats = ws.sessionStats;
 
   const handleSaveName = () => {
@@ -97,51 +94,12 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
               </button>
             )}
           </div>
-
-          {/* Row 2: model pill + context stats + quick actions */}
-          <div className="flex items-center gap-1.5 px-3 pb-2">
-            <button
-              onClick={() => setModelOpen(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-ink-850 border border-ink-800 text-ink-300 text-[11px] font-mono hover:border-ink-700 hover:text-ink-200 transition-colors min-w-0"
-              aria-label="Select model"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500/60 shrink-0" />
-              <span className="truncate">{currentModel?.name || ws.state?.model || (ws.models.length === 0 && ws.isConnected ? "Loading…" : "Model")}</span>
-            </button>
-
-            {stats?.contextUsage && (
-              <span className="text-ink-600 text-[10px] font-mono shrink-0" title={`${stats.contextUsage.tokens.toLocaleString()} / ${stats.contextUsage.contextWindow.toLocaleString()} tokens`}>
-                {stats.contextUsage.percent.toFixed(0)}%
-              </span>
-            )}
-
-            <div className="flex-1" />
-
-            {onToggleGit && (
-              <button onClick={onToggleGit} className={`p-1.5 rounded-lg transition-colors touch-target ${showGit ? "text-amber-500 bg-amber-500/10" : "text-ink-500 hover:text-ink-300 hover:bg-ink-800/50"}`} aria-label="Git panel">
-                <Icon name="git" size={14} />
-              </button>
-            )}
-
-            <button
-              onClick={() => ws.cycleModel()}
-              className="p-1.5 rounded-lg text-ink-500 hover:text-ink-300 hover:bg-ink-800/50 transition-colors touch-target"
-              title="Next model"
-              aria-label="Cycle model"
-            >
-              <Icon name="refresh" size={14} />
-            </button>
-          </div>
         </div>
-
-        <ModelSelectorModal ws={ws} open={modelOpen} onClose={() => setModelOpen(false)} />
       </>
     );
   }
 
-  // ─── Desktop layout — single row ───
-  const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh"];
-
+  // ─── Desktop layout — single row, model/thinking moved to ChatInput ───
   return (
     <>
       <div className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 border-b border-ink-800 bg-ink-900/30 shrink-0">
@@ -213,41 +171,8 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
             </button>
           )}
 
-          {/* Thinking level */}
-          <button
-            onClick={() => {
-              const cur = ws.state?.thinkingLevel || "off";
-              const idx = thinkingLevels.indexOf(cur);
-              const next = thinkingLevels[(idx + 1) % thinkingLevels.length];
-              ws.send({ type: "set_thinking", level: next });
-            }}
-            className="icon-btn"
-            aria-label="Cycle thinking level"
-            title="Cycle thinking level"
-          >
-            {ws.state?.thinkingLevel || "off"}
-          </button>
-
-          {/* Model selector */}
-          <div className="flex items-center gap-0.5">
-            <button
-              onClick={() => setModelOpen(true)}
-              className="icon-btn max-w-[160px] truncate text-xs font-mono"
-              aria-label="Select model"
-            >
-              {currentModel?.name || ws.state?.model || (ws.models.length === 0 && ws.isConnected ? "Loading…" : "Model")}
-            </button>
-            <button
-              onClick={() => ws.cycleModel()}
-              className="icon-btn"
-              title="Cycle to next model (Tab)"
-              aria-label="Cycle model"
-            >↻</button>
-          </div>
         </div>
       </div>
-
-      <ModelSelectorModal ws={ws} open={modelOpen} onClose={() => setModelOpen(false)} />
     </>
   );
 }
