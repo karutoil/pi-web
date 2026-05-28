@@ -1005,12 +1005,14 @@ app.get("*", async (c) => {
   }
 });
 
-// #41: Bind to 127.0.0.1 only (trusted local env)
-// Document: this server assumes a trusted local environment with no auth.
-// Binding to 127.0.0.1 prevents exposure on network interfaces.
-export default {
-  port: parseInt(process.env.PORT || "3069", 10),
-  hostname: process.env.HOST || "127.0.0.1",
+const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 0;
+const hostname = process.env.HOST || "127.0.0.1";
+
+const server = Bun.serve({
+  port,
+  hostname,
   fetch: app.fetch,
   websocket,
-};
+});
+
+console.log(`PI Web server running at http://${hostname}:${server.port}`);

@@ -13,7 +13,7 @@ export default defineConfig({
     },
   },
   server: {
-    port: parseInt(process.env.CLIENT_PORT || "3070", 10) || 3070,
+    port: parseInt(process.env.CLIENT_PORT || "0", 10) || 0,
     proxy: {
       "/api": `http://localhost:${process.env.SERVER_PORT || "3069"}`,
       "/ws": {

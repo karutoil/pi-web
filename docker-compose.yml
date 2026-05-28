@@ -1,0 +1,19 @@
+services:
+  pi-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "3069"
+      HOME: "${HOME}"
+      PATH: "/host-pi-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    ports:
+      - "0:3069"
+    volumes:
+      - "${HOME}:${HOME}"
+      - "${PI_BINARY_DIR:-/dev/null}:/host-pi-bin:ro"
+    user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
