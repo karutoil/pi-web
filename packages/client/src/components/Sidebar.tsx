@@ -350,12 +350,28 @@ function ProjectList({
         </p>
       )}
 
+      {/*
+        Outer element is a div + role="button" so we can legally nest the
+        "Remove project" button inside it. Using a real <button> here would
+        produce invalid HTML (nested <button>) and React 19 would refuse to
+        fire the click handler — leaving the user stuck on the projects
+        view with the click "flashing" but doing nothing. #130
+      */}
       <div className="space-y-px">
         {projects.map(p => (
-          <button
+          <div
             key={p.id}
+            role="button"
+            tabIndex={0}
             onClick={() => onSelect(p)}
-            className={`w-full text-left px-3 py-3 rounded-lg transition-theme group ${
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onSelect(p);
+              }
+            }}
+            aria-label={`Open project ${p.name}`}
+            className={`w-full text-left px-3 py-3 rounded-lg transition-theme group cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40 ${
               selectedProject?.id === p.id
                 ? "bg-ink-800/40"
                 : "hover:bg-ink-800/20"
@@ -394,7 +410,7 @@ function ProjectList({
                 <Icon name="close" size={12} />
               </button>
             </div>
-          </button>
+          </div>
         ))}
       </div>
     </div>
