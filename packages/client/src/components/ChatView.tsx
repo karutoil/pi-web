@@ -13,6 +13,7 @@ import { SessionActions } from "./SessionActions";
 import { GitBranchSelector } from "./GitBranchSelector";
 import { CompactionIndicator } from "./CompactionIndicator";
 import { ExtensionErrorToast } from "./ExtensionErrorToast";
+import { turnToMarkdown, copyToClipboard } from "../lib/markdownExport";
 
 // ─── Loading overlay: blurs chat + blocks interaction until PI is ready ───
 function SessionLoadingOverlay() {
@@ -261,6 +262,15 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
     }).join("\n\n");
   }, []);
 
+  /**
+   * Copy a turn as raw API markdown (user message → final assistant response,
+   * plus any tool calls/results in between). Used by the per-message right-
+   * click context menu.
+   */
+  const copyTurn = useCallback((turn: ChatMessage[]) => {
+    copyToClipboard(turnToMarkdown(turn));
+  }, []);
+
   return (
     <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden relative">
       <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} onToggleGit={() => setShowGit(v => !v)} showGit={showGit} onToggleSidebar={onToggleSidebar} showSidebar={showSidebar} onSessionActions={() => setShowSessionActions(true)} />
@@ -313,8 +323,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
                 isHistorical={true}
                 entryId={isUser ? entry.id : undefined}
                 onFork={isUser ? handleFork : undefined}
-                onCopyTurn={() => navigator.clipboard.writeText(getTurnText(turn)).catch(() => {})}
-                onCopyResponse={() => navigator.clipboard.writeText(getFinalResponse(turn)).catch(() => {})}
+                onCopyTurn={() => copyTurn(turn)}
               />
             );
           })}
@@ -332,12 +341,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
               onCopyTurn={() => {
                 const histLen = historicalMsgs.length;
                 const turn = getTurnForMsg(histLen + i);
-                navigator.clipboard.writeText(getTurnText(turn)).catch(() => {});
-              }}
-              onCopyResponse={() => {
-                const histLen = historicalMsgs.length;
-                const turn = getTurnForMsg(histLen + i);
-                navigator.clipboard.writeText(getFinalResponse(turn)).catch(() => {});
+                copyTurn(turn);
               }}
             />
           ))}

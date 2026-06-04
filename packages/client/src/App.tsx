@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import type { Project, SessionSummary, SessionDetail } from "@pi-web/shared";
+import type { Project, SessionSummary, SessionDetail, ChatMessage } from "@pi-web/shared";
 import { formatTimeAgo } from "./lib/utils";
 import { SESSION_CACHE_TTL, SESSION_FETCH_DELAY_MS } from "./lib/constants";
 import { Sidebar } from "./components/Sidebar";
@@ -11,6 +11,7 @@ import { useTheme } from "./hooks/useTheme";
 import { useIsMobile } from "./hooks/useIsMobile";
 import { PWABanner } from "./components/PWABanner";
 import { uuidV4 } from "./lib/uuid";
+import { sessionToMarkdown, copyToClipboard } from "./lib/markdownExport";
 
 const MAX_SESSION_CACHE = 50;
 
@@ -258,12 +259,42 @@ export default function App() {
     }
   }, [ws, isMobile]);
 
+  /**
+   * Copy a session's full transcript to the clipboard as raw API markdown.
+   * Uses the in-memory cache if the session is already loaded, otherwise
+   * fetches the detail on demand. The resulting text mirrors the API's wire
+   * format rendered as markdown (see lib/markdownExport).
+   */
+  const handleCopySession = useCallback(async (s: SessionSummary) => {
+    try {
+      const cached = sessionCacheRef.current.get(s.filePath);
+      let detail = cached && Date.now() - cached.timestamp < SESSION_CACHE_TTL
+        ? cached.data
+        : null;
+      if (!detail) {
+        const r = await fetch(`/api/sessions/detail?path=${encodeURIComponent(s.filePath)}`);
+        const d = await r.json();
+        detail = d.session || null;
+        if (detail) {
+          const cache = sessionCacheRef.current;
+          if (cache.size >= MAX_SESSION_CACHE) {
+            const firstKey = cache.keys().next().value;
+            if (firstKey) cache.delete(firstKey);
+          }
+          cache.set(s.filePath, { data: detail, timestamp: Date.now() });
+        }
+      }
+      if (!detail) return;
+      const messages = (detail.entries || [])
+        .map(e => e.message)
+        .filter((m): m is ChatMessage => !!m);
+      copyToClipboard(sessionToMarkdown(messages, s.name || undefined));
+    } catch (e) {
+      console.error("Failed to copy session:", e);
+    }
+  }, []);
+
   const handleNewSession = useCallback(() => {
-    // Always create a fresh WS connection with a new newSessionId. This
-    // spawns a dedicated PI process for the new session. The old WS for the
-    // previous session stays in the pool, so its PI process keeps streaming
-    // in the background. The 5-10s boot time for the new PI is acceptable
-    // — the user can keep working in the old session or wait for the new one.
     const id = uuidV4();
     setNewSessionId(id);
     setActiveSession(null);
@@ -456,6 +487,7 @@ export default function App() {
           onDeleteSession={handleDeleteSession}
           onRenameSession={handleRenameSession}
           onForkSession={handleForkSession}
+          onCopySession={handleCopySession}
           onRefreshSessions={handleRefreshSessions}
           onContinueLatest={handleContinueLatest}
           streamingSessionIds={streamingSessionIds}

@@ -10,6 +10,7 @@ import { Icon } from "./Icon";
 import { ContextMenuPortal, ContextMenuItem, ContextMenuDivider, useLongPress } from "./ContextMenu";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { SubagentProgressView, isSubagentDetails } from "./SubagentProgress";
+import { messageToMarkdown, copyToClipboard } from "../lib/markdownExport";
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -21,11 +22,14 @@ interface MessageBubbleProps {
   isStreaming?: boolean;
   entryId?: string;
   onFork?: (entryId: string) => void;
+  /**
+   * Copy the entire turn (last user message → final assistant response) as
+   * raw markdown. Parent owns the turn context.
+   */
   onCopyTurn?: () => void;
-  onCopyResponse?: () => void;
 }
 
-export function MessageBubble({ message, showThinking, toolResultsMap, inlineToolCallIds, runningTools, isHistorical, isStreaming, entryId, onFork, onCopyTurn, onCopyResponse }: MessageBubbleProps) {
+export function MessageBubble({ message, showThinking, toolResultsMap, inlineToolCallIds, runningTools, isHistorical, isStreaming, entryId, onFork, onCopyTurn }: MessageBubbleProps) {
   const role = message.role;
   const isUser = role === "user";
   const isAssistant = role === "assistant";
@@ -34,7 +38,18 @@ export function MessageBubble({ message, showThinking, toolResultsMap, inlineToo
   const isSystem = role === "branchSummary" || role === "compactionSummary";
 
   // Right-click context menu
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; copied?: "message" | "turn" } | null>(null);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => { if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current); };
+  }, []);
+  const flashCopied = (kind: "message" | "turn") => {
+    setCtxMenu(prev => (prev ? { ...prev, copied: kind } : prev));
+    if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+    copiedTimerRef.current = setTimeout(() => {
+      setCtxMenu(prev => (prev ? { ...prev, copied: undefined } : prev));
+    }, 1200);
+  };
   const handleContextMenu = (e: React.MouseEvent) => {
     // Only show context menu on user or assistant messages
     if (isUser || isAssistant) {
@@ -115,7 +130,7 @@ export function MessageBubble({ message, showThinking, toolResultsMap, inlineToo
         )}
       </div>
 
-      {/* Right-click context menu */}
+      {/* Right-click context menu — copy this message, the whole turn */}
       {ctxMenu && (
         <ContextMenuPortal
           x={ctxMenu.x}
@@ -123,20 +138,20 @@ export function MessageBubble({ message, showThinking, toolResultsMap, inlineToo
           onClose={() => setCtxMenu(null)}
         >
           <ContextMenuItem
-            label="Copy final response"
-            icon={<Icon name="copy-offset" size={10} />}
-            onClick={() => { setCtxMenu(null); onCopyResponse?.(); }}
-          />
-          <ContextMenuItem
-            label="Copy entire turn"
-            icon={<Icon name="copy-join" size={10} />}
-            onClick={() => { setCtxMenu(null); onCopyTurn?.(); }}
-          />
-          <ContextMenuDivider />
-          <ContextMenuItem
-            label="Copy raw markdown"
+            label={ctxMenu.copied === "message" ? "Copied ✓" : "Copy message"}
             icon={<Icon name="copy-plain" size={10} />}
-            onClick={() => { setCtxMenu(null); navigator.clipboard.writeText(extractTextContent(message.content)); }}
+            onClick={() => {
+              copyToClipboard(messageToMarkdown(message));
+              flashCopied("message");
+            }}
+          />
+          <ContextMenuItem
+            label={ctxMenu.copied === "turn" ? "Copied ✓" : "Copy entire turn"}
+            icon={<Icon name="copy-join" size={10} />}
+            onClick={() => {
+              onCopyTurn?.();
+              flashCopied("turn");
+            }}
           />
         </ContextMenuPortal>
       )}

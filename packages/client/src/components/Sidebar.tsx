@@ -26,6 +26,12 @@ interface SidebarProps {
   onDeleteSession: (s: SessionSummary) => void;
   onRenameSession: (s: SessionSummary, name: string) => void;
   onForkSession: (entryId: string) => void;
+  /**
+   * Copy the entire session (all messages) to the clipboard as raw API
+   * markdown. Parent is responsible for fetching the session detail if it
+   * isn't already loaded.
+   */
+  onCopySession?: (s: SessionSummary) => void;
   onRefreshSessions: () => void;
   onContinueLatest: () => void;
   streamingSessionIds: Set<string>;
@@ -108,6 +114,7 @@ export function Sidebar({
   onDeleteSession,
   onRenameSession,
   onForkSession,
+  onCopySession,
   onRefreshSessions,
   onContinueLatest,
   streamingSessionIds,
@@ -253,6 +260,7 @@ export function Sidebar({
             onDelete={onDeleteSession}
             onRename={onRenameSession}
             onFork={onForkSession}
+            onCopySession={onCopySession}
             onRefresh={onRefreshSessions}
             onContinueLatest={onContinueLatest}
             streamingSessionIds={streamingSessionIds}
@@ -412,6 +420,7 @@ function SessionList({
   onDelete,
   onRename,
   onFork,
+  onCopySession,
   onRefresh,
   onContinueLatest,
   projectName,
@@ -432,6 +441,7 @@ function SessionList({
   onDelete: (s: SessionSummary) => void;
   onRename: (s: SessionSummary, name: string) => void;
   onFork: (entryId: string) => void;
+  onCopySession?: (s: SessionSummary) => void;
   onRefresh: () => void;
   onContinueLatest: () => void;
   projectName: string;
@@ -531,6 +541,7 @@ function SessionList({
                     onDelete={onDelete}
                     onRename={onRename}
                     onFork={onFork}
+                    onCopySession={onCopySession}
                     onRequestConfirm={onRequestConfirm}
                   />
                 );
@@ -555,6 +566,7 @@ function SessionItem({
   onDelete,
   onRename,
   onFork,
+  onCopySession,
   onRequestConfirm,
 }: {
   session: SessionSummary;
@@ -566,12 +578,24 @@ function SessionItem({
   onDelete: (s: SessionSummary) => void;
   onRename: (s: SessionSummary, name: string) => void;
   onFork: (entryId: string) => void;
+  onCopySession?: (s: SessionSummary) => void;
   onRequestConfirm: (title: string, message: string, onConfirm: () => void) => void;
 }) {
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(s.name || "");
   const renameRef = useRef<HTMLInputElement>(null);
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; copied?: boolean } | null>(null);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => { if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current); };
+  }, []);
+  const flashCopied = () => {
+    setCtxMenu(prev => (prev ? { ...prev, copied: true } : prev));
+    if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+    copiedTimerRef.current = setTimeout(() => {
+      setCtxMenu(prev => (prev ? { ...prev, copied: undefined } : prev));
+    }, 1200);
+  };
   const longPress = useLongPress((e) => setCtxMenu({ x: e.clientX, y: e.clientY }));
 
   useEffect(() => {
@@ -671,6 +695,16 @@ function SessionItem({
             icon={<Icon name="fork" size={10} />}
             onClick={() => { setCtxMenu(null); onFork(s.id); }}
           />
+          {onCopySession && (
+            <ContextMenuItem
+              label={ctxMenu.copied ? "Copied ✓" : "Copy entire session"}
+              icon={<Icon name="copy-plain" size={10} />}
+              onClick={() => {
+                flashCopied();
+                onCopySession(s);
+              }}
+            />
+          )}
           <ContextMenuDivider />
           <ContextMenuItem
             label="Delete"
