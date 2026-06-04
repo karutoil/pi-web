@@ -19,6 +19,7 @@ function createConnection(
   projectId: string | null,
   sessionPath: string | null,
   newSessionId: string | null,
+  pool: { current: Map<string, ReturnType<typeof createConnection>> },
 ): WSConnection & { close: () => void } {
   let ws: WebSocket | null = null;
   let messagesRef: ChatMessage[] = [];
@@ -289,8 +290,12 @@ function createConnection(
     if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
   }
 
+  // Mutable current key — updated by rekey() when a pending session resolves
+  // to its real filePath. Read via the `key` getter on the conn.
+  let currentKey = key;
+
   const conn: WSConnection = {
-    key,
+    get key() { return currentKey; },
     send,
     sendPrompt: (text: string, images?: ImageAttachment[]) => {
       // Build content with image blocks so user sees their own attachments immediately
@@ -394,6 +399,21 @@ function createConnection(
     },
     setOnSessionLoaded: (cb) => { onSessionLoadedRef.current = cb; },
     setOnSessionEvent: (cb) => { onSessionEventRef.current = cb; },
+    /**
+     * Rename this connection's pool key. Used when a pending new session
+     * (keyed by newSessionId) resolves to its real filePath from the server.
+     * The underlying WebSocket stays connected — only the pool map entry moves.
+     */
+    rekey: (newKey: string) => {
+      if (newKey === currentKey) return;
+      // Only unregister from old key if we're still the registered conn there
+      if (pool.current.get(currentKey) === conn) {
+        pool.current.delete(currentKey);
+      }
+      pool.current.set(newKey, conn);
+      currentKey = newKey;
+      notify();
+    },
     close: () => {
       intentionallyClosed = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
@@ -419,13 +439,19 @@ export function useWebSocketPool() {
     sessionPath: string | null,
     newSessionId: string | null,
   ): WSConnection | null => {
-    if (!projectId && !sessionPath && !newSessionId) return null;
+    // Need a projectId AND at least one of (sessionPath, newSessionId).
+    // The pool is keyed per-session now — there's no project-level default conn.
+    if (!projectId || (!sessionPath && !newSessionId)) return null;
 
-    const key = `${projectId || ""}:${sessionPath || ""}:${newSessionId || ""}`;
+    // Key format: `${projectId}::${sessionPath}::${newSessionId}`.
+    // - Existing session:    `projId::/path/to/session.json::`
+    // - Pending new session: `projId::::newSessionUuid`
+    // - Resolved pending:    rekeyed to the filePath form above
+    const key = `${projectId}::${sessionPath || ""}::${newSessionId || ""}`;
     const existing = poolRef.current.get(key);
     if (existing) return existing;
 
-    const conn = createConnection(key, projectId, sessionPath, newSessionId);
+    const conn = createConnection(key, projectId, sessionPath, newSessionId, poolRef);
     // Subscribe to updates — trigger React re-render when data changes
     conn.subscribe(() => forceUpdate(n => n + 1));
     poolRef.current.set(key, conn);
@@ -441,6 +467,16 @@ export function useWebSocketPool() {
     }
   }, []);
 
+  /**
+   * Convenience pool-level rekey. The conn's own rekey() does the same work
+   * (and is what the App calls directly). This is here for symmetry and so
+   * callers that only have the oldKey can do the swap without touching the conn.
+   */
+  const rekey = useCallback((oldKey: string, newKey: string) => {
+    const conn = poolRef.current.get(oldKey);
+    if (conn) conn.rekey(newKey);
+  }, []);
+
   const disconnectAll = useCallback(() => {
     for (const conn of poolRef.current.values()) conn.close();
     poolRef.current.clear();
@@ -454,5 +490,5 @@ export function useWebSocketPool() {
     };
   }, []);
 
-  return { getOrConnect, disconnect, disconnectAll, pool: poolRef.current };
+  return { getOrConnect, disconnect, disconnectAll, rekey, pool: poolRef.current };
 }

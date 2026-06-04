@@ -134,6 +134,7 @@ export type WSClientMessage =
   | { type: "new_session" }
   | { type: "load_session"; sessionPath: string }
   | { type: "switch_session"; sessionPath: string }
+  | { type: "rekey_session"; oldKey: string; newKey: string; id?: string }
   | { type: "set_model"; provider: string; modelId: string }
   | { type: "cycle_model" }
   | { type: "set_thinking"; level: string }

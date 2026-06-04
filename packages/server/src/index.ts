@@ -9,7 +9,7 @@ import { homedir } from "node:os";
 
 import { addProject, removeProject, listProjects, getProject, touchProject } from "./db";
 import { listProjectSessions, getSessionDetail } from "./pi-sessions";
-import { getOrCreateAgent, stopAllAgents, getPoolStats, lookupAgent, detachFromAgent, deleteFromPool } from "./pi-agent";
+import { getOrCreateAgent, stopAllAgents, getPoolStats, lookupAgent, detachFromAgent, deleteFromPool, rekeyAgent } from "./pi-agent";
 import { createTerminal, getTerminal, listTerminals, killTerminal } from "./pi-terminal";
 import { getGitStatus, getGitDiff, gitStage, gitUnstage, gitCommit, gitLog, gitCheckout, gitDiscard, gitBranches, gitPush, gitPull, gitFetch, gitCreateBranch, gitDeleteBranch, gitRenameBranch, gitTags, gitCreateTag, gitDeleteTag, gitStashList, gitStashPush, gitStashPop, gitStashApply, gitStashDrop, gitAmend, gitCherryPick, gitRevert, gitResolveConflict, getGitDiffStats, gitDiffWithRef, gitShowCommit, gitLogSearch, gitBlame, gitRemotes, gitUnstageAll } from "./pi-git";
 import type { GitResult } from "./pi-git";
@@ -798,11 +798,11 @@ app.get(
           const cwd = project.path;
           touchProject(project.id);
 
-          const { agent, isNew } = getOrCreateAgent(cwd, sessionPath || null, provider || undefined, model || undefined, newSessionId || undefined);
+          const { agent, isNew } = getOrCreateAgent(cwd, sessionPath || null, provider || undefined, model || undefined);
           const raw = (ws as any).raw as ServerWebSocket;
 
-          // Track which agent this WS belongs to — keyed by project (cwd) only
-          const agentKey = cwd;
+          // Track which agent this WS belongs to — keyed by (cwd, sessionPath) tuple
+          const agentKey = agent.getKey();
           wsToAgent.set(raw, agentKey);
 
           // Attach this client to the pooled agent
@@ -849,8 +849,25 @@ app.get(
             case "steer": agent.send({ type: "steer", message: msg.message, ...(msg as any).images ? { images: (msg as any).images } : {} }); break;
             case "follow_up": agent.send({ type: "follow_up", message: msg.message, ...(msg as any).images ? { images: (msg as any).images } : {} }); break;
             case "new_session": agent.send({ type: "new_session" }); break;
-            case "load_session": await agent.loadSession(msg.sessionPath); break;
-            case "switch_session": agent.send({ type: "switch_session", sessionPath: (msg as any).sessionPath }); break;
+            case "load_session": agent.loadSession(msg.sessionPath); break;
+            case "switch_session": agent.switchSession((msg as any).sessionPath); break;
+            case "rekey_session": {
+              // Client is telling us the agent's session path has changed
+              // (typically from `__new__` to the real path reported by PI).
+              const { oldKey, newKey } = msg as { oldKey: string; newKey: string };
+              const moved = rekeyAgent(oldKey, newKey);
+              if (moved) {
+                wsToAgent.set(raw, newKey);
+                try {
+                  if (ws.readyState === 1) ws.send(JSON.stringify({ type: "response", command: "rekey_session", success: true, id: (msg as any).id }));
+                } catch {}
+              } else {
+                try {
+                  if (ws.readyState === 1) ws.send(JSON.stringify({ type: "response", command: "rekey_session", success: false, error: "rekey failed", id: (msg as any).id }));
+                } catch {}
+              }
+              break;
+            }
             case "set_model": agent.send({ type: "set_model", provider: msg.provider, modelId: msg.modelId }); break;
             case "cycle_model": agent.send({ type: "cycle_model" }); break;
             case "set_thinking": {

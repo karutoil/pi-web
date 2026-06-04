@@ -78,6 +78,13 @@ export interface WSBridge {
   dismissNotification: () => void;
   setOnSessionLoaded: (cb: ((session: SessionDetail) => void) | null) => void;
   setOnSessionEvent: (cb: ((event: WSServerMessage) => void) | null) => void;
+  /**
+   * Rename this connection in the pool. Used when a pending new session gets
+   * its real filePath from the server — the pool entry moves from
+   * `${projectId}::__pending__::${newSessionId}` to `${projectId}::${filePath}`
+   * without dropping the underlying connection (so streaming/background work continues).
+   */
+  rekey: (newKey: string) => void;
   // New: extension UI fire-and-forget state
   statusEntries: Record<string, string>;
   widgets: Record<string, { lines: string[]; placement: string }>;

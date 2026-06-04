@@ -29,6 +29,7 @@ interface SidebarProps {
   onRefreshSessions: () => void;
   onContinueLatest: () => void;
   streamingSessionIds: Set<string>;
+  streamingProjectIds: Set<string>;
   isAddingProject?: boolean;
   onToggleSidebar?: () => void;
   isMobile?: boolean;
@@ -110,6 +111,7 @@ export function Sidebar({
   onRefreshSessions,
   onContinueLatest,
   streamingSessionIds,
+  streamingProjectIds,
   onToggleSidebar,
   isMobile,
 }: SidebarProps) {
@@ -230,6 +232,7 @@ export function Sidebar({
             onDelete={onDeleteProject}
             onAdd={onAddProject}
             onToggleAdd={onToggleAddProject}
+            streamingProjectIds={streamingProjectIds}
             onRequestConfirm={(title, message, onConfirm) => setConfirmDialog({open: true, title, message, onConfirm})}
           />
         )}
@@ -306,6 +309,7 @@ function ProjectList({
   onDelete,
   onAdd,
   onToggleAdd,
+  streamingProjectIds,
   onRequestConfirm,
 }: {
   projects: Project[];
@@ -315,6 +319,7 @@ function ProjectList({
   onDelete: (id: string) => void;
   onAdd: (path: string, name: string) => void;
   onToggleAdd: () => void;
+  streamingProjectIds: Set<string>;
   onRequestConfirm: (title: string, message: string, onConfirm: () => void) => void;
 }) {
   return (
@@ -349,8 +354,17 @@ function ProjectList({
             }`}
           >
             <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <div className="text-ink-100 text-[0.8rem] font-medium truncate">{p.name}</div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  {streamingProjectIds.has(p.id) && (
+                    <span
+                      className="shrink-0 w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse"
+                      title="PI is running in this project"
+                      aria-label="PI is running in this project"
+                    />
+                  )}
+                  <div className="text-ink-100 text-[0.8rem] font-medium truncate">{p.name}</div>
+                </div>
                 <div className="text-ink-400 text-[0.65rem] font-mono truncate mt-0.5">
                   {p.path}
                 </div>

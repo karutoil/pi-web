@@ -105,6 +105,7 @@ const defaultProps = {
   onRefreshSessions: vi.fn(),
   onContinueLatest: vi.fn(),
   streamingSessionIds: new Set<string>(),
+  streamingProjectIds: new Set<string>(),
 };
 
 describe('Sidebar', () => {

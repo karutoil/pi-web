@@ -15,6 +15,16 @@ export class PooledAgent {
   private idleTimer: Timer | null = null;
   private agentKey: string;
 
+  /** Get the current pool key for this agent. */
+  getKey(): string {
+    return this.agentKey;
+  }
+
+  /** Update the pool key (called by rekeyAgent). */
+  setKey(newKey: string) {
+    this.agentKey = newKey;
+  }
+
   constructor(
     agentKey: string,
     options: PIAgentOptions,
@@ -86,13 +96,30 @@ export class PooledAgent {
     setTimeout(() => this.agent.getState(), 200);
   }
 
-  /** Load a different session — wrapper that catches errors */
-  async loadSession(sessionPath: string): Promise<void> {
+  /**
+   * Send a `load_session` RPC to the running agent — let PI handle the
+   * in-process switch instead of killing the process. Use `restartWithSession`
+   * for stale-extension-ctx recovery.
+   */
+  loadSession(sessionPath: string): void {
     try {
-      await this.restartWithSession(sessionPath);
+      this.send({ type: "load_session", sessionPath });
     } catch (err: any) {
-      console.error(`[pool] failed to load session ${sessionPath}:`, err.message);
+      console.error(`[pool] failed to send load_session ${sessionPath}:`, err.message);
       this.broadcast({ type: "error", message: `Failed to load session: ${err.message}` });
+    }
+  }
+
+  /**
+   * Send a `switch_session` RPC to the running agent — let PI handle the
+   * in-process switch.
+   */
+  switchSession(sessionPath: string): void {
+    try {
+      this.send({ type: "switch_session", sessionPath });
+    } catch (err: any) {
+      console.error(`[pool] failed to send switch_session ${sessionPath}:`, err.message);
+      this.broadcast({ type: "error", message: `Failed to switch session: ${err.message}` });
     }
   }
 
@@ -133,19 +160,25 @@ export class PooledAgent {
 }
 
 // ─── Agent Pool ───
-// Global singleton. Keys are `${cwd}` — one agent per project.
+// Global singleton. Keys are `${cwd}::${sessionPath || "__new__"}` —
+// one agent per (project, session) tuple so multiple sessions in the same
+// project can run concurrently and keep streaming while the user navigates
+// away.
 
 const agentPool = new Map<string, PooledAgent>();
+
+/** Build the pool key for a (cwd, sessionPath) pair. */
+export function buildAgentKey(cwd: string, sessionPath: string | null | undefined): string {
+  return `${cwd}::${sessionPath || "__new__"}`;
+}
 
 export function getOrCreateAgent(
   cwd: string,
   sessionPath: string | null,
   provider?: string,
   model?: string,
-  newSessionId?: string,
 ): { agent: PooledAgent; isNew: boolean } {
-  // Pool by project only — one agent per project (cwd)
-  const key = cwd;
+  const key = buildAgentKey(cwd, sessionPath);
   const existing = agentPool.get(key);
   if (existing) {
     console.log(`[pool] reusing existing agent ${key} (${existing.clientCount} clients)`);
@@ -168,6 +201,11 @@ export function lookupAgent(agentKey: string): PooledAgent | null {
   return agentPool.get(agentKey) || null;
 }
 
+/** Lookup an existing agent by (cwd, sessionPath). */
+export function lookupAgentBySessionKey(cwd: string, sessionPath: string | null | undefined): PooledAgent | null {
+  return agentPool.get(buildAgentKey(cwd, sessionPath)) || null;
+}
+
 /** Detach a client from an agent by key */
 export function detachFromAgent(agentKey: string, ws: ServerWebSocket) {
   const agent = agentPool.get(agentKey);
@@ -177,6 +215,25 @@ export function detachFromAgent(agentKey: string, ws: ServerWebSocket) {
 /** Delete an agent from the pool (#12: for cleanup on start failure) */
 export function deleteFromPool(agentKey: string) {
   agentPool.delete(agentKey);
+}
+
+/**
+ * Move an agent from one pool key to another. Used when a new session gets
+ * its real file path and the pool entry is re-keyed from `__new__` to the
+ * real path. Returns the moved agent, or null if the old key was not found.
+ */
+export function rekeyAgent(oldKey: string, newKey: string): PooledAgent | null {
+  if (oldKey === newKey) return agentPool.get(oldKey) || null;
+  const agent = agentPool.get(oldKey);
+  if (!agent) return null;
+  // If a different agent already exists at newKey, leave it alone and
+  // return null — the caller should decide how to resolve the conflict.
+  if (agentPool.has(newKey)) return null;
+  agentPool.delete(oldKey);
+  agentPool.set(newKey, agent);
+  agent.setKey(newKey);
+  console.log(`[pool] rekeyed agent ${oldKey} -> ${newKey}`);
+  return agent;
 }
 
 export function getPoolStats() {

@@ -5,6 +5,7 @@ import { SESSION_CACHE_TTL, SESSION_FETCH_DELAY_MS } from "./lib/constants";
 import { Sidebar } from "./components/Sidebar";
 import { ChatView } from "./components/ChatView";
 import { EmptyState } from "./components/EmptyState";
+import { BackgroundSessionToast } from "./components/BackgroundSessionToast";
 import { useWebSocketPool } from "./hooks/useWebSocketPool";
 import { useTheme } from "./hooks/useTheme";
 import { useIsMobile } from "./hooks/useIsMobile";
@@ -47,33 +48,34 @@ export default function App() {
     return id;
   }
 
-  // WebSocket pool — multiple concurrent connections, agents keep streaming when navigating away
+  // WebSocket pool — multiple concurrent connections, agents keep streaming when navigating away.
+  // Each (project, session) tuple gets its own pool entry so PI processes for background
+  // sessions are not torn down when the user switches project/session. The server-side 5-minute
+  // idle timeout cleans up abandoned sessions.
   const wsPool = useWebSocketPool();
-  // WS connection is keyed by project only — session switching happens via
-  // loadSession command on the same connection (avoids spawning new pi process)
-  const ws = wsPool.getOrConnect(
-    selectedProject?.id || null,
-    null, // sessionPath — switching handled via loadSession command
-    newSessionId,
-  );
-
-  // #3 — Disconnect old WS connection when key changes
-  const prevWsKeyRef = useRef<string | null>(null);
-  useEffect(() => {
-    const currentKey = ws?.key ?? null;
-    if (prevWsKeyRef.current && prevWsKeyRef.current !== currentKey) {
-      wsPool.disconnect(prevWsKeyRef.current);
-    }
-    prevWsKeyRef.current = currentKey;
-  }, [ws?.key, wsPool]);
+  // Only attach a WS when we're actually viewing a chat. In sessions/projects views we don't
+  // need (or want) a PI process running. Switching projects or sessions leaves the previous
+  // conn in the pool — the user can come back and the stream is still live.
+  const ws = view === "chat" && selectedProject
+    ? wsPool.getOrConnect(
+        selectedProject.id,
+        activeSession?.filePath || null,
+        newSessionId,
+      )
+    : null;
 
   // Compute which sessions are actively streaming from the pool
   // Must be inline (not useMemo) — pool is a ref Map, its identity never changes,
   // but pool subscriptions trigger forceUpdate so we recompute on every render
   const streamingSessionIds = new Set<string>();
-  for (const conn of wsPool.pool.values()) {
+  const streamingProjectIds = new Set<string>();
+  for (const [key, conn] of wsPool.pool.entries()) {
     if (conn.isActive && conn.state?.sessionId) {
       streamingSessionIds.add(conn.state.sessionId);
+      // Pool key format: `${projectId}:${sessionPath}:${newSessionId}`.
+      // Project IDs are UUIDs (no colons), so split on first ':' is safe.
+      const projectId = key.split(":")[0];
+      if (projectId) streamingProjectIds.add(projectId);
     }
   }
 
@@ -82,6 +84,14 @@ export default function App() {
   useEffect(() => {
     if (!ws) return;
     const handleSessionLoaded = (session: SessionDetail) => {
+      // Rekey the pool entry from pending (e.g. `projId::::uuid`) to the resolved
+      // filePath form. This must run before setState so the next render's
+      // getOrConnect() finds the existing conn under its new key.
+      if (ws && session.filePath) {
+        const oldKey = ws.key;
+        const newKey = `${selectedProject?.id || ""}::${session.filePath}`;
+        if (oldKey !== newKey) ws.rekey(newKey);
+      }
       setActiveSession(prev => prev ? {
         ...prev,
         filePath: session.filePath,
@@ -458,12 +468,13 @@ export default function App() {
           onRefreshSessions={handleRefreshSessions}
           onContinueLatest={handleContinueLatest}
           streamingSessionIds={streamingSessionIds}
+          streamingProjectIds={streamingProjectIds}
           onToggleSidebar={() => setShowSidebar(false)}
           isMobile={isMobile}
         />
       </>
       )}
-      
+
 
       <main id="main-content" className="flex-1 flex flex-col min-w-0">
         {view === "chat" && ws ? (
@@ -489,6 +500,15 @@ export default function App() {
           />
         )}
       </main>
+
+      <BackgroundSessionToast
+        wsPool={wsPool}
+        projects={projects}
+        activeProjectId={selectedProject?.id ?? null}
+        activeSessionId={activeSession?.id ?? null}
+        onSelectProject={handleSelectProject}
+        onSelectSession={handleSelectSession}
+      />
     </div>
   );
 }
