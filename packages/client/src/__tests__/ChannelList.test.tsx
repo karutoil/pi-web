@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { Sidebar } from '../components/Sidebar';
+import { ChannelList } from '../components/ChannelList';
 import type { Project, SessionSummary } from '@pi-web/shared';
-import type { ViewState } from '../App';
 
 // Mock ContextMenu portal (it renders in a real DOM portal — skip in jsdom)
 vi.mock('../components/ContextMenu', () => ({
@@ -17,8 +16,8 @@ vi.mock('../components/ContextMenu', () => ({
 }));
 
 // VersionChecker fetches /api/version on mount — stub it out here so the
-// Sidebar tests stay focused on layout/handlers. The component has its own
-// dedicated test file that covers the fetch + display logic.
+// channel-list tests stay focused on layout/handlers. The component has
+// its own dedicated test file that covers the fetch + display logic.
 vi.mock('../components/VersionChecker', () => ({
   VersionChecker: () => <div data-testid="version-checker" />,
 }));
@@ -91,53 +90,60 @@ const mockSessions: SessionSummary[] = [
 ];
 
 const defaultProps = {
-  projects: [mockProject],
+  project: mockProject,
   sessions: mockSessions,
-  selectedProject: mockProject,
   activeSession: null,
-  view: 'sessions' as ViewState,
-  showAddProject: false,
-  theme: 'dark' as const,
-  onSelectProject: vi.fn(),
+  search: '',
+  onSearch: vi.fn(),
   onSelectSession: vi.fn(),
-  onBack: vi.fn(),
   onNewSession: vi.fn(),
-  onAddProject: vi.fn(),
-  onDeleteProject: vi.fn(),
-  onToggleAddProject: vi.fn(),
-  onToggleTheme: vi.fn(),
   onDeleteSession: vi.fn(),
   onRenameSession: vi.fn(),
   onForkSession: vi.fn(),
   onRefreshSessions: vi.fn(),
   onContinueLatest: vi.fn(),
   streamingSessionIds: new Set<string>(),
-  streamingProjectIds: new Set<string>(),
+  onDeleteProject: vi.fn(),
+  onRequestConfirm: vi.fn(),
+  theme: 'dark' as const,
+  onToggleTheme: vi.fn(),
 };
 
-describe('Sidebar', () => {
+describe('ChannelList', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
+  // ─── Project header ───
+
+  it('shows the project name in the header', () => {
+    render(<ChannelList {...defaultProps} />);
+    expect(screen.getByText('Test Project')).toBeInTheDocument();
+  });
+
+  it('shows the project path in the header', () => {
+    render(<ChannelList {...defaultProps} />);
+    expect(screen.getByText('/home/test/project')).toBeInTheDocument();
+  });
+
   // ─── Session grouping ───
 
-  it('groups sessions by date (Today, Yesterday, This Week, Older)', () => {
-    render(<Sidebar {...defaultProps} />);
+  it('groups sessions by date (Today, Yesterday, Older)', () => {
+    render(<ChannelList {...defaultProps} />);
     expect(screen.getByText('Today')).toBeInTheDocument();
     expect(screen.getByText('Yesterday')).toBeInTheDocument();
     expect(screen.getByText('Older')).toBeInTheDocument();
   });
 
   it('renders session names under correct groups', () => {
-    render(<Sidebar {...defaultProps} />);
+    render(<ChannelList {...defaultProps} />);
     expect(screen.getByText('Today session')).toBeInTheDocument();
     expect(screen.getByText('Yesterday session')).toBeInTheDocument();
     expect(screen.getByText('Old session')).toBeInTheDocument();
   });
 
   it('calls onSelectSession when clicking a session', () => {
-    render(<Sidebar {...defaultProps} />);
+    render(<ChannelList {...defaultProps} />);
     fireEvent.click(screen.getByText('Today session'));
     expect(defaultProps.onSelectSession).toHaveBeenCalledWith(
       expect.objectContaining({ id: 's1' }),
@@ -147,66 +153,69 @@ describe('Sidebar', () => {
   // ─── Search filter ───
 
   it('filters sessions by name', () => {
-    render(<Sidebar {...defaultProps} />);
-    const searchInput = screen.getByPlaceholderText('Filter…');
+    render(<ChannelList {...defaultProps} />);
+    const searchInput = screen.getByPlaceholderText('Filter sessions…');
     fireEvent.change(searchInput, { target: { value: 'today' } });
     expect(screen.getByText('Today session')).toBeInTheDocument();
     expect(screen.queryByText('Yesterday session')).not.toBeInTheDocument();
   });
 
   it('filters sessions by model', () => {
-    render(<Sidebar {...defaultProps} />);
-    const searchInput = screen.getByPlaceholderText('Filter…');
+    render(<ChannelList {...defaultProps} />);
+    const searchInput = screen.getByPlaceholderText('Filter sessions…');
     fireEvent.change(searchInput, { target: { value: 'gpt' } });
     expect(screen.getByText('Yesterday session')).toBeInTheDocument();
     expect(screen.queryByText('Today session')).not.toBeInTheDocument();
   });
 
   it('shows no matches message for empty filter result', () => {
-    render(<Sidebar {...defaultProps} />);
-    const searchInput = screen.getByPlaceholderText('Filter…');
+    render(<ChannelList {...defaultProps} />);
+    const searchInput = screen.getByPlaceholderText('Filter sessions…');
     fireEvent.change(searchInput, { target: { value: 'zzzzz' } });
     expect(screen.getByText('No matches.')).toBeInTheDocument();
   });
 
-  it('clears search via clear button', () => {
-    render(<Sidebar {...defaultProps} />);
-    const searchInput = screen.getByPlaceholderText('Filter…');
-    fireEvent.change(searchInput, { target: { value: 'xyz' } });
+  it('clears search via the clear button', () => {
+    render(<ChannelList {...defaultProps} />);
+    const searchInput = screen.getByPlaceholderText('Filter sessions…') as HTMLInputElement;
+    fireEvent.change(searchInput, { target: { value: 'today' } });
     const clearBtn = screen.getByLabelText('Clear search');
     fireEvent.click(clearBtn);
-    expect(searchInput).toHaveValue('');
+    expect(defaultProps.onSearch).toHaveBeenCalledWith('');
   });
 
-  // ─── Project view ───
+  // ─── Continue latest ───
 
-  it('shows projects when view=projects', () => {
-    render(<Sidebar {...defaultProps} view="projects" selectedProject={null} />);
-    expect(screen.getByText('Test Project')).toBeInTheDocument();
+  it('shows the continue latest button when sessions exist', () => {
+    render(<ChannelList {...defaultProps} />);
+    expect(screen.getByText(/Continue latest/i)).toBeInTheDocument();
   });
 
-  it('shows add project explorer when toggled', () => {
-    render(<Sidebar {...defaultProps} view="projects" selectedProject={null} showAddProject={true} />);
-    expect(screen.getByText('Add Project')).toBeInTheDocument();
+  it('calls onContinueLatest when clicking the continue latest button', () => {
+    render(<ChannelList {...defaultProps} />);
+    fireEvent.click(screen.getByText(/Continue latest/i));
+    expect(defaultProps.onContinueLatest).toHaveBeenCalled();
   });
 
-  // ─── Version checker (#160) ───
+  // ─── Project actions menu ───
 
-  it('mounts the version checker widget in the footer area', () => {
-    render(<Sidebar {...defaultProps} />);
-    expect(screen.getByTestId('version-checker')).toBeInTheDocument();
+  it('opens the project actions menu when clicking the kebab', () => {
+    render(<ChannelList {...defaultProps} />);
+    fireEvent.click(screen.getByLabelText('Project actions'));
+    // Menu items appear in a portal mock; check for the label
+    expect(screen.getAllByText(/New session/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Remove project/i).length).toBeGreaterThan(0);
   });
 
-  // ─── Theme toggle ───
+  // ─── Empty state ───
 
-  it('renders theme toggle button', () => {
-    render(<Sidebar {...defaultProps} />);
-    expect(screen.getByLabelText('Toggle dark mode')).toBeInTheDocument();
+  it('shows the no-sessions empty state when there are no sessions', () => {
+    render(<ChannelList {...defaultProps} sessions={[]} />);
+    expect(screen.getByText(/No sessions yet/i)).toBeInTheDocument();
   });
 
-  it('calls onToggleTheme on theme button click', () => {
-    render(<Sidebar {...defaultProps} />);
-    fireEvent.click(screen.getByLabelText('Toggle dark mode'));
-    expect(defaultProps.onToggleTheme).toHaveBeenCalled();
+  it('does not show the continue latest button when there are no sessions', () => {
+    render(<ChannelList {...defaultProps} sessions={[]} />);
+    expect(screen.queryByText(/Continue latest/i)).not.toBeInTheDocument();
   });
 });

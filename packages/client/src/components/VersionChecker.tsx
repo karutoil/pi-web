@@ -10,7 +10,7 @@ import { Icon } from "./Icon";
  * Polls `/api/version` every 5 minutes — cheap endpoint, no streaming
  * needed. Manual refresh via the icon button.
  */
-export function VersionChecker() {
+export function VersionChecker({ compact = false }: { compact?: boolean }) {
   const [info, setInfo] = useState<VersionInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,7 +51,10 @@ export function VersionChecker() {
   if (error && !info) {
     return (
       <div
-        className="px-4 pb-2.5 -mt-1 flex items-center gap-1.5 text-ink-500 text-[0.6rem] font-mono mobile-safe-bottom"
+        className={[
+          "flex items-center gap-1.5 text-ink-500 text-[0.6rem] font-mono",
+          compact ? "" : "px-4 pb-2.5 -mt-1 mobile-safe-bottom",
+        ].join(" ")}
         title={error}
       >
         <span className="w-1.5 h-1.5 rounded-full bg-rose-500/70 shrink-0" />
@@ -70,7 +73,12 @@ export function VersionChecker() {
 
   if (!info) {
     return (
-      <div className="px-4 pb-2.5 -mt-1 flex items-center gap-1.5 text-ink-500 text-[0.6rem] font-mono mobile-safe-bottom">
+      <div
+        className={[
+          "flex items-center gap-1.5 text-ink-500 text-[0.6rem] font-mono",
+          compact ? "" : "px-4 pb-2.5 -mt-1 mobile-safe-bottom",
+        ].join(" ")}
+      >
         <span className="w-1.5 h-1.5 rounded-full bg-ink-600 animate-pulse shrink-0" />
         <span>loading version…</span>
       </div>
@@ -80,7 +88,10 @@ export function VersionChecker() {
   if (info.unavailable) {
     return (
       <div
-        className="px-4 pb-2.5 -mt-1 flex items-center gap-1.5 text-ink-500 text-[0.6rem] font-mono mobile-safe-bottom"
+        className={[
+          "flex items-center gap-1.5 text-ink-500 text-[0.6rem] font-mono",
+          compact ? "" : "px-4 pb-2.5 -mt-1 mobile-safe-bottom",
+        ].join(" ")}
         title="Server is not running from inside a git working tree"
       >
         <span className="w-1.5 h-1.5 rounded-full bg-ink-600 shrink-0" />
@@ -95,7 +106,10 @@ export function VersionChecker() {
 
   return (
     <div
-      className="px-4 pb-2.5 -mt-1 flex items-center gap-1.5 text-ink-500 text-[0.6rem] font-mono mobile-safe-bottom"
+      className={[
+        "flex items-center gap-1.5 text-ink-500 text-[0.6rem] font-mono",
+        compact ? "" : "px-4 pb-2.5 -mt-1 mobile-safe-bottom",
+      ].join(" ")}
       title={tooltip}
     >
       <span

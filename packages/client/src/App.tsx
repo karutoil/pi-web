@@ -2,10 +2,13 @@ import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import type { Project, SessionSummary, SessionDetail, ChatMessage } from "@pi-web/shared";
 import { formatTimeAgo } from "./lib/utils";
 import { SESSION_CACHE_TTL, SESSION_FETCH_DELAY_MS } from "./lib/constants";
-import { Sidebar } from "./components/Sidebar";
+import { ServerRail } from "./components/ServerRail";
+import { ChannelList } from "./components/ChannelList";
 import { ChatView } from "./components/ChatView";
 import { EmptyState } from "./components/EmptyState";
 import { BackgroundSessionToast } from "./components/BackgroundSessionToast";
+import { ConfirmDialog } from "./components/ConfirmDialog";
+import { AddProjectExplorer } from "./components/AddProjectExplorer";
 import { useWebSocketPool } from "./hooks/useWebSocketPool";
 import { useTheme } from "./hooks/useTheme";
 import { useIsMobile } from "./hooks/useIsMobile";
@@ -17,6 +20,12 @@ const MAX_SESSION_CACHE = 50;
 
 export type ViewState = "projects" | "sessions" | "chat";
 
+// Layout state for the Discord-style three-pane shell:
+// - "rail" hidden on mobile until the user opens it
+// - "channels" hidden on mobile after a project is selected
+// - "main" always visible on desktop
+type MobilePane = "rail" | "channels" | "main";
+
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -27,10 +36,9 @@ export default function App() {
   const [showAddProject, setShowAddProject] = useState(false);
   const [newSessionId, setNewSessionId] = useState<string | null>(null);
   const [isAddingProject, setIsAddingProject] = useState(false);
-  const [showSidebar, setShowSidebar] = useState(false);
-  useEffect(() => {
-    setShowSidebar(typeof window !== "undefined" ? window.innerWidth >= 768 : false);
-  }, []);
+  const [mobilePane, setMobilePane] = useState<MobilePane>("rail");
+  const [channelSearch, setChannelSearch] = useState("");
+  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; title: string; message: string; onConfirm: () => void }>({ open: false, title: "", message: "", onConfirm: () => {} });
   const isMobile = useIsMobile();
 
   // Session detail cache with 30s TTL (capped at MAX_SESSION_CACHE entries)
@@ -213,13 +221,13 @@ export default function App() {
     setActiveSession(null);
     setSessionDetail(null);
     setView("sessions");
-    if (isMobile) safeTimeout(() => setShowSidebar(false), 150);
+    if (isMobile) setMobilePane("channels");
   }, [isMobile]);
 
   const handleSelectSession = useCallback(async (session: SessionSummary) => {
     setActiveSession(session);
     setView("chat");
-    if (isMobile) safeTimeout(() => setShowSidebar(false), 150);
+    if (isMobile) setMobilePane("main");
 
     // Do NOT call `ws.loadSession(...)` here. With the multi-session pool, each
     // session has its own PI process. Sending load_session on the OLD WS would
@@ -301,7 +309,7 @@ export default function App() {
     setSessionDetail(null);
     // #64 — Only set view to 'chat' when a project is selected (ws requires projectId)
     if (selectedProject) setView("chat");
-    if (isMobile) safeTimeout(() => setShowSidebar(false), 150);
+    if (isMobile) setMobilePane("main");
     // Refresh session list after PI creates the new session file
     safeTimeout(() => fetchSessions(), SESSION_FETCH_DELAY_MS);
   }, [fetchSessions, isMobile, selectedProject]);
@@ -311,14 +319,24 @@ export default function App() {
       setView("sessions");
       setActiveSession(null);
       setSessionDetail(null);
-      if (isMobile) setShowSidebar(true);
+      if (isMobile) setMobilePane("channels");
     } else if (view === "sessions") {
       setView("projects");
       setSelectedProject(null);
       setSessions([]);
-      if (isMobile) setShowSidebar(true);
+      if (isMobile) setMobilePane("rail");
     }
   }, [view, isMobile]);
+
+  // New: "go home" — collapse everything, no project selected
+  const handleGoHome = useCallback(() => {
+    setView("projects");
+    setSelectedProject(null);
+    setActiveSession(null);
+    setSessionDetail(null);
+    setSessions([]);
+    if (isMobile) setMobilePane("rail");
+  }, [isMobile]);
 
   const handleAddProject = useCallback(async (path: string, name: string) => {
     setIsAddingProject(true);
@@ -431,6 +449,9 @@ export default function App() {
   }, [ws]);
 
   // Cmd/Ctrl+N shortcut — new session
+  // Cmd/Ctrl+K — quick project switcher (⌘P) by cycling through projects.
+  // Cmd/Ctrl+B — toggle the server rail (mobile only; desktop keeps the rail pinned).
+  // Cmd/Ctrl+1..9 — jump to a project by index.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "n") {
@@ -439,12 +460,31 @@ export default function App() {
       }
       if ((e.metaKey || e.ctrlKey) && e.key === "b") {
         e.preventDefault();
-        setShowSidebar(v => !v);
+        setMobilePane(p => (p === "rail" ? "main" : "rail"));
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        // Cycle to next project (or home if no project selected)
+        if (projects.length === 0) return;
+        const idx = selectedProject
+          ? projects.findIndex(p => p.id === selectedProject.id)
+          : -1;
+        const next = projects[(idx + 1) % projects.length];
+        if (next) handleSelectProject(next);
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "0") {
+        e.preventDefault();
+        handleGoHome();
+      }
+      if ((e.metaKey || e.ctrlKey) && /^[1-9]$/.test(e.key)) {
+        e.preventDefault();
+        const n = parseInt(e.key, 10) - 1;
+        if (projects[n]) handleSelectProject(projects[n]);
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [handleNewSession]);
+  }, [handleNewSession, handleGoHome, handleSelectProject, projects, selectedProject]);
 
   // #62 — Cleanup all safeTimeout timers on unmount
   useEffect(() => {
@@ -458,32 +498,34 @@ export default function App() {
     <div className="flex h-screen overflow-hidden bg-ink-950">
       <PWABanner />
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-0 focus:left-0 focus:z-80 focus:bg-ink-900 focus:p-4 focus:text-amber-500">Skip to chat</a>
-      {showSidebar && (
-      <>
-        {/* Mobile: overlay backdrop */}
-        {isMobile && (
-          <div
-            className="fixed inset-0 z-20 bg-ink-950/60 backdrop-blur-sm"
-            onClick={() => setShowSidebar(false)}
-          />
-        )}
-        <Sidebar
+      {/* Server rail — always visible on desktop; on mobile it overlays everything when active */}
+      {(!isMobile || mobilePane === "rail") && (
+        <ServerRail
           projects={projects}
-          sessions={sessions}
           selectedProject={selectedProject}
-          activeSession={activeSession}
-          view={view}
-          showAddProject={showAddProject}
-          theme={theme}
-          onSelectProject={handleSelectProject}
-          onSelectSession={handleSelectSession}
-          onBack={handleBack}
-          onNewSession={handleNewSession}
-          onAddProject={handleAddProject}
+          streamingProjectIds={streamingProjectIds}
           isAddingProject={isAddingProject}
+          isHomeActive={view === "projects"}
+          onSelectProject={handleSelectProject}
+          onSelectHome={handleGoHome}
+          onAddProject={() => setShowAddProject(true)}
           onDeleteProject={handleDeleteProject}
-          onToggleAddProject={() => setShowAddProject(v => !v)}
-          onToggleTheme={toggleTheme}
+          onRequestConfirm={(title, message, onConfirm) => setConfirmDialog({ open: true, title, message, onConfirm })}
+        />
+      )}
+
+      {/* Channel list — desktop: always visible when a project is selected.
+          Mobile: shown when a project is open and the user hasn't tapped
+          a session yet. */}
+      {selectedProject && (!isMobile || mobilePane === "channels") && (
+        <ChannelList
+          project={selectedProject}
+          sessions={sessions}
+          activeSession={activeSession}
+          search={channelSearch}
+          onSearch={setChannelSearch}
+          onSelectSession={handleSelectSession}
+          onNewSession={handleNewSession}
           onDeleteSession={handleDeleteSession}
           onRenameSession={handleRenameSession}
           onForkSession={handleForkSession}
@@ -491,13 +533,12 @@ export default function App() {
           onRefreshSessions={handleRefreshSessions}
           onContinueLatest={handleContinueLatest}
           streamingSessionIds={streamingSessionIds}
-          streamingProjectIds={streamingProjectIds}
-          onToggleSidebar={() => setShowSidebar(false)}
-          isMobile={isMobile}
+          onDeleteProject={(p) => handleDeleteProject(p.id)}
+          onRequestConfirm={(title, message, onConfirm) => setConfirmDialog({ open: true, title, message, onConfirm })}
+          theme={theme}
+          onToggleTheme={toggleTheme}
         />
-      </>
       )}
-
 
       <main id="main-content" className="flex-1 flex flex-col min-w-0">
         {view === "chat" && ws ? (
@@ -506,8 +547,8 @@ export default function App() {
             sessionDetail={sessionDetail}
             project={selectedProject}
             session={activeSession}
-            onToggleSidebar={() => setShowSidebar(true)}
-            showSidebar={showSidebar}
+            onToggleSidebar={() => setMobilePane("rail")}
+            showSidebar={false}
           />
         ) : view === "sessions" ? (
           <SessionWelcome
@@ -532,6 +573,19 @@ export default function App() {
         onSelectProject={handleSelectProject}
         onSelectSession={handleSelectSession}
       />
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        onConfirm={() => { confirmDialog.onConfirm(); setConfirmDialog(s => ({ ...s, open: false })); }}
+        onCancel={() => setConfirmDialog(s => ({ ...s, open: false }))}
+      />
+      {showAddProject && (
+        <AddProjectExplorer
+          onAdd={(path, name) => { handleAddProject(path, name); setShowAddProject(false); }}
+          onCancel={() => setShowAddProject(false)}
+        />
+      )}
     </div>
   );
 }
@@ -541,47 +595,88 @@ function SessionWelcome({ project, sessions, onSelectSession }: {
   sessions: SessionSummary[];
   onSelectSession: (s: SessionSummary) => void;
 }) {
-  const isMobileScreen = useIsMobile();
   return (
-    <div className="flex-1 flex flex-col items-center justify-center p-4 md:p-8 mobile-safe-top">
-      <div className="max-w-lg w-full text-center animate-fade-in-up">
-        {/* Mobile back hint */}
-        {isMobileScreen && (
-          <p className="text-ink-500 text-xs font-mono mb-4">Tap ☰ to browse sessions</p>
-        )}
-        <h2 className="text-xl md:text-2xl font-semibold text-ink-100 mb-2">
-          {project?.name || "Sessions"}
-        </h2>
-        <p className="text-ink-400 text-lg italic mb-8">
-          {sessions.length === 0
-            ? "No sessions yet. Start a new one."
-            : `${sessions.length} session${sessions.length === 1 ? "" : "s"}`}
+    <div className="flex-1 flex flex-col items-center justify-center p-6 md:p-10 mobile-safe-top relative overflow-hidden">
+      {/* Decorative paper-grain background tint — subtle manuscript page feel */}
+      <div
+        className="absolute inset-0 pointer-events-none opacity-[0.025]"
+        style={{
+          backgroundImage:
+            "radial-gradient(circle at 30% 20%, var(--color-amber-500) 0%, transparent 40%), radial-gradient(circle at 75% 70%, var(--color-amber-500) 0%, transparent 45%)",
+        }}
+        aria-hidden
+      />
+
+      <div className="max-w-xl w-full text-center animate-fade-in-up relative">
+        {/* Editorial header: rule + label + rule */}
+        <div className="flex items-center gap-3 mb-6 max-w-md mx-auto">
+          <div className="flex-1 h-px bg-gradient-to-r from-transparent via-ink-700/50 to-transparent" />
+          <span className="text-ink-500 text-[0.6rem] font-mono uppercase tracking-[0.25em]">
+            {project ? "Project" : "Welcome"}
+          </span>
+          <div className="flex-1 h-px bg-gradient-to-r from-transparent via-ink-700/50 to-transparent" />
+        </div>
+
+        <h1
+          className="text-3xl md:text-5xl font-semibold text-ink-100 mb-3 tracking-tight leading-tight"
+          style={{ fontFamily: "var(--font-serif)", fontStyle: "italic" }}
+        >
+          {project?.name || "PI"}
+        </h1>
+
+        <p className="text-ink-400 text-base md:text-lg italic mb-2 leading-relaxed" style={{ fontFamily: "var(--font-serif)" }}>
+          {project?.path}
         </p>
-        
+
+        <p className="text-ink-500 text-sm font-mono mb-10">
+          {sessions.length === 0
+            ? "No sessions yet \u2014 start a new one"
+            : `${sessions.length} session${sessions.length === 1 ? "" : "s"} in this project`}
+        </p>
+
         {sessions.length > 0 && (
           <div className="space-y-2 text-left">
-            {sessions.slice(0, 10).map(s => (
+            <div className="flex items-center gap-2 mb-3 px-1">
+              <span className="text-ink-500 text-[0.58rem] font-mono uppercase tracking-[0.2em]">Recent</span>
+              <div className="flex-1 h-px bg-ink-700/40" />
+            </div>
+            {sessions.slice(0, 8).map((s, i) => (
               <button
                 key={s.id}
                 onClick={() => onSelectSession(s)}
-                className="w-full text-left p-4 rounded-lg bg-ink-900 hover:bg-ink-850 border border-ink-800 hover:border-ink-700 transition-theme group"
+                className="w-full text-left p-3.5 rounded-lg bg-ink-900/40 hover:bg-ink-900 border border-ink-800/70 hover:border-amber-600/30 hover:shadow-[0_4px_16px_-4px_rgba(212,160,32,0.12)] transition-theme group animate-fade-in-up"
+                style={{ animationDelay: `${80 + i * 40}ms` }}
               >
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="shrink-0 w-7 h-7 rounded-md bg-ink-850/80 border border-ink-700/60 flex items-center justify-center text-ink-500 group-hover:text-amber-500 group-hover:border-amber-500/40 transition-theme">
+                    <span className="text-sm leading-none" aria-hidden>#</span>
+                  </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-ink-200 font-medium text-sm truncate">
-                      {s.name || s.lastMessage || "Untitled session"}
+                    <div
+                      className="text-ink-200 font-medium text-sm truncate leading-snug"
+                      style={{ fontFamily: "var(--font-serif)" }}
+                    >
+                      {s.name || s.lastMessage || s.firstMessage || "Untitled session"}
                     </div>
-                    <div className="text-ink-500 text-xs mt-1 font-mono">
-                      {s.messageCount} messages
-                      {s.model && ` · ${s.model}`}
+                    <div className="text-ink-500 text-[0.65rem] mt-1 font-mono">
+                      {s.messageCount > 0 && <span>{s.messageCount} messages</span>}
+                      {s.messageCount > 0 && s.model && <span className="text-ink-700 mx-1">·</span>}
+                      {s.model && <span>{s.model}</span>}
+                      {s.messageCount === 0 && !s.model && <span>New session</span>}
                     </div>
                   </div>
-                  <div className="text-ink-500 text-xs shrink-0 mt-0.5">
-                    {formatTimeAgo(s.timestamp)}
+                  <div className="text-ink-500 text-[0.65rem] font-mono shrink-0 mt-0.5">
+                    {formatTimeAgo(s.lastActiveAt || s.timestamp)}
                   </div>
                 </div>
               </button>
             ))}
+          </div>
+        )}
+
+        {sessions.length === 0 && (
+          <div className="text-ink-500 text-sm font-mono mt-2">
+            Press <kbd className="px-1.5 py-0.5 rounded bg-ink-800/60 text-ink-300 font-mono text-[0.7rem] border border-ink-700/50">⌘N</kbd> to start a conversation
           </div>
         )}
       </div>

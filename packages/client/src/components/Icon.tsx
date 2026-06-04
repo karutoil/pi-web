@@ -1,8 +1,17 @@
 /**
  * Icon component — renders named SVG icons from a central path map.
  * Uses currentColor for fill/stroke so it inherits text color.
- * Keeps viewBox/paths identical to the original inline SVGs.
+ *
+ * Design principles (revamped):
+ *  - Unified 16×16 grid for all UI icons (24×24 for sun/moon)
+ *  - 2px stroke weight baseline; 1.5px for fine detail icons
+ *  - round linecap + round linejoin everywhere for warmth
+ *  - Optical padding: live area is ~12px, 2px inset on each side
+ *  - Filled icons (kebab, abort, more, spark) use clean geometric shapes
+ *  - No legacy "pi-avatar / pi-logo" placeholder icons
  */
+
+import React from "react";
 
 export interface IconProps {
   name: keyof typeof SVG_PATHS;
@@ -11,7 +20,7 @@ export interface IconProps {
   "aria-hidden"?: boolean;
 }
 
-/* ─── Path definitions ─── */
+/* ─── Shared stroke defaults ─── */
 
 interface IconDef {
   viewBox: string;
@@ -23,329 +32,464 @@ interface IconDef {
   children: React.ReactNode;
 }
 
-const SVG_PATHS: Record<string, IconDef> = {
-  // ── Navigation chevrons (viewBox 0 0 16 16) ──
+const ROUND: Partial<IconDef> = {
+  strokeLinecap: "round",
+  strokeLinejoin: "round",
+};
+
+/* ─── Path definitions ─── */
+
+const SVG_PATHS = {
+
+  // ── Chevron left ──────────────────────────────────────────
+  // Crisper single-stroke chevron with optical centre
   "chevron-left": {
     viewBox: "0 0 16 16",
     fill: "none",
     stroke: "currentColor",
-    strokeWidth: "2.5",
-    children: <path d="M10 4 L6 8 L10 12" />,
+    strokeWidth: "2",
+    ...ROUND,
+    children: <path d="M10.5 3.5 L5.5 8 L10.5 12.5" />,
   },
+
+  // ── Chevron right ─────────────────────────────────────────
   "chevron-right": {
     viewBox: "0 0 16 16",
     fill: "none",
     stroke: "currentColor",
-    strokeWidth: "2.5",
-    children: <path d="M6 4 L10 8 L6 12" />,
+    strokeWidth: "2",
+    ...ROUND,
+    children: <path d="M5.5 3.5 L10.5 8 L5.5 12.5" />,
   },
 
-  // ── Down chevron (viewBox 0 0 16 16) ──
+  // ── Chevron down ──────────────────────────────────────────
   "chevron-down": {
     viewBox: "0 0 16 16",
     fill: "none",
     stroke: "currentColor",
-    strokeWidth: "2.5",
-    children: <path d="M4 6 L8 10 L12 6" />,
+    strokeWidth: "2",
+    ...ROUND,
+    children: <path d="M3.5 6 L8 10.5 L12.5 6" />,
   },
 
-  // ── Small caret (viewBox 0 0 10 10) used for collapsible sections ──
+  // ── Chevron right small (solid filled caret) ──────────────
+  // Replaced hairline path with a clean filled triangle
   "chevron-right-sm": {
     viewBox: "0 0 10 10",
     fill: "currentColor",
     stroke: "none",
     strokeWidth: "0",
-    children: <path d="M3 1 L7 5 L3 9" />,
+    children: <polygon points="3,1.5 7.5,5 3,8.5" />,
   },
+
+  // ── Chevron right small amber variant ─────────────────────
   "chevron-right-sm-amber": {
     viewBox: "0 0 10 10",
     fill: "currentColor",
     stroke: "none",
     strokeWidth: "0",
-    children: <path d="M3 2 L7 5 L3 8" />,
+    children: <polygon points="3,2 7,5 3,8" />,
   },
 
-  // ── Close / X (viewBox 0 0 16 16) ──
+  // ── Close / X ─────────────────────────────────────────────
+  // Slightly extended diagonals for bolder presence
   close: {
     viewBox: "0 0 16 16",
     fill: "none",
     stroke: "currentColor",
-    strokeWidth: "2",
-    children: <path d="M4 4 L12 12 M12 4 L4 12" />,
+    strokeWidth: "1.75",
+    ...ROUND,
+    children: <path d="M4.5 4.5 L11.5 11.5 M11.5 4.5 L4.5 11.5" />,
   },
+
+  // ── Close thick ───────────────────────────────────────────
   "close-thick": {
     viewBox: "0 0 16 16",
     fill: "none",
     stroke: "currentColor",
-    strokeWidth: "2.5",
-    children: <path d="M4 4 L12 12 M12 4 L4 12" />,
+    strokeWidth: "2.25",
+    ...ROUND,
+    children: <path d="M4.5 4.5 L11.5 11.5 M11.5 4.5 L4.5 11.5" />,
   },
 
-  // ── Plus (viewBox 0 0 16 16) ──
+  // ── Home ──────────────────────────────────────────────────
+  // Cleaner roofline, door centred and proportional
+  home: {
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.5",
+    ...ROUND,
+    children: (
+      <>
+        {/* Roof */}
+        <path d="M2 7.5 L8 2 L14 7.5" />
+        {/* Walls */}
+        <path d="M3.5 6.5 L3.5 14 L12.5 14 L12.5 6.5" />
+        {/* Door */}
+        <path d="M6.5 14 L6.5 10.5 Q6.5 9.5 7.5 9.5 L8.5 9.5 Q9.5 9.5 9.5 10.5 L9.5 14" />
+      </>
+    ),
+  },
+
+  // ── Hash ──────────────────────────────────────────────────
+  // Tighter glyph, true # proportions with slight slant
+  hash: {
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.75",
+    ...ROUND,
+    children: (
+      <>
+        <line x1="6" y1="2.5" x2="4.5" y2="13.5" />
+        <line x1="11.5" y1="2.5" x2="10" y2="13.5" />
+        <line x1="2.5" y1="6.5" x2="13.5" y2="6.5" />
+        <line x1="2" y1="10.5" x2="13" y2="10.5" />
+      </>
+    ),
+  },
+
+  // ── Inbox ─────────────────────────────────────────────────
+  // Proper tray shape: open top, slot for items
+  inbox: {
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.5",
+    ...ROUND,
+    children: (
+      <>
+        {/* Tray body */}
+        <rect x="2" y="8" width="12" height="6" rx="1.5" />
+        {/* Top slot flaps */}
+        <path d="M2 9 L5.5 9 Q6 9 6.5 8 L7 7 L9 7 L9.5 8 Q10 9 10.5 9 L14 9" />
+        {/* Envelope/letter peek */}
+        <path d="M5 5.5 L8 3.5 L11 5.5" />
+        <line x1="8" y1="3.5" x2="8" y2="6.5" />
+      </>
+    ),
+  },
+
+  // ── Kebab / vertical more ─────────────────────────────────
+  // Slightly larger dots, better vertical rhythm
+  kebab: {
+    viewBox: "0 0 16 16",
+    fill: "currentColor",
+    stroke: "none",
+    strokeWidth: "0",
+    children: (
+      <>
+        <circle cx="8" cy="3.5" r="1.5" />
+        <circle cx="8" cy="8" r="1.5" />
+        <circle cx="8" cy="12.5" r="1.5" />
+      </>
+    ),
+  },
+
+  // ── Plus ──────────────────────────────────────────────────
+  // Optically centred, equal arm lengths
   plus: {
     viewBox: "0 0 16 16",
     fill: "none",
     stroke: "currentColor",
-    strokeWidth: "2",
+    strokeWidth: "1.75",
+    ...ROUND,
     children: <path d="M8 3 L8 13 M3 8 L13 8" />,
   },
+
+  // ── Plus thick ────────────────────────────────────────────
   "plus-thick": {
     viewBox: "0 0 16 16",
     fill: "none",
     stroke: "currentColor",
     strokeWidth: "2.5",
+    ...ROUND,
     children: <path d="M8 3 L8 13 M3 8 L13 8" />,
   },
 
-  // ── Refresh (viewBox 0 0 16 16) ──
+  // ── Refresh ───────────────────────────────────────────────
+  // Full arc with proper gap and arrow direction reversed for clarity
   refresh: {
     viewBox: "0 0 16 16",
     fill: "none",
     stroke: "currentColor",
-    strokeWidth: "2",
+    strokeWidth: "1.75",
+    ...ROUND,
     children: (
       <>
-        <path d="M2 8 A6 6 0 1 1 8 14" />
-        <path d="M2 8 L2 4 L5 6" />
+        <path d="M13.5 8 A5.5 5.5 0 1 1 10.5 3.2" />
+        <polyline points="10.5 1 10.5 4 13.5 4" />
       </>
     ),
   },
 
-  // ── Send arrow (viewBox 0 0 16 16) ──
+  // ── Send arrow ────────────────────────────────────────────
+  // Paper-plane diagonal send (feels more "send" than a flat arrow)
   send: {
     viewBox: "0 0 16 16",
     fill: "none",
     stroke: "currentColor",
-    strokeWidth: "2.5",
-    children: <path d="M2 8 L12 8 M8 4 L13 8 L8 12" />,
+    strokeWidth: "1.75",
+    ...ROUND,
+    children: (
+      <path d="M13.5 2.5 L7 9 M13.5 2.5 L9.5 13.5 L7 9 L2.5 7.5 Z" />
+    ),
   },
 
-  // ── Abort / stop (viewBox 0 0 16 16) ──
+  // ── Abort / stop ──────────────────────────────────────────
+  // Rounded square stop symbol (softer than pure rect)
   abort: {
     viewBox: "0 0 16 16",
     fill: "currentColor",
     stroke: "none",
     strokeWidth: "0",
-    children: <rect x="3" y="3" width="10" height="10" rx="1" />,
+    children: <rect x="3.5" y="3.5" width="9" height="9" rx="2" />,
   },
 
-  // ── Copy (viewBox 0 0 16 16) — copy-with-offset ──
+  // ── Copy offset ───────────────────────────────────────────
+  // Classic two-page copy, clean gap between sheets
   "copy-offset": {
     viewBox: "0 0 16 16",
     fill: "none",
     stroke: "currentColor",
-    strokeWidth: "2",
+    strokeWidth: "1.5",
+    ...ROUND,
     children: (
       <>
-        <rect x="5" y="5" width="8" height="8" rx="1" />
-        <path d="M3 11 L3 3 L11 3" />
+        <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" />
+        <path d="M2.5 10.5 L2.5 2.5 L10.5 2.5" />
       </>
     ),
   },
+
+  // ── Copy join ─────────────────────────────────────────────
   "copy-join": {
     viewBox: "0 0 16 16",
     fill: "none",
     stroke: "currentColor",
-    strokeWidth: "2",
-    children: <path d="M2 4 L2 12 L6 12 M6 4 L14 4 L14 12 L6 12" />,
+    strokeWidth: "1.5",
+    ...ROUND,
+    children: (
+      <path d="M2 4.5 L2 12.5 Q2 13.5 3 13.5 L6.5 13.5 M6.5 4.5 L13 4.5 Q14 4.5 14 5.5 L14 12.5 Q14 13.5 13 13.5 L6.5 13.5 M6.5 2 L6.5 16" />
+    ),
   },
+
+  // ── Copy plain ────────────────────────────────────────────
   "copy-plain": {
     viewBox: "0 0 16 16",
     fill: "none",
     stroke: "currentColor",
-    strokeWidth: "2",
-    children: <rect x="4" y="4" width="8" height="8" rx="1" />,
+    strokeWidth: "1.5",
+    ...ROUND,
+    children: <rect x="4" y="4" width="8" height="8" rx="1.5" />,
   },
 
-  // ── Fork (viewBox 0 0 16 16) ──
+  // ── Fork ──────────────────────────────────────────────────
+  // Symmetrical Y-fork with curved transitions
   fork: {
     viewBox: "0 0 16 16",
     fill: "none",
     stroke: "currentColor",
-    strokeWidth: "2",
-    children: <path d="M8 3 L8 8 L3 13 M8 8 L13 13" />,
+    strokeWidth: "1.75",
+    ...ROUND,
+    children: (
+      <path d="M8 2.5 L8 7 C8 9 5 10 3 13 M8 7 C8 9 11 10 13 13" />
+    ),
   },
+
+  // ── Fork left ─────────────────────────────────────────────
   "fork-left": {
     viewBox: "0 0 16 16",
     fill: "none",
     stroke: "currentColor",
-    strokeWidth: "2",
-    children: <path d="M3 5 L3 13 M3 8 L8 3 M3 8 L8 13" />,
+    strokeWidth: "1.75",
+    ...ROUND,
+    children: (
+      <path d="M3 3 L3 13 M3 7.5 C5.5 7 9 5 10.5 2.5 M3 7.5 C5.5 8 9 10 10.5 12.5" />
+    ),
   },
 
-  // ── Trash (viewBox 0 0 16 16) ──
+  // ── Trash ─────────────────────────────────────────────────
+  // Rounded lid + can body with two interior lines
   trash: {
     viewBox: "0 0 16 16",
     fill: "none",
     stroke: "currentColor",
-    strokeWidth: "2",
-    children: <path d="M3 5 L13 5 M6 5 L6 3 L10 3 L10 5 M5 5 L5 13 L11 13 L11 5" />,
+    strokeWidth: "1.5",
+    ...ROUND,
+    children: (
+      <>
+        {/* Lid */}
+        <path d="M2.5 5 L13.5 5" />
+        <path d="M5.5 5 L6 3 L10 3 L10.5 5" />
+        {/* Body */}
+        <path d="M4 5 L4.5 13.5 L11.5 13.5 L12 5" />
+        {/* Interior lines */}
+        <line x1="6.5" y1="7" x2="6.5" y2="11.5" />
+        <line x1="9.5" y1="7" x2="9.5" y2="11.5" />
+      </>
+    ),
   },
 
-  // ── Edit / pencil (viewBox 0 0 16 16) ──
+  // ── Pencil / edit ─────────────────────────────────────────
+  // Proper pencil with a tip, eraser end, and body
   pencil: {
     viewBox: "0 0 16 16",
     fill: "none",
     stroke: "currentColor",
-    strokeWidth: "2",
-    children: <path d="M12 3 L5 13 M3 10 L5 13 L8 12" />,
+    strokeWidth: "1.5",
+    ...ROUND,
+    children: (
+      <>
+        {/* Body */}
+        <path d="M3.5 12.5 L11 5 Q12 4 13 5 Q14 6 13 7 L5.5 14.5 Z" />
+        {/* Tip crease */}
+        <line x1="3.5" y1="12.5" x2="5.5" y2="14.5" />
+        {/* Eraser band */}
+        <line x1="10.3" y1="5.7" x2="12.3" y2="7.7" />
+        {/* Ground line */}
+        <path d="M2 14.5 L5.5 14.5" />
+      </>
+    ),
   },
 
-  // ── Moon (viewBox 0 0 24 24) ──
+  // ── Moon ──────────────────────────────────────────────────
+  // Classic crescent with points trimmed for cleanliness
   moon: {
     viewBox: "0 0 24 24",
     fill: "none",
     stroke: "currentColor",
-    strokeWidth: "1.8",
-    strokeLinecap: "round",
-    children: <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />,
+    strokeWidth: "1.75",
+    ...ROUND,
+    children: (
+      <path d="M20.5 13.5 A9 9 0 1 1 10.5 3.5 A7 7 0 0 0 20.5 13.5 Z" />
+    ),
   },
 
-  // ── Sun (viewBox 0 0 24 24) ──
+  // ── Sun ───────────────────────────────────────────────────
+  // Slimmer rays, optical balance between circle and ray count
   sun: {
     viewBox: "0 0 24 24",
     fill: "none",
     stroke: "currentColor",
-    strokeWidth: "1.8",
-    strokeLinecap: "round",
+    strokeWidth: "1.75",
+    ...ROUND,
     children: (
       <>
-        <circle cx="12" cy="12" r="5" />
-        <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+        <circle cx="12" cy="12" r="4.5" />
+        <path d="M12 2.5v2 M12 19.5v2 M4.93 4.93l1.41 1.41 M17.66 17.66l1.41 1.41 M2.5 12h2 M19.5 12h2 M4.93 19.07l1.41-1.41 M17.66 6.34l1.41-1.41" />
       </>
     ),
   },
 
-  // ── Search (viewBox 0 0 16 16) ──
+  // ── Search ────────────────────────────────────────────────
+  // Slightly bigger lens circle, handle at 45°
   search: {
     viewBox: "0 0 16 16",
     fill: "none",
     stroke: "currentColor",
-    strokeWidth: "2",
+    strokeWidth: "1.75",
+    ...ROUND,
     children: (
       <>
-        <circle cx="7" cy="7" r="4" />
-        <path d="M10 10 L14 14" />
+        <circle cx="6.5" cy="6.5" r="4" />
+        <line x1="9.7" y1="9.7" x2="13.5" y2="13.5" />
       </>
     ),
   },
 
-  // ── Project / folder (viewBox 0 0 16 16) ──
+  // ── Project / folder ──────────────────────────────────────
+  // Classic tabbed folder with a proper tab notch
   project: {
     viewBox: "0 0 16 16",
     fill: "none",
     stroke: "currentColor",
-    strokeWidth: "2",
+    strokeWidth: "1.5",
+    ...ROUND,
     children: (
       <>
-        <path d="M2 13 L2 3 L14 3 L14 13 Z" />
-        <path d="M2 7 L14 7" />
+        {/* Tab */}
+        <path d="M2 6.5 L2 4 Q2 3 3 3 L6.5 3 Q7 3 7.5 3.5 L8.5 5 L13 5 Q14 5 14 6 L14 13 Q14 14 13 14 L3 14 Q2 14 2 13 Z" />
       </>
     ),
   },
 
-  // ── PI avatar (viewBox 0 0 128 128) — used for assistant bubble ──
-  "pi-avatar": {
-    viewBox: "0 0 128 128",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: "0", // paths carry their own stroke classes
-    children: (
-      <>
-        <circle cx="64" cy="64" r="56" stroke="currentColor" strokeWidth="8" className="text-amber-500" />
-        <path d="M48 56 L64 36 L80 56" stroke="currentColor" strokeWidth="4" strokeLinecap="round" className="text-amber-400" />
-      </>
-    ),
-  },
-
-  // ── PI logo large (viewBox 0 0 128 128) — ChatView empty state ──
-  "pi-logo": {
-    viewBox: "0 0 128 128",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: "0",
-    children: (
-      <>
-        <circle cx="64" cy="64" r="60" stroke="currentColor" strokeWidth="6" className="text-amber-600" />
-        <path d="M44 52 L64 32 L84 52" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" className="text-amber-500" />
-        <path d="M64 32 L64 88" stroke="currentColor" strokeWidth="4" strokeLinecap="round" className="text-amber-500" />
-        <circle cx="64" cy="88" r="4" className="fill-amber-500" />
-      </>
-    ),
-  },
-
-  // ── Terminal (viewBox 0 0 16 16) ──
+  // ── Terminal ──────────────────────────────────────────────
+  // Prompt chevron plus cursor underscore — pure text feel
   terminal: {
     viewBox: "0 0 16 16",
     fill: "none",
     stroke: "currentColor",
     strokeWidth: "1.5",
-    strokeLinecap: "round",
-    strokeLinejoin: "round",
+    ...ROUND,
     children: (
       <>
-        <rect x="1" y="2" width="14" height="12" rx="2" />
-        <polyline points="4 6 6 8 4 10" />
-        <line x1="8" y1="10" x2="12" y2="10" />
+        <rect x="1.5" y="2.5" width="13" height="11" rx="2" />
+        <polyline points="4 6.5 6.5 8 4 9.5" />
+        <line x1="8" y1="9.5" x2="11.5" y2="9.5" />
       </>
     ),
   },
 
-  // ── Git branch (viewBox 0 0 16 16) ──
+  // ── Git branch ────────────────────────────────────────────
+  // Standard git branch diagram — commit dots + connecting paths
   git: {
     viewBox: "0 0 16 16",
     fill: "none",
     stroke: "currentColor",
     strokeWidth: "1.5",
-    strokeLinecap: "round",
-    strokeLinejoin: "round",
+    ...ROUND,
     children: (
       <>
-        <circle cx="5" cy="3" r="1.5" />
-        <circle cx="5" cy="13" r="1.5" />
-        <circle cx="12" cy="3" r="1.5" />
-        <line x1="5" y1="4.5" x2="5" y2="11.5" />
-        <path d="M12 4.5C12 7 5 8 5 11.5" />
+        <circle cx="5" cy="3.5" r="1.5" />
+        <circle cx="5" cy="12.5" r="1.5" />
+        <circle cx="11.5" cy="4" r="1.5" />
+        <line x1="5" y1="5" x2="5" y2="11" />
+        <path d="M11.5 5.5 C11.5 8.5 5 8 5 11" />
       </>
     ),
   },
 
-  // ── Minus (viewBox 0 0 16 16) ──
+  // ── Minus ─────────────────────────────────────────────────
   minus: {
     viewBox: "0 0 16 16",
     fill: "none",
     stroke: "currentColor",
-    strokeWidth: "2",
-    strokeLinecap: "round",
+    strokeWidth: "1.75",
+    ...ROUND,
     children: <line x1="3" y1="8" x2="13" y2="8" />,
   },
 
-  // ── Spark / lightning bolt (viewBox 0 0 16 16) — used for skill cards ──
+  // ── Spark / lightning bolt ────────────────────────────────
+  // Sharper zigzag with better proportions
   spark: {
     viewBox: "0 0 16 16",
     fill: "currentColor",
     stroke: "none",
     strokeWidth: "0",
-    children: <path d="M9.5 1.5 L3.5 9 L7 9 L6.5 14.5 L12.5 7 L9 7 Z" />,
+    children: (
+      <path d="M10 1.5 L4 9 L7.5 9 L6 14.5 L12 7 L8.5 7 Z" />
+    ),
   },
 
-  // ── Undo (viewBox 0 0 16 16) ──
+  // ── Undo ──────────────────────────────────────────────────
+  // Arc with a clear arrowhead direction
   undo: {
     viewBox: "0 0 16 16",
     fill: "none",
     stroke: "currentColor",
     strokeWidth: "1.5",
-    strokeLinecap: "round",
-    strokeLinejoin: "round",
+    ...ROUND,
     children: (
       <>
-        <path d="M3 7h6a4 4 0 110 8H7" />
-        <polyline points="5 5 3 7 5 9" />
+        <path d="M3.5 8.5 A5 5 0 1 1 7 14" />
+        <polyline points="1.5 5 3.5 8.5 7 7" />
       </>
     ),
   },
 
-  // ── More / ellipsis (viewBox 0 0 16 16) ──
+  // ── More / horizontal ellipsis ────────────────────────────
   more: {
     viewBox: "0 0 16 16",
     fill: "currentColor",
@@ -353,88 +497,99 @@ const SVG_PATHS: Record<string, IconDef> = {
     strokeWidth: "0",
     children: (
       <>
-        <circle cx="3" cy="8" r="1.5" />
+        <circle cx="3.5" cy="8" r="1.5" />
         <circle cx="8" cy="8" r="1.5" />
-        <circle cx="13" cy="8" r="1.5" />
+        <circle cx="12.5" cy="8" r="1.5" />
       </>
     ),
   },
 
-  // ── Compress / compact (viewBox 0 0 16 16) ──
+  // ── Compress / collapse ───────────────────────────────────
+  // Two inward-pointing arrows in opposite corners
   compress: {
     viewBox: "0 0 16 16",
     fill: "none",
     stroke: "currentColor",
     strokeWidth: "1.5",
-    strokeLinecap: "round",
-    strokeLinejoin: "round",
+    ...ROUND,
     children: (
       <>
-        <polyline points="6 2 2 2 2 6" />
-        <line x1="2" y1="2" x2="5.5" y2="5.5" />
-        <polyline points="10 14 14 14 14 10" />
-        <line x1="14" y1="14" x2="10.5" y2="10.5" />
+        <polyline points="5.5 1.5 1.5 1.5 1.5 5.5" />
+        <line x1="1.5" y1="1.5" x2="6" y2="6" />
+        <polyline points="10.5 14.5 14.5 14.5 14.5 10.5" />
+        <line x1="14.5" y1="14.5" x2="10" y2="10" />
       </>
     ),
   },
 
-  // ── Auto-compaction (viewBox 0 0 16 16) ──
+  // ── Auto-compact ──────────────────────────────────────────
+  // Same compress glyph + arc for "auto" hint
   "auto-compact": {
     viewBox: "0 0 16 16",
     fill: "none",
     stroke: "currentColor",
     strokeWidth: "1.5",
-    strokeLinecap: "round",
-    strokeLinejoin: "round",
+    ...ROUND,
     children: (
       <>
-        <polyline points="6 2 2 2 2 6" />
-        <line x1="2" y1="2" x2="5.5" y2="5.5" />
-        <polyline points="10 14 14 14 14 10" />
-        <line x1="14" y1="14" x2="10.5" y2="10.5" />
-        <path d="M8 3a5 5 0 0 1 4.5 2.8" />
+        <polyline points="5.5 1.5 1.5 1.5 1.5 5.5" />
+        <line x1="1.5" y1="1.5" x2="6" y2="6" />
+        <polyline points="10.5 14.5 14.5 14.5 14.5 10.5" />
+        <line x1="14.5" y1="14.5" x2="10" y2="10" />
+        {/* Auto arc hint — top right */}
+        <path d="M9 3.5 A4 4 0 0 1 13 7.5" />
+        <polyline points="13 5.5 13 7.5 11 7.5" />
       </>
     ),
   },
 
-  // ── Export (viewBox 0 0 16 16) ──
+  // ── Export / upload ───────────────────────────────────────
+  // Box with up-arrow, clear directional intent
   export: {
     viewBox: "0 0 16 16",
     fill: "none",
     stroke: "currentColor",
     strokeWidth: "1.5",
-    strokeLinecap: "round",
-    strokeLinejoin: "round",
+    ...ROUND,
     children: (
       <>
-        <path d="M2 10v3a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-3" />
-        <polyline points="5 5 8 2 11 5" />
+        <path d="M2.5 10.5 L2.5 13 Q2.5 13.5 3 13.5 L13 13.5 Q13.5 13.5 13.5 13 L13.5 10.5" />
         <line x1="8" y1="2" x2="8" y2="10" />
+        <polyline points="5 4.5 8 2 11 4.5" />
       </>
     ),
   },
 
-  // ── Clone / copy (viewBox 0 0 16 16) ──
+  // ── Clone / duplicate ─────────────────────────────────────
+  // Two offset rounded rects with a clear stack read
   clone: {
     viewBox: "0 0 16 16",
     fill: "none",
     stroke: "currentColor",
     strokeWidth: "1.5",
-    strokeLinecap: "round",
-    strokeLinejoin: "round",
+    ...ROUND,
     children: (
       <>
-        <rect x="5" y="5" width="8" height="8" rx="1" />
-        <path d="M3 11H2.5A1.5 1.5 0 0 1 1 9.5v-7A1.5 1.5 0 0 1 2.5 1h7A1.5 1.5 0 0 1 11 2.5V3" />
+        <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" />
+        <path d="M3 10.5 L2 10.5 Q1 10.5 1 9.5 L1 2.5 Q1 1.5 2 1.5 L9 1.5 Q10 1.5 10 2.5 L10 3.5" />
       </>
     ),
   },
-};
+
+} as const satisfies Record<string, IconDef>;
 
 /* ─── Component ─── */
 
-export function Icon({ name, size = 16, className, "aria-hidden": ariaHidden = true }: IconProps) {
+export type IconName = keyof typeof SVG_PATHS;
+
+export function Icon({
+  name,
+  size = 16,
+  className,
+  "aria-hidden": ariaHidden = true,
+}: IconProps) {
   const def = SVG_PATHS[name];
+
   if (!def) {
     if (process.env.NODE_ENV === "development") {
       console.warn(`[Icon] Unknown icon name: "${name}"`);

@@ -435,7 +435,55 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   border-width: 0 1.5px 1.5px 0;
 }
 
+/* ========== Discord-style server rail ========== */
+
+@keyframes stamp-drop {
+  0%   { opacity: 0; transform: translateY(-6px) scale(0.85) rotate(-2deg); }
+  60%  { opacity: 1; transform: translateY(1px) scale(1.04) rotate(0.3deg); }
+  100% { opacity: 1; transform: translateY(0) scale(1) rotate(0); }
+}
+.animate-stamp-drop {
+  animation: stamp-drop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* The server rail's "wall" — slightly inset so the stamps feel mounted */
+.server-rail-bg {
+  background:
+    linear-gradient(to bottom,
+      color-mix(in srgb, var(--color-ink-950) 85%, transparent) 0%,
+      color-mix(in srgb, var(--color-ink-900) 75%, transparent) 100%);
+  background-color: var(--color-ink-950);
+}
+
+/* Mobile: full-screen overlay for the server rail when opened */
+@media (max-width: 767px) {
+  .server-rail-mobile {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 40;
+    width: 100vw !important;
+    max-width: 320px;
+    box-shadow: 6px 0 24px -4px rgba(0, 0, 0, 0.4);
+  }
+}
+
+/* Active stamp — subtle "ink on damp paper" glow underneath */
+.stamp-active-glow::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: -3px;
+  width: 28px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--color-amber-500);
+  filter: blur(2px);
+  opacity: 0.6;
+}
+
 /* ========== Sidebar primitives ========== */
+
 
 /* Hairline divider — transparent → ink-700/35 → transparent gradient.
    Used to separate zones (brand / context / scroll / footer) without
