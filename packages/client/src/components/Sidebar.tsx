@@ -6,6 +6,7 @@ import { Icon } from "./Icon";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { AddProjectExplorer } from "./AddProjectExplorer";
 import { ContextMenuPortal, ContextMenuItem, ContextMenuDivider, useLongPress } from "./ContextMenu";
+import { VersionChecker } from "./VersionChecker";
 
 interface SidebarProps {
   projects: Project[];
@@ -289,6 +290,9 @@ export function Sidebar({
         </div>
         <span className="w-1.5 h-1.5 rounded-full bg-teal-500/70" title="Connected" />
       </div>
+
+      {/* Version / update checker — sits flush below the footer line (#160) */}
+      <VersionChecker />
     </aside>
     <ConfirmDialog
       open={confirmDialog.open}

@@ -29,6 +29,38 @@ export interface SessionSummary {
   isRecentlyActive: boolean;
 }
 
+// ─── App version / update-checker (#160) ───
+export interface VersionInfo {
+  /** Short commit hash (7 chars) of HEAD, e.g. "52471ca". */
+  commit: string;
+  /** Full commit hash. */
+  fullCommit: string;
+  /** Current branch name, or "HEAD" if detached. */
+  branch: string;
+  /** First line of the most recent commit message. */
+  commitMessage: string;
+  /** Commits HEAD is ahead of origin/<defaultBranch>. */
+  ahead: number;
+  /** Commits HEAD is behind origin/<defaultBranch>. */
+  behind: number;
+  /** True when the working tree has uncommitted changes. */
+  dirty: boolean;
+  /** True when up-to-date with origin/<defaultBranch> AND clean. */
+  upToDate: boolean;
+  /** Default remote branch being compared (e.g. "main"). */
+  defaultBranch: string;
+  /**
+   * True when an `origin/<defaultBranch>` ref is present and the snapshot
+   * was actually compared against it. When false, ahead/behind are 0 by
+   * construction and `upToDate` is meaningless.
+   */
+  hasRemote: boolean;
+  /** True when the server itself is not inside a git working tree. */
+  unavailable: boolean;
+  /** ISO timestamp this snapshot was taken. */
+  fetchedAt: string;
+}
+
 export interface SessionDetail {
   id: string;
   filePath: string;

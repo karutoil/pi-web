@@ -16,6 +16,13 @@ vi.mock('../components/ContextMenu', () => ({
   useLongPress: (cb: any) => ({ onMouseDown: cb, onTouchStart: cb }),
 }));
 
+// VersionChecker fetches /api/version on mount — stub it out here so the
+// Sidebar tests stay focused on layout/handlers. The component has its own
+// dedicated test file that covers the fetch + display logic.
+vi.mock('../components/VersionChecker', () => ({
+  VersionChecker: () => <div data-testid="version-checker" />,
+}));
+
 const mockProject: Project = {
   id: 'p1',
   name: 'Test Project',
@@ -181,6 +188,13 @@ describe('Sidebar', () => {
   it('shows add project explorer when toggled', () => {
     render(<Sidebar {...defaultProps} view="projects" selectedProject={null} showAddProject={true} />);
     expect(screen.getByText('Add Project')).toBeInTheDocument();
+  });
+
+  // ─── Version checker (#160) ───
+
+  it('mounts the version checker widget in the footer area', () => {
+    render(<Sidebar {...defaultProps} />);
+    expect(screen.getByTestId('version-checker')).toBeInTheDocument();
   });
 
   // ─── Theme toggle ───

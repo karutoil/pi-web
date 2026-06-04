@@ -13,6 +13,7 @@ import { getOrCreateAgent, stopAllAgents, getPoolStats, lookupAgent, detachFromA
 import { createTerminal, getTerminal, listTerminals, killTerminal } from "./pi-terminal";
 import { getGitStatus, getGitDiff, gitStage, gitUnstage, gitCommit, gitLog, gitCheckout, gitDiscard, gitBranches, gitPush, gitPull, gitFetch, gitCreateBranch, gitDeleteBranch, gitRenameBranch, gitTags, gitCreateTag, gitDeleteTag, gitStashList, gitStashPush, gitStashPop, gitStashApply, gitStashDrop, gitAmend, gitCherryPick, gitRevert, gitResolveConflict, getGitDiffStats, gitDiffWithRef, gitShowCommit, gitLogSearch, gitBlame, gitRemotes, gitUnstageAll } from "./pi-git";
 import type { GitResult } from "./pi-git";
+import { getVersionInfo } from "./pi-version";
 import type { WSClientMessage, WSServerMessage } from "@pi-web/shared";
 
 const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>();
@@ -274,6 +275,17 @@ app.delete("/api/terminals/:id", (c) => {
   const { id } = c.req.param();
   const ok = killTerminal(id);
   return c.json({ success: ok }, ok ? 200 : 404);
+});
+
+// ── Version / update checker (#160) ──
+// Cheap endpoint — reads git state for the running server's repo, with a
+// short network fetch attempt to refresh origin/main. Designed to be polled
+// by the sidebar widget every few minutes.
+app.get("/api/version", (c) => {
+  // `?noFetch=1` skips the network round-trip (useful in tests / offline)
+  const noFetch = c.req.query("noFetch") === "1";
+  const info = getVersionInfo(undefined, { fetch: !noFetch });
+  return c.json(info);
 });
 
 // ── Git API (#38: handle GitResult structured responses) ──
