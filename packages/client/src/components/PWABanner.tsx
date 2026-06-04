@@ -42,9 +42,11 @@ export function PWABanner() {
         </div>
       )}
 
-      {/* Install prompt — top of screen on mobile, top-right on desktop */}
+      {/* Install prompt — top of screen on mobile, top-right on desktop.
+          Positioned BELOW the ChatHeader (which is ~40px tall) so it
+          doesn't cover the git/session/sidebar header buttons at z-90. #131 */}
       {showInstall && (
-        <div className="fixed top-3 left-3 right-3 md:top-4 md:left-auto md:right-4 md:w-80 z-[90] bg-ink-900/95 backdrop-blur-md border border-ink-700 rounded-xl px-3 py-2.5 flex items-center gap-2.5 shadow-lg animate-slide-down">
+        <div className="fixed top-12 left-3 right-3 md:top-12 md:left-auto md:right-4 md:w-80 z-[90] bg-ink-900/95 backdrop-blur-md border border-ink-700 rounded-xl px-3 py-2.5 flex items-center gap-2.5 shadow-lg animate-slide-down">
           <div className="w-8 h-8 rounded-lg bg-amber-600/20 flex items-center justify-center shrink-0">
             <Icon name="download" size={16} />
           </div>
@@ -68,9 +70,11 @@ export function PWABanner() {
         </div>
       )}
 
-      {/* Update available — top of screen, below install if both show */}
+      {/* Update available — cascades below the install banner. Both
+          banners live BELOW the header so they never overlap header
+          buttons (git, session actions, sidebar toggle, etc). #131 */}
       {showUpdate && (
-        <div className={`fixed ${showInstall ? 'top-16 md:top-16' : 'top-3 md:top-4'} left-3 right-3 md:left-auto md:right-4 md:w-80 z-[89] bg-ink-900/95 backdrop-blur-md border border-amber-700/50 rounded-xl px-3 py-2.5 flex items-center gap-2.5 shadow-lg animate-slide-down`}>
+        <div className={`fixed ${showInstall ? 'top-[7.25rem] md:top-[7.25rem]' : 'top-12 md:top-12'} left-3 right-3 md:left-auto md:right-4 md:w-80 z-[89] bg-ink-900/95 backdrop-blur-md border border-amber-700/50 rounded-xl px-3 py-2.5 flex items-center gap-2.5 shadow-lg animate-slide-down`}>
           <div className="w-8 h-8 rounded-lg bg-amber-600/20 flex items-center justify-center shrink-0">
             <Icon name="refresh" size={16} />
           </div>
