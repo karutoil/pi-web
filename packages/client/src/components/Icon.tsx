@@ -320,6 +320,15 @@ const SVG_PATHS: Record<string, IconDef> = {
     children: <line x1="3" y1="8" x2="13" y2="8" />,
   },
 
+  // ── Spark / lightning bolt (viewBox 0 0 16 16) — used for skill cards ──
+  spark: {
+    viewBox: "0 0 16 16",
+    fill: "currentColor",
+    stroke: "none",
+    strokeWidth: "0",
+    children: <path d="M9.5 1.5 L3.5 9 L7 9 L6.5 14.5 L12.5 7 L9 7 Z" />,
+  },
+
   // ── Undo (viewBox 0 0 16 16) ──
   undo: {
     viewBox: "0 0 16 16",

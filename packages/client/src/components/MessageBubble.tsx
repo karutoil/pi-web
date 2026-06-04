@@ -11,6 +11,7 @@ import { ContextMenuPortal, ContextMenuItem, ContextMenuDivider, useLongPress } 
 import { useIsMobile } from "../hooks/useIsMobile";
 import { SubagentProgressView, isSubagentDetails } from "./SubagentProgress";
 import { messageToMarkdown, copyToClipboard } from "../lib/markdownExport";
+import { SkillCard, parseSkillBlocks } from "./SkillCard";
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -27,6 +28,92 @@ interface MessageBubbleProps {
    * raw markdown. Parent owns the turn context.
    */
   onCopyTurn?: () => void;
+}
+
+// ─── TextWithSkills ────────────────────────────────────────
+
+/**
+ * Renders a text string that may contain `<skill>…</skill>` blocks.
+ * Text segments flow through the same ReactMarkdown pipeline used for
+ * plain assistant text; skill blocks become <SkillCard> children sitting
+ * as siblings of the markdown wrapper, so they keep their own borders
+ * and don't fight the prose styles.
+ */
+function TextWithSkills({ text, isStreaming }: { text: string; isStreaming?: boolean }) {
+  const segments = parseSkillBlocks(text);
+  // Fast path: no skill blocks → render as a single markdown block
+  if (segments.length === 1 && segments[0].type === "text") {
+    if (isDiffContent(segments[0].content)) {
+      return <DiffRenderer content={segments[0].content} />;
+    }
+    return (
+      <div
+        className={`prose prose-invert max-w-none text-ink-100 text-sm leading-relaxed markdown-content ${
+          isStreaming ? "cursor-blink" : ""
+        }`}
+      >
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          rehypePlugins={[rehypeSanitize]}
+          components={{
+            pre: CodeBlock,
+            table: ({ children }) => (
+              <div className="table-wrap">
+                <table>{children}</table>
+              </div>
+            ),
+          }}
+        >
+          {segments[0].content}
+        </ReactMarkdown>
+      </div>
+    );
+  }
+
+  // Mixed: render each segment in its own wrapper, preserving order.
+  return (
+    <div className="space-y-2">
+      {segments.map((seg, i) => {
+        if (seg.type === "skill") {
+          return (
+            <SkillCard
+              key={`s${i}`}
+              name={seg.name}
+              location={seg.location}
+              content={seg.content}
+            />
+          );
+        }
+        if (!seg.content.trim()) return null;
+        if (isDiffContent(seg.content)) {
+          return <DiffRenderer key={`t${i}`} content={seg.content} />;
+        }
+        return (
+          <div
+            key={`t${i}`}
+            className={`prose prose-invert max-w-none text-ink-100 text-sm leading-relaxed markdown-content ${
+              isStreaming ? "cursor-blink" : ""
+            }`}
+          >
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              rehypePlugins={[rehypeSanitize]}
+              components={{
+                pre: CodeBlock,
+                table: ({ children }) => (
+                  <div className="table-wrap">
+                    <table>{children}</table>
+                  </div>
+                ),
+              }}
+            >
+              {seg.content}
+            </ReactMarkdown>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 export function MessageBubble({ message, showThinking, toolResultsMap, inlineToolCallIds, runningTools, isHistorical, isStreaming, entryId, onFork, onCopyTurn }: MessageBubbleProps) {
@@ -162,13 +249,33 @@ export function MessageBubble({ message, showThinking, toolResultsMap, inlineToo
 function UserBubble({ message, entryId, onFork }: { message: ChatMessage; entryId?: string; onFork?: (id: string) => void }) {
   const text = extractTextContent(message.content);
   const imageBlocks = extractImageBlocks(message.content);
+  const segments = text ? parseSkillBlocks(text) : [];
 
   return (
     <div className="group relative bg-amber-500/12 border border-amber-500/20 rounded-2xl rounded-br-md px-3 md:px-4 py-2.5">
       {text && (
-        <p className="text-ink-100 text-sm leading-relaxed whitespace-pre-wrap break-words">
-          {text}
-        </p>
+        segments.length === 1 && segments[0].type === "text" ? (
+          <p className="text-ink-100 text-sm leading-relaxed whitespace-pre-wrap break-words">
+            {segments[0].content}
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {segments.map((seg, i) =>
+              seg.type === "skill" ? (
+                <SkillCard
+                  key={i}
+                  name={seg.name}
+                  location={seg.location}
+                  content={seg.content}
+                />
+              ) : seg.content.trim() ? (
+                <p key={i} className="text-ink-100 text-sm leading-relaxed whitespace-pre-wrap break-words">
+                  {seg.content}
+                </p>
+              ) : null
+            )}
+          </div>
+        )
       )}
       {imageBlocks.length > 0 && (
         <div className={`flex gap-2 flex-wrap ${text ? 'mt-2' : ''}`}>
@@ -246,33 +353,7 @@ function AssistantBubble({
       {/* Text content */}
       {textBlocks.map((block, i) => {
         const text = block.text || "";
-        // Auto-detect diff content
-        if (isDiffContent(text)) {
-          return <DiffRenderer key={i} content={text} />;
-        }
-        return (
-          <div
-            key={i}
-            className={`prose prose-invert max-w-none text-ink-100 text-sm leading-relaxed markdown-content ${
-              isStreaming ? "cursor-blink" : ""
-            }`}
-          >
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              rehypePlugins={[rehypeSanitize]}
-              components={{
-                pre: CodeBlock,
-                table: ({ children }) => (
-                  <div className="table-wrap">
-                    <table>{children}</table>
-                  </div>
-                ),
-              }}
-            >
-              {text}
-            </ReactMarkdown>
-          </div>
-        );
+        return <TextWithSkills key={i} text={text} isStreaming={isStreaming} />;
       })}
 
       {/* Tool calls */}

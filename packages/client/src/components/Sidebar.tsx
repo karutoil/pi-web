@@ -181,56 +181,107 @@ export function Sidebar({
     }
   }, [focusedIdx]);
 
+  // Whether the context switcher (project card) should be shown.
+  // Sessions / chat views need it; projects view does not.
+  const showContextSwitcher = (view === "sessions" || view === "chat") && selectedProject;
+
   return (
     <>
     <aside
-      className={`shrink-0 flex flex-col bg-ink-900/30 relative ${
+      className={`shrink-0 flex flex-col relative ${
         isMobile
-          ? "fixed inset-y-0 left-0 z-30 w-[85vw] max-w-[288px] animate-fade-in-up mobile-sidebar"
-          : "w-64"
+          ? "fixed inset-y-0 left-0 z-30 w-[85vw] max-w-[288px] animate-fade-in-up mobile-sidebar bg-ink-900"
+          : "w-64 bg-ink-900/30"
       }`}
       onKeyDown={handleKeyDown}
     >
-      {/* Ambient top glow */}
-      <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-amber-500/[0.03] to-transparent pointer-events-none" />
-
-      {/* Header — compact single line */}
-      <div className="relative flex items-center justify-between px-4 pt-4 pb-3">
-        <div className="flex items-center gap-2.5">
-          <img src="/pi-logo.svg" alt="PI" className="w-6 h-6" />
-          <span className="font-semibold text-ink-200 tracking-tight text-[0.82rem]">PI</span>
+      {/* Brand row ─────────────────────────────────────── */}
+      <div className="relative flex items-center justify-between pl-4 pr-2.5 pt-3.5 pb-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="relative shrink-0">
+            <img src="/pi-logo.svg" alt="" className="w-6 h-6 block" />
+          </div>
+          <div className="flex items-baseline gap-1.5 min-w-0">
+            <span
+              className="font-semibold text-ink-100 tracking-tight leading-none text-[0.95rem]"
+              style={{ fontFamily: "var(--font-serif)" }}
+            >
+              PI
+            </span>
+            <span className="text-ink-500 text-[0.6rem] font-mono uppercase tracking-[0.18em] leading-none">
+              web
+            </span>
+          </div>
         </div>
-        {onToggleSidebar && (
+        <div className="flex items-center gap-0.5 -mr-1">
           <button
-            onClick={onToggleSidebar}
-            className="text-ink-500 hover:text-ink-400 transition-theme p-1 touch-target"
-            title="Hide sidebar (⌘B)"
-            aria-label="Hide sidebar"
+            onClick={onToggleTheme}
+            className="text-ink-500 hover:text-ink-200 hover:bg-ink-800/40 transition-theme p-1.5 rounded-md touch-target"
+            title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
+            aria-label="Toggle dark mode"
           >
-            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-              <line x1="13" y1="2" x2="13" y2="14" />
-              <polyline points="9 5 13 8 9 11" />
-            </svg>
+            {theme === "light" ? (
+              <Icon name="moon" size={11} />
+            ) : (
+              <Icon name="sun" size={11} />
+            )}
           </button>
-        )}
+          {onToggleSidebar && (
+            <button
+              onClick={onToggleSidebar}
+              className="text-ink-500 hover:text-ink-200 hover:bg-ink-800/40 transition-theme p-1.5 rounded-md touch-target"
+              title="Hide sidebar (⌘B)"
+              aria-label="Hide sidebar"
+            >
+              <Icon name="chevron-left" size={11} />
+            </button>
+          )}
+        </div>
       </div>
+      <div className="sidebar-hairline mx-3" />
 
-      {/* Breadcrumb nav — inline, borderless */}
-      {view !== "projects" && (
-        <div className="px-4 pb-2">
+      {/* Context switcher — shown when a project is open. Replaces the
+          old "← All Projects" breadcrumb with something more substantial:
+          the active project name, its path, and a chevron that takes you
+          back to the project picker. */}
+      {showContextSwitcher && (
+        <>
           <button
             onClick={onBack}
-            className="flex items-center gap-1.5 text-ink-500 hover:text-ink-300 text-xs transition-theme"
-            aria-label="Back to projects"
+            className="group mx-2 mt-2 mb-1.5 px-2.5 py-2 rounded-md flex items-center gap-2.5 text-left hover:bg-ink-850/40 transition-theme focus:outline-none focus-visible:ring-1 focus-visible:ring-amber-500/40"
+            title="Switch project"
+            aria-label="Back to all projects"
           >
-            <Icon name="chevron-left" size={10} />
-            {view === "sessions" ? "All Projects" : selectedProject?.name ?? "Sessions"}
+            <span
+              className="shrink-0 w-1.5 h-1.5 rounded-full bg-amber-500/80"
+              aria-hidden
+            />
+            <div className="min-w-0 flex-1">
+              <div
+                className="text-ink-100 text-[0.82rem] font-medium truncate leading-tight"
+                style={{ fontFamily: "var(--font-serif)" }}
+              >
+                {selectedProject?.name}
+              </div>
+              <div className="text-ink-500 text-[0.6rem] font-mono truncate mt-0.5 leading-none">
+                {selectedProject?.path}
+              </div>
+            </div>
+            <Icon
+              name="chevron-down"
+              size={10}
+              className="text-ink-500 group-hover:text-ink-300 transition-theme shrink-0 -rotate-90"
+            />
           </button>
-        </div>
+          <div className="sidebar-hairline mx-3" />
+        </>
       )}
 
-      {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar px-2 mobile-safe-bottom" ref={listRef}>
+      {/* Scrollable content ──────────────────────────── */}
+      <div
+        className="flex-1 overflow-y-auto sidebar-scroll px-2 pb-2 mobile-safe-bottom"
+        ref={listRef}
+      >
         {view === "projects" && (
           <ProjectList
             projects={projects}
@@ -271,27 +322,11 @@ export function Sidebar({
         )}
       </div>
 
-      {/* Minimal footer */}
-      <div className="px-4 py-2.5 flex items-center justify-between mobile-safe-bottom">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={onToggleTheme}
-            className="text-ink-500 hover:text-ink-400 transition-theme p-1 touch-target"
-            title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
-            aria-label="Toggle dark mode"
-          >
-            {theme === "light" ? (
-              <Icon name="moon" size={13} />
-            ) : (
-              <Icon name="sun" size={13} />
-            )}
-          </button>
-          <span className="text-ink-500 text-[0.65rem] font-mono tracking-wide">PI WEB</span>
-        </div>
-        <span className="w-1.5 h-1.5 rounded-full bg-teal-500/70" title="Connected" />
-      </div>
-
-      {/* Version / update checker — sits flush below the footer line (#160) */}
+      {/* Footer — intentionally minimal. The theme toggle has moved
+          up to the brand row, and the "PI WEB" wordmark + status dot
+          were removed to keep the bottom edge clean. Only the version
+          checker lives here. */}
+      <div className="sidebar-hairline mx-3" />
       <VersionChecker />
     </aside>
     <ConfirmDialog
@@ -311,7 +346,48 @@ export function Sidebar({
   );
 }
 
-// ─── Project List ───
+// ─── Section label ──────────────────────────────────────
+
+function SectionLabel({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between px-2.5 pt-3.5 pb-1.5">
+      <span
+        className="text-ink-500 text-[0.58rem] font-mono uppercase tracking-[0.2em]"
+        style={{ fontFamily: "var(--font-mono)" }}
+      >
+        {children}
+      </span>
+      {action && <div className="flex items-center gap-0.5 -mr-1">{action}</div>}
+    </div>
+  );
+}
+
+// ─── Icon button (uniform header action) ────────────────
+
+function SidebarIconButton({
+  onClick,
+  title,
+  ariaLabel,
+  children,
+}: {
+  onClick: () => void;
+  title: string;
+  ariaLabel: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      aria-label={ariaLabel}
+      className="text-ink-500 hover:text-ink-200 hover:bg-ink-800/50 transition-theme p-1.5 rounded-md touch-target inline-flex items-center justify-center"
+    >
+      {children}
+    </button>
+  );
+}
+
+// ─── Project List ───────────────────────────────────────
 
 function ProjectList({
   projects,
@@ -335,23 +411,33 @@ function ProjectList({
   onRequestConfirm: (title: string, message: string, onConfirm: () => void) => void;
 }) {
   return (
-    <div className="py-2">
-      <div className="flex items-center justify-between mb-2 px-2">
-        <h2 className="text-[0.65rem] font-semibold text-ink-400 uppercase tracking-[0.12em]">Projects</h2>
-        <button
-          onClick={onToggleAdd}
-          className="text-ink-500 hover:text-ink-300 transition-theme p-1 rounded-md hover:bg-ink-800/50 touch-target"
-          title="Add project"
-          aria-label="Add project"
-        >
-          <Icon name="plus" size={14} />
-        </button>
-      </div>
+    <div>
+      <SectionLabel
+        action={
+          <SidebarIconButton
+            onClick={onToggleAdd}
+            title="Add project"
+            ariaLabel="Add project"
+          >
+            <Icon name="plus" size={12} />
+          </SidebarIconButton>
+        }
+      >
+        Projects
+      </SectionLabel>
 
       {projects.length === 0 && !showAddProject && (
-        <p className="text-ink-500 text-xs px-2 py-6 text-center">
-          No projects yet. Add a local directory.
-        </p>
+        <div className="px-2.5 py-5">
+          <p
+            className="text-ink-500 text-[0.72rem] leading-relaxed text-center"
+            style={{ fontFamily: "var(--font-serif)", fontStyle: "italic" }}
+          >
+            No projects yet.
+          </p>
+          <p className="text-ink-500 text-[0.62rem] font-mono text-center mt-1">
+            Add a local directory to begin.
+          </p>
+        </div>
       )}
 
       {/*
@@ -362,68 +448,98 @@ function ProjectList({
         view with the click "flashing" but doing nothing. #130
       */}
       <div className="space-y-px">
-        {projects.map(p => (
-          <div
-            key={p.id}
-            role="button"
-            tabIndex={0}
-            onClick={() => onSelect(p)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onSelect(p);
-              }
-            }}
-            aria-label={`Open project ${p.name}`}
-            className={`w-full text-left px-3 py-3 rounded-lg transition-theme group cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/40 ${
-              selectedProject?.id === p.id
-                ? "bg-ink-800/40"
-                : "hover:bg-ink-800/20"
-            }`}
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  {streamingProjectIds.has(p.id) && (
-                    <span
-                      className="shrink-0 w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse"
-                      title="PI is running in this project"
-                      aria-label="PI is running in this project"
-                    />
+        {projects.map(p => {
+          const active = selectedProject?.id === p.id;
+          const streaming = streamingProjectIds.has(p.id);
+          return (
+            <div
+              key={p.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => onSelect(p)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onSelect(p);
+                }
+              }}
+              aria-label={`Open project ${p.name}`}
+              className={`relative w-full text-left pl-3 pr-2 py-2.5 rounded-md transition-theme group cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-amber-500/40 hover:bg-ink-850/30 ${
+                active ? "sidebar-item-active" : ""
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {streaming && (
+                      <span
+                        className="shrink-0 w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse"
+                        title="PI is running in this project"
+                        aria-label="PI is running in this project"
+                      />
+                    )}
+                    <div
+                      className="text-ink-100 text-[0.85rem] font-medium truncate leading-tight"
+                      style={{ fontFamily: "var(--font-serif)" }}
+                    >
+                      {p.name}
+                    </div>
+                  </div>
+                  <div className="text-ink-500 text-[0.6rem] font-mono truncate mt-1 leading-none">
+                    {p.path}
+                  </div>
+                  {(p.sessionCount > 0 || p.lastActiveAt || p.totalCost > 0) && (
+                    <div className="flex items-center gap-1.5 mt-1.5 text-ink-500 text-[0.6rem] font-mono leading-none">
+                      {p.sessionCount > 0 && <span>{p.sessionCount} sess</span>}
+                      {p.sessionCount > 0 && p.lastActiveAt && (
+                        <span className="text-ink-700">·</span>
+                      )}
+                      {p.lastActiveAt && <span>{formatTimeAgo(p.lastActiveAt)}</span>}
+                      {(p.sessionCount > 0 || p.lastActiveAt) && p.totalCost > 0 && (
+                        <span className="text-ink-700">·</span>
+                      )}
+                      {p.totalCost > 0 && <span>{formatCost(p.totalCost)}</span>}
+                    </div>
                   )}
-                  <div className="text-ink-100 text-[0.8rem] font-medium truncate">{p.name}</div>
                 </div>
-                <div className="text-ink-400 text-[0.65rem] font-mono truncate mt-0.5">
-                  {p.path}
-                </div>
-                <div className="flex items-center gap-1.5 mt-1 text-ink-500 text-[0.65rem] font-mono">
-                  {p.sessionCount > 0 && <span>{p.sessionCount} sess</span>}
-                  {p.lastActiveAt && <span>{formatTimeAgo(p.lastActiveAt)}</span>}
-                  {p.totalCost > 0 && <span>{formatCost(p.totalCost)}</span>}
-                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRequestConfirm('Remove Project', `Remove "${p.name}"? This cannot be undone.`, () => onDelete(p.id));
+                  }}
+                  className="opacity-100 md:opacity-0 md:group-hover:opacity-100 text-ink-500 hover:text-rose-400 hover:bg-ink-800/40 transition-all shrink-0 p-1 rounded-md touch-target"
+                  title="Remove project"
+                  aria-label="Remove project"
+                >
+                  <Icon name="close" size={11} />
+                </button>
               </div>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRequestConfirm('Remove Project', `Remove "${p.name}"? This cannot be undone.`, () => onDelete(p.id));
-                }}
-                className="opacity-100 md:opacity-0 md:group-hover:opacity-100 text-ink-500 hover:text-rose-400 transition-all shrink-0 p-1 touch-target"
-                title="Remove project"
-                aria-label="Remove project"
-              >
-                <Icon name="close" size={12} />
-              </button>
             </div>
-          </div>
-        ))}
+          );
+        })}
+
+        {/* Add project — drop-zone style. Always visible after the last
+            project, doubles as the "no projects" CTA. */}
+        {!showAddProject && (
+          <button
+            onClick={onToggleAdd}
+            className="w-full mt-1 px-3 py-2.5 rounded-md border border-dashed border-ink-700/50 hover:border-amber-600/40 hover:bg-amber-500/[0.03] text-ink-500 hover:text-amber-500 text-[0.72rem] font-mono transition-theme flex items-center justify-center gap-2 group"
+            style={{ fontFamily: "var(--font-mono)" }}
+            aria-label="Add project"
+            title="Add project"
+          >
+            <Icon name="plus" size={11} className="text-ink-500 group-hover:text-amber-500" />
+            <span className="uppercase tracking-[0.18em] text-[0.58rem]">
+              Add Project
+            </span>
+          </button>
+        )}
       </div>
     </div>
   );
 }
 
-// ─── Add Project Form ───
-
-// ─── Session List ───
+// ─── Session List ───────────────────────────────────────
 
 function SessionList({
   sessions,
@@ -470,49 +586,48 @@ function SessionList({
   onRequestConfirm: (title: string, message: string, onConfirm: () => void) => void;
 }) {
   return (
-    <div className="py-2">
-      {/* Compact header */}
-      <div className="flex items-center justify-between mb-2 px-2">
-        <h2 className="text-[0.65rem] font-semibold text-ink-400 uppercase tracking-[0.12em]">Sessions</h2>
-        <div className="flex items-center gap-0.5">
-          <button
-            onClick={onRefresh}
-            className="text-ink-500 hover:text-ink-300 transition-theme p-1 rounded-md hover:bg-ink-800/50 touch-target"
-            title="Refresh"
-            aria-label="Refresh sessions"
-          >
-            <Icon name="refresh" size={12} />
-          </button>
-          <button
-            onClick={onNewSession}
-            className="text-ink-500 hover:text-ink-300 transition-theme p-1 rounded-md hover:bg-ink-800/50 touch-target"
-            title="New session"
-            aria-label="New session"
-          >
-            <Icon name="plus" size={12} />
-          </button>
-        </div>
-      </div>
+    <div>
+      <SectionLabel
+        action={
+          <>
+            <SidebarIconButton
+              onClick={onRefresh}
+              title="Refresh sessions"
+              ariaLabel="Refresh sessions"
+            >
+              <Icon name="refresh" size={11} />
+            </SidebarIconButton>
+            <SidebarIconButton
+              onClick={onNewSession}
+              title="New session"
+              ariaLabel="New session"
+            >
+              <Icon name="plus" size={11} />
+            </SidebarIconButton>
+          </>
+        }
+      >
+        Sessions
+      </SectionLabel>
 
-      {/* Project name */}
-      <div className="px-3 mb-2">
-        <span className="text-ink-200 text-xs font-medium">{projectName}</span>
-      </div>
-
-      {/* Search — minimal */}
-      <div className="relative mb-2 px-1">
-        <Icon name="search" size={10} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-500" />
+      {/* Search — ghost, no border, gains amber focus ring */}
+      <div className="relative mb-2 px-0.5">
+        <Icon
+          name="search"
+          size={11}
+          className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-500 pointer-events-none"
+        />
         <input
           type="text"
           placeholder="Filter…"
           value={search}
           onChange={e => onSearch(e.target.value)}
-          className="w-full bg-ink-950/30 border border-ink-800/40 rounded-md pl-7 pr-2 py-1.5 text-ink-200 text-[0.68rem] font-mono placeholder-ink-500 focus:outline-none focus:border-amber-600/40 transition-theme"
+          className="w-full bg-ink-950/40 border border-transparent rounded-md pl-7 pr-7 py-1.5 text-ink-200 text-[0.72rem] font-mono placeholder-ink-500 hover:bg-ink-950/60 focus:bg-ink-950/70 focus:border-amber-600/40 focus:outline-none transition-theme"
         />
         {search && (
           <button
             onClick={() => onSearch("")}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-500 hover:text-ink-400"
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-ink-500 hover:text-ink-200 p-0.5 rounded transition-theme"
             aria-label="Clear search"
           >
             <Icon name="close-thick" size={8} />
@@ -520,20 +635,19 @@ function SessionList({
         )}
       </div>
 
-      {/* Continue latest — subtle pill */}
+      {/* Continue latest — subtle amber action card */}
       {sessions.length > 0 && !search && (
         <button
           onClick={onContinueLatest}
-          className="w-full text-left px-3 py-1.5 rounded-lg mb-2 mx-1 bg-amber-500/[0.08] text-amber-400 text-[0.68rem] hover:bg-amber-500/15 transition-theme"
+          className="w-full text-left pl-3 pr-2.5 py-2 rounded-md mb-1 bg-amber-500/[0.06] hover:bg-amber-500/[0.12] text-amber-500 hover:text-amber-400 text-[0.72rem] transition-theme flex items-center gap-2 group"
+          style={{ fontFamily: "var(--font-mono)" }}
         >
-          → Continue latest
+          <span className="shrink-0 w-1 h-1 rounded-full bg-amber-500 group-hover:scale-125 transition-theme" />
+          <span className="uppercase tracking-[0.16em] text-[0.6rem] font-medium flex-1">
+            Continue Latest
+          </span>
+          <Icon name="chevron-right" size={10} className="text-amber-500/70" />
         </button>
-      )}
-
-      {filteredSessions.length === 0 && (
-        <p className="text-ink-500 text-xs px-2 py-6 text-center">
-          {search ? "No matches." : "No sessions yet."}
-        </p>
       )}
 
       {/* Grouped session list */}
@@ -541,9 +655,9 @@ function SessionList({
         const items = groupedSessions[group];
         if (items.length === 0) return null;
         return (
-          <div key={group} className="mb-1">
-            <div className="px-3 py-1.5 text-[0.55rem] font-semibold text-ink-500 uppercase tracking-[0.15em]">
-              {GROUP_LABELS[group]}
+          <div key={group}>
+            <div className="sidebar-group-label">
+              <span>{GROUP_LABELS[group]}</span>
             </div>
             <div className="space-y-px">
               {items.map((s) => {
@@ -570,11 +684,27 @@ function SessionList({
           </div>
         );
       })}
+
+      {filteredSessions.length === 0 && (
+        <div className="px-3 py-6">
+          <p
+            className="text-ink-500 text-[0.72rem] text-center"
+            style={{ fontFamily: "var(--font-serif)", fontStyle: "italic" }}
+          >
+            {search ? "No matches." : "No sessions yet."}
+          </p>
+          {!search && (
+            <p className="text-ink-500 text-[0.6rem] font-mono text-center mt-1">
+              Start a new conversation above.
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-// ─── Session Item ───
+// ─── Session Item ───────────────────────────────────────
 
 function SessionItem({
   session: s,
@@ -642,35 +772,25 @@ function SessionItem({
     setCtxMenu({ x: e.clientX, y: e.clientY });
   };
 
-  // Status dot class — pulse only when actively streaming
-  const dotColor = isStreaming
-    ? "bg-teal-400"
-    : isActive
-    ? "bg-amber-500/60"
-    : "bg-ink-700 group-hover:bg-ink-600";
-
   return (
     <div
       data-session-idx={idx}
       onContextMenu={handleContextMenu}
       {...longPress}
-      className={`relative group rounded-lg transition-all duration-150 ${
+      className={`relative rounded-md transition-theme ${
         isActive
-          ? "bg-ink-800/40"
+          ? "sidebar-item-active"
           : isFocused
-          ? "bg-ink-800/25"
-          : "hover:bg-ink-800/15"
+          ? "bg-ink-850/40"
+          : "hover:bg-ink-850/25"
       }`}
     >
       <button
         onClick={() => onSelect(s)}
-        className="w-full text-left px-3 py-2.5 min-h-[44px]"
+        className="w-full text-left pl-3 pr-2.5 py-2 min-h-[42px]"
         title={preview || undefined}
       >
-        <div className="flex items-center gap-2.5">
-          {/* Minimal status dot */}
-          <span className={`shrink-0 w-1.5 h-1.5 rounded-full mt-1.5 ${dotColor} ${isStreaming ? "animate-pulse" : ""}`} />
-
+        <div className="flex items-center gap-2">
           <div className="flex-1 min-w-0">
             {isRenaming ? (
               <input
@@ -684,16 +804,41 @@ function SessionItem({
                 }}
                 onBlur={handleRenameSubmit}
                 onClick={e => e.stopPropagation()}
-                className="w-full bg-ink-950/50 border border-amber-600/30 rounded px-1.5 py-0.5 text-ink-200 text-xs focus:outline-none"
+                className="w-full bg-ink-950/60 border border-amber-600/40 rounded px-1.5 py-0.5 text-ink-100 text-[0.8rem] focus:outline-none"
+                style={{ fontFamily: "var(--font-serif)" }}
               />
             ) : (
-              <div className="text-ink-200 text-[0.8rem] truncate leading-snug">{displayName}</div>
+              <div className="flex items-center gap-2 min-w-0">
+                {isStreaming && (
+                  <span
+                    className="shrink-0 w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse"
+                    title="Streaming"
+                    aria-label="PI is streaming"
+                  />
+                )}
+                <div
+                  className="text-ink-200 text-[0.82rem] truncate leading-snug flex-1 min-w-0"
+                  style={{ fontFamily: "var(--font-serif)" }}
+                >
+                  {displayName}
+                </div>
+              </div>
             )}
             {/* Metadata */}
-            <div className="flex items-center gap-1.5 mt-0.5 text-ink-500 text-[0.65rem] font-mono">
+            <div className="flex items-center gap-1.5 mt-0.5 text-ink-500 text-[0.6rem] font-mono leading-none">
               <span>{formatTimeAgo(s.lastActiveAt || s.timestamp)}</span>
-              {s.messageCount > 0 && <span>{s.messageCount}m</span>}
-              {s.cost > 0 && <span>{formatCost(s.cost)}</span>}
+              {s.messageCount > 0 && (
+                <>
+                  <span className="text-ink-700">·</span>
+                  <span>{s.messageCount}m</span>
+                </>
+              )}
+              {s.cost > 0 && (
+                <>
+                  <span className="text-ink-700">·</span>
+                  <span>{formatCost(s.cost)}</span>
+                </>
+              )}
             </div>
           </div>
         </div>
