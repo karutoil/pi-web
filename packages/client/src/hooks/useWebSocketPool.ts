@@ -58,7 +58,14 @@ function createConnection(
     compactionResult: null as { reason: string; aborted: boolean; result?: any; willRetry?: boolean; errorMessage?: string } | null,
   };
 
-  let pendingNewSession = false;
+  // If this connection is for a brand-new session (no sessionPath yet), the
+  // first `state` event from the server will carry the real sessionFile.
+  // We pre-set `pendingNewSession` so the state handler in `handleMessage`
+  // triggers `onSessionLoadedRef.current(...)`, which the App uses to rekey
+  // the pool entry from `__pending__` to the real filePath. Without this,
+  // new-session connections would stay under their newSessionId key forever
+  // and `handleSelectSession` could never find them again.
+  let pendingNewSession = !sessionPath;
   const notify = () => listeners.forEach(l => l());
 
   // Auto-reconnect with exponential backoff

@@ -220,10 +220,13 @@ export default function App() {
     setView("chat");
     if (isMobile) safeTimeout(() => setShowSidebar(false), 150);
 
-    // If we have an existing project connection, reuse it — just load the session
-    if (ws && ws.isConnected) {
-      ws.loadSession(session.filePath);
-    }
+    // Do NOT call `ws.loadSession(...)` here. With the multi-session pool, each
+    // session has its own PI process. Sending load_session on the OLD WS would
+    // tell the OLD PI process to switch sessions, killing any in-flight work
+    // for the previous session. Instead, the next render's getOrConnect() will
+    // either find the existing pool entry for this session (if previously
+    // opened) or create a new WS, which spawns a dedicated PI process for
+    // this session.
 
     // Load session detail — check cache first
     const cached = sessionCacheRef.current.get(session.filePath);
@@ -256,33 +259,21 @@ export default function App() {
   }, [ws, isMobile]);
 
   const handleNewSession = useCallback(() => {
-    // If we have an existing project connection, reuse it by sending new_session
-    // This avoids spawning a new pi process (5-10s delay) and instead creates
-    // a new session within the already-running agent (~instant)
-    if (ws && ws.isConnected) {
-      ws.newSession();
-      setActiveSession(prev => prev ? {
-        ...prev,
-        name: "New Session",
-        lastMessage: null,
-        messageCount: 0,
-        firstMessage: null,
-        isRecentlyActive: true,
-      } : null);
-      setSessionDetail(null);
-    } else {
-      // Fallback: create a fresh connection (no existing agent)
-      const id = uuidV4();
-      setNewSessionId(id);
-      setActiveSession(null);
-      setSessionDetail(null);
-    }
+    // Always create a fresh WS connection with a new newSessionId. This
+    // spawns a dedicated PI process for the new session. The old WS for the
+    // previous session stays in the pool, so its PI process keeps streaming
+    // in the background. The 5-10s boot time for the new PI is acceptable
+    // — the user can keep working in the old session or wait for the new one.
+    const id = uuidV4();
+    setNewSessionId(id);
+    setActiveSession(null);
+    setSessionDetail(null);
     // #64 — Only set view to 'chat' when a project is selected (ws requires projectId)
     if (selectedProject) setView("chat");
     if (isMobile) safeTimeout(() => setShowSidebar(false), 150);
     // Refresh session list after PI creates the new session file
     safeTimeout(() => fetchSessions(), SESSION_FETCH_DELAY_MS);
-  }, [ws, fetchSessions, isMobile, selectedProject]);
+  }, [fetchSessions, isMobile, selectedProject]);
 
   const handleBack = useCallback(() => {
     if (view === "chat") {
