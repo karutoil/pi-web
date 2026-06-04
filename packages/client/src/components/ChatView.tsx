@@ -422,6 +422,31 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
             </button>
           </div>
         )}
+
+        {/* Jump-to-bottom button — sticky to the bottom of the scroll area
+            so it floats above the content without expanding the column.
+            Shown when autoScroll is disabled (user scrolled away from
+            bottom). Clicking scrolls to the bottom and re-enables auto-
+            scroll. */}
+        {!autoScroll && (
+          <div className="sticky bottom-3 inset-x-0 flex justify-center pointer-events-none z-10 -mt-10">
+            <button
+              onClick={handleJumpToBottom}
+              aria-label="Jump to latest message"
+              title="Jump to latest"
+              className="pointer-events-auto group flex items-center gap-1.5 px-2.5 py-1 min-h-[28px] rounded-full bg-ink-900/40 hover:bg-ink-900/70 backdrop-blur-sm border border-ink-700/40 hover:border-amber-500/40 text-ink-400 hover:text-amber-500 text-[0.65rem] font-mono transition-theme"
+            >
+              {ws.isStreaming && (
+                <span className="relative flex w-1.5 h-1.5 shrink-0">
+                  <span className="absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-75 animate-ping" />
+                  <span className="relative inline-flex w-1.5 h-1.5 rounded-full bg-amber-500" />
+                </span>
+              )}
+              <Icon name="chevron-down" size={10} />
+              <span>Jump to latest</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Terminal panel */}
@@ -438,29 +463,6 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
         onDismiss={(idx) => setExtensionErrorList(prev => prev.filter((_, i) => i !== idx))}
         onClearAll={() => setExtensionErrorList([])}
       />
-
-      {/* Jump-to-bottom button — shown when the user has scrolled away
-          from the bottom (autoScroll disabled). Clicking scrolls to the
-          bottom and re-enables auto-scroll for subsequent updates. */}
-      {!autoScroll && (
-        <div className="flex justify-center px-3 pt-2 pb-1">
-          <button
-            onClick={handleJumpToBottom}
-            aria-label="Jump to latest message"
-            title="Jump to latest"
-            className="group flex items-center gap-1.5 px-3 py-1.5 min-h-[32px] rounded-full bg-ink-900/85 backdrop-blur-md border border-ink-700/70 hover:border-amber-500/40 hover:text-amber-500 text-ink-300 text-xs font-mono shadow-lg shadow-ink-950/40 transition-theme"
-          >
-            {ws.isStreaming && (
-              <span className="relative flex w-1.5 h-1.5 shrink-0">
-                <span className="absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-75 animate-ping" />
-                <span className="relative inline-flex w-1.5 h-1.5 rounded-full bg-amber-500" />
-              </span>
-            )}
-            <Icon name="chevron-down" size={12} />
-            <span>Jump to latest</span>
-          </button>
-        </div>
-      )}
 
       <ChatInput
         onSend={handleSend}
