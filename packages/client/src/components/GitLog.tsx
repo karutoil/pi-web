@@ -87,7 +87,14 @@ function RefBadges({ refs }: { refs: RefBadge[] }) {
 // ─── Diff Viewer (shared style with GitPanel) ───
 
 function CommitDiffViewer({ diff, hash, onClose }: { diff: string; hash: string; onClose: () => void }) {
-  const lines = diff.split("\n");
+  // Treat empty diffs and the "(no diff for this commit)" sentinel as a
+  // distinct empty state so the user gets visible feedback that the
+  // request succeeded but git had nothing to show (#161).
+  const isEmpty =
+    !diff ||
+    diff.trim() === "" ||
+    diff.trim() === "(no diff for this commit)";
+  const lines = isEmpty ? [] : diff.split("\n");
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -109,22 +116,31 @@ function CommitDiffViewer({ diff, hash, onClose }: { diff: string; hash: string;
         <button onClick={onClose} className="px-2.5 py-1 text-xs text-ink-400 hover:text-ink-200 bg-ink-800/40 hover:bg-ink-800/60 rounded transition-theme">Back</button>
       </div>
       <div className="flex-1 overflow-y-auto overflow-x-auto custom-scrollbar font-mono text-xs leading-5 bg-ink-950">
-        {lines.map((line, i) => {
-          let cls = "text-ink-400";
-          if (line.startsWith("+++ ") || line.startsWith("--- ") || line.startsWith("diff ")) cls = "text-amber-500 font-bold";
-          else if (line.startsWith("@@")) cls = "text-sky-400/60";
-          else if (line.startsWith("+")) cls = "text-emerald-400";
-          else if (line.startsWith("-")) cls = "text-rose-400";
-          else if (line.startsWith("commit ")) cls = "text-amber-500/60";
-          else if (line.startsWith("Author: ")) cls = "text-ink-300";
-          else if (line.startsWith("Date: ")) cls = "text-ink-400";
+        {isEmpty ? (
+          <div className="flex flex-col items-center justify-center h-full text-center px-6 py-12 gap-1">
+            <span className="text-ink-400 text-xs font-mono">{diff?.startsWith("Error:") || diff?.startsWith("Failed") ? diff : "No diff for this commit"}</span>
+            {!diff?.startsWith("Error:") && !diff?.startsWith("Failed") && (
+              <span className="text-ink-500 text-[0.65rem] font-mono">This commit has no file changes.</span>
+            )}
+          </div>
+        ) : (
+          lines.map((line, i) => {
+            let cls = "text-ink-400";
+            if (line.startsWith("+++ ") || line.startsWith("--- ") || line.startsWith("diff ")) cls = "text-amber-500 font-bold";
+            else if (line.startsWith("@@")) cls = "text-sky-400/60";
+            else if (line.startsWith("+")) cls = "text-emerald-400";
+            else if (line.startsWith("-")) cls = "text-rose-400";
+            else if (line.startsWith("commit ")) cls = "text-amber-500/60";
+            else if (line.startsWith("Author: ")) cls = "text-ink-300";
+            else if (line.startsWith("Date: ")) cls = "text-ink-400";
 
-          return (
-            <div key={i} className={`px-3 whitespace-pre ${line.startsWith("+") && !line.startsWith("++") ? "bg-emerald-500/5" : line.startsWith("-") && !line.startsWith("--") ? "bg-rose-500/5" : ""}`}>
-              <span className={cls}>{line}</span>
-            </div>
-          );
-        })}
+            return (
+              <div key={i} className={`px-3 whitespace-pre ${line.startsWith("+") && !line.startsWith("++") ? "bg-emerald-500/5" : line.startsWith("-") && !line.startsWith("--") ? "bg-rose-500/5" : ""}`}>
+                <span className={cls}>{line}</span>
+              </div>
+            );
+          })
+        )}
       </div>
     </div>
   );
@@ -223,7 +239,16 @@ export function GitLog({ cwd, onRefresh }: GitLogProps) {
   }, [searchQuery, cwd]);
 
   // Expand commit → fetch diff (with race protection)
+  //
+  // Race protection: when the user clicks commit A then quickly clicks
+  // commit B, the in-flight A response must NOT clobber B's UI. We track
+  // the currently-expanded hash in a ref and discard stale responses
+  // for `setCommitDiff`. The loading flag, however, is *not* gated on
+  // the ref: the spinner must always clear when the request finishes,
+  // otherwise a quick second click can leave the overlay stuck forever
+  // (regression: #161).
   const expandedHashRef = useRef<string | null>(null);
+  const requestSeq = useRef(0);
   useEffect(() => { expandedHashRef.current = expandedHash; }, [expandedHash]);
 
   const handleExpand = useCallback(async (entry: GitLogEntry) => {
@@ -232,24 +257,31 @@ export function GitLog({ cwd, onRefresh }: GitLogProps) {
       setCommitDiff(null);
       return;
     }
+    const seq = ++requestSeq.current;
     setExpandedHash(entry.hash);
     setDiffLoading(true);
     setCommitDiff(null);
     try {
       const r = await fetch(`/api/git/show?cwd=${encodeURIComponent(cwd)}&hash=${encodeURIComponent(entry.hash)}`);
       const d = await r.json();
-      // Verify this is still the expanded commit before updating state
-      if (expandedHashRef.current === entry.hash) {
-        setCommitDiff(d.diff || "");
+      // Only apply if this is still the most recent request
+      if (seq !== requestSeq.current) return;
+      if (d.error) {
+        setCommitDiff(`Error: ${d.error}`);
+      } else if (d.diff && d.diff.length > 0) {
+        setCommitDiff(d.diff);
+      } else {
+        setCommitDiff("(no diff for this commit)");
       }
-    } catch {
-      if (expandedHashRef.current === entry.hash) {
-        setCommitDiff("Failed to load diff");
-      }
+    } catch (e: any) {
+      if (seq !== requestSeq.current) return;
+      setCommitDiff(`Failed to load diff: ${e?.message || "network error"}`);
     } finally {
-      if (expandedHashRef.current === entry.hash) {
-        setDiffLoading(false);
-      }
+      // Always clear the spinner when the request finishes. A newer
+      // request that started in the meantime has already set the flag
+      // back to true via its own state update, so the visual state
+      // remains correct either way (#161).
+      setDiffLoading(false);
     }
   }, [cwd, expandedHash]);
 

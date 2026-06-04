@@ -338,10 +338,22 @@ export function gitDiffWithRef(cwd: string, path: string, ref: string): string {
 }
 
 // ── Commit diff (show full commit) ──
+//
+// NOTE: the `--` rev/path separator must come *after* the object, not
+// before it. Placing it before the hash tells git to treat the hash as a
+// path filter, which silently produces empty output and breaks the
+// "click a commit, see the diff" flow in the UI (#161). The hash is also
+// validated up-front so a malformed value fails fast with a clear error
+// instead of an empty diff.
+function isSafeHash(hash: string): boolean {
+  return /^[0-9a-f]{4,64}$/i.test(hash);
+}
 
-// #38: show uses -- separator before hash
 export function gitShowCommit(cwd: string, hash: string): GitResult {
-  return runGit(cwd, "show", "--stat", "-p", "--", hash);
+  if (!isSafeHash(hash)) {
+    return { ok: false, stdout: "", stderr: "Invalid commit hash" };
+  }
+  return runGit(cwd, "show", "--stat", "-p", hash);
 }
 
 // ── Commit search ──
