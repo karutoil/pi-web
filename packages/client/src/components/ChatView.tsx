@@ -108,6 +108,17 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
     }, SCROLL_THROTTLE_MS);
   }, []);
 
+  /**
+   * Jump to the bottom of the chat and re-enable auto-scroll.
+   * Shown as a floating button when the user has scrolled away from the
+   * bottom (i.e. autoScroll has been disabled by handleScroll).
+   */
+  const handleJumpToBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+    setAutoScroll(true);
+  }, []);
+
   const handleSend = useCallback((text: string, images?: { data: string; mimeType: string }[]) => {
     if (ws.isStreaming) {
       ws.send({ type: "steer", message: text });
@@ -427,6 +438,29 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
         onDismiss={(idx) => setExtensionErrorList(prev => prev.filter((_, i) => i !== idx))}
         onClearAll={() => setExtensionErrorList([])}
       />
+
+      {/* Jump-to-bottom button — shown when the user has scrolled away
+          from the bottom (autoScroll disabled). Clicking scrolls to the
+          bottom and re-enables auto-scroll for subsequent updates. */}
+      {!autoScroll && (
+        <div className="flex justify-center px-3 pt-2 pb-1">
+          <button
+            onClick={handleJumpToBottom}
+            aria-label="Jump to latest message"
+            title="Jump to latest"
+            className="group flex items-center gap-1.5 px-3 py-1.5 min-h-[32px] rounded-full bg-ink-900/85 backdrop-blur-md border border-ink-700/70 hover:border-amber-500/40 hover:text-amber-500 text-ink-300 text-xs font-mono shadow-lg shadow-ink-950/40 transition-theme"
+          >
+            {ws.isStreaming && (
+              <span className="relative flex w-1.5 h-1.5 shrink-0">
+                <span className="absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-75 animate-ping" />
+                <span className="relative inline-flex w-1.5 h-1.5 rounded-full bg-amber-500" />
+              </span>
+            )}
+            <Icon name="chevron-down" size={12} />
+            <span>Jump to latest</span>
+          </button>
+        </div>
+      )}
 
       <ChatInput
         onSend={handleSend}
