@@ -1,10 +1,14 @@
 import { Database } from "bun:sqlite";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { homedir } from "node:os";
+import { mkdirSync } from "node:fs";
 import type { Project } from "@pi-web/shared";
 
 // #80: Resolve DB path to $HOME/.pi-web/.pi-web.db
 const DB_PATH = join(homedir(), ".pi-web", ".pi-web.db");
+
+// Ensure parent directory exists (bun:sqlite doesn't create intermediate dirs)
+mkdirSync(dirname(DB_PATH), { recursive: true });
 
 let db: Database;
 
