@@ -290,7 +290,7 @@ function AddStamp({
         {loading ? (
           <div className="w-3.5 h-3.5 rounded-full border-2 border-ink-600 border-t-amber-500 animate-spin" />
         ) : (
-          <Icon name="plus" size={20} strokeWidth={2} />
+          <Icon name="plus" size={20} />
         )}
       </button>
       {collapsed && (
