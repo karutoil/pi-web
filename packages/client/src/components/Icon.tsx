@@ -576,6 +576,66 @@ const SVG_PATHS = {
     ),
   },
 
+  // ── Folder ────────────────────────────────────────────────
+  folder: {
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.5",
+    ...ROUND,
+    children: (
+      <>
+        <path d="M2 6.5 L2 4 Q2 3 3 3 L6.5 3 Q7 3 7.5 3.5 L8.5 5 L13 5 Q14 5 14 6 L14 13 Q14 14 13 14 L3 14 Q2 14 2 13 Z" />
+      </>
+    ),
+  },
+
+  // ── Pi logo ───────────────────────────────────────────────
+  "pi-logo": {
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.5",
+    ...ROUND,
+    children: (
+      <>
+        <path d="M4 5 L12 5" />
+        <path d="M6.5 5 L6.5 12" />
+        <path d="M9.5 5 L9.5 12" />
+      </>
+    ),
+  },
+
+  // ── Pi avatar ─────────────────────────────────────────────
+  "pi-avatar": {
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.5",
+    ...ROUND,
+    children: (
+      <>
+        <circle cx="8" cy="5.5" r="2.5" />
+        <path d="M3.5 13 Q8 9 12.5 13" />
+      </>
+    ),
+  },
+
+  // ── Download ──────────────────────────────────────────────
+  download: {
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.5",
+    ...ROUND,
+    children: (
+      <>
+        <path d="M8 3 L8 10 M5 7 L8 10 L11 7" />
+        <path d="M3 12.5 L13 12.5" />
+      </>
+    ),
+  },
+
 } as const satisfies Record<string, IconDef>;
 
 /* ─── Component ─── */
@@ -588,7 +648,7 @@ export function Icon({
   className,
   "aria-hidden": ariaHidden = true,
 }: IconProps) {
-  const def = SVG_PATHS[name];
+  const def = SVG_PATHS[name] as IconDef;
 
   if (!def) {
     if (process.env.NODE_ENV === "development") {
