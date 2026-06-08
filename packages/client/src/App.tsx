@@ -13,6 +13,8 @@ import { useWebSocketPool } from "./hooks/useWebSocketPool";
 import { useTheme } from "./hooks/useTheme";
 import { useIsMobile } from "./hooks/useIsMobile";
 import { PWABanner } from "./components/PWABanner";
+import { PreviewPanel } from "./components/preview/PreviewPanel";
+import { usePreviewStore } from "./hooks/usePreviewStore";
 import { uuidV4 } from "./lib/uuid";
 import { sessionToMarkdown, copyToClipboard } from "./lib/markdownExport";
 
@@ -167,6 +169,39 @@ export default function App() {
   }, [ws, newSessionId, selectedProject?.path]);
 
   const [theme, toggleTheme] = useTheme();
+
+  // ── Preview state ──
+  const previewOpen = usePreviewStore((s) => s.isOpen);
+  const setPreviews = usePreviewStore((s) => s.setPreviews);
+  const previewMap = usePreviewStore((s) => s.previews);
+  const activePreview = selectedProject
+    ? previewMap.get(`${selectedProject.id}:default`)
+    : null;
+
+  // Fetch preview status when project changes
+  const fetchPreviews = useCallback(() => {
+    if (!selectedProject) return;
+    fetch(`/api/preview?projectId=${selectedProject.id}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.previews) setPreviews(d.previews);
+      })
+      .catch(() => {});
+  }, [selectedProject, setPreviews]);
+
+  useEffect(() => {
+    fetchPreviews();
+    // Poll every 3 seconds
+    const interval = setInterval(fetchPreviews, 3000);
+    return () => clearInterval(interval);
+  }, [fetchPreviews]);
+
+  // Handle @element mention from picker — inject into chat input
+  const handleElementSelected = useCallback((token: string, _context: string) => {
+    // The token is injected via SelectionChips already.
+    // The context is automatically appended to the prompt in handleSend inside ChatView.
+    // We don't need to do anything additional here — SelectionChips auto-injects.
+  }, []);
 
   // Fetch sessions for selected project
   const fetchSessions = useCallback(() => {
@@ -540,27 +575,41 @@ export default function App() {
         />
       )}
 
-      <main id="main-content" className="flex-1 flex flex-col min-w-0">
-        {view === "chat" && ws ? (
-          <ChatView
-            ws={ws}
-            sessionDetail={sessionDetail}
-            project={selectedProject}
-            session={activeSession}
-            onToggleSidebar={() => setMobilePane("rail")}
-            showSidebar={false}
-          />
-        ) : view === "sessions" ? (
-          <SessionWelcome
-            project={selectedProject}
-            sessions={sessions}
-            onSelectSession={handleSelectSession}
-          />
-        ) : (
-          <EmptyState
-            projects={projects}
-            onSelectProject={handleSelectProject}
-            onAddProject={() => setShowAddProject(true)}
+      <main id="main-content" className="flex-1 flex flex-row min-w-0">
+        <div className="flex-1 flex flex-col min-w-0">
+          {view === "chat" && ws ? (
+            <ChatView
+              ws={ws}
+              sessionDetail={sessionDetail}
+              project={selectedProject}
+              session={activeSession}
+              onToggleSidebar={() => setMobilePane("rail")}
+              showSidebar={false}
+            />
+          ) : view === "sessions" ? (
+            <SessionWelcome
+              project={selectedProject}
+              sessions={sessions}
+              onSelectSession={handleSelectSession}
+            />
+          ) : (
+            <EmptyState
+              projects={projects}
+              onSelectProject={handleSelectProject}
+              onAddProject={() => setShowAddProject(true)}
+            />
+          )}
+        </div>
+
+        {/* Preview panel — slides out from right side */}
+        {previewOpen && selectedProject && (
+          <PreviewPanel
+            projectId={selectedProject.id}
+            projectName={selectedProject.name}
+            projectPath={selectedProject.path}
+            preview={activePreview || null}
+            onElementSelected={handleElementSelected}
+            onRefresh={fetchPreviews}
           />
         )}
       </main>

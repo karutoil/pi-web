@@ -5,6 +5,8 @@ import { SCROLL_THRESHOLD, SCROLL_THROTTLE_MS } from "../lib/constants";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
 import { ChatHeader } from "./ChatHeader";
+import { SelectionChips } from "./preview/SelectionChips";
+import { usePreviewStore } from "../hooks/usePreviewStore";
 import { ExtensionUIModal } from "./ExtensionUIModal";
 import { Icon } from "./Icon";
 import { TerminalPanel } from "./TerminalPanel";
@@ -62,6 +64,8 @@ function extractMsgText(msg: ChatMessage): string {
 export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar, showSidebar }: ChatViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showThinking, setShowThinking] = useState(true);
+  const previewOpen = usePreviewStore((s) => s.isOpen);
+  const togglePreview = useCallback(() => usePreviewStore.getState().setOpen(!usePreviewStore.getState().isOpen), []);
   const [srAnnouncement, setSrAnnouncement] = useState('');
   const [autoScroll, setAutoScroll] = useState(true);
   const autoScrollRef = useRef(true);
@@ -284,7 +288,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
 
   return (
     <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden relative">
-      <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} onToggleGit={() => setShowGit(v => !v)} showGit={showGit} onToggleSidebar={onToggleSidebar} showSidebar={showSidebar} onSessionActions={() => setShowSessionActions(true)} />
+      <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} onToggleGit={() => setShowGit(v => !v)} showGit={showGit} onToggleSidebar={onToggleSidebar} showSidebar={showSidebar} onSessionActions={() => setShowSessionActions(true)} onTogglePreview={togglePreview} showPreview={previewOpen} />
 
       <div aria-live="polite" className="sr-only">{srAnnouncement}</div>
 
@@ -456,6 +460,9 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
         visible={showTerminal}
         onClose={() => setShowTerminal(false)}
       />
+
+      {/* Element selection chips from preview picker */}
+      <SelectionChips />
 
       {/* Extension error toasts — inline above input */}
       <ExtensionErrorToast

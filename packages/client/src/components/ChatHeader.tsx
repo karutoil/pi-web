@@ -13,9 +13,12 @@ interface Props {
   onToggleSidebar?: () => void;
   showSidebar?: boolean;
   onSessionActions?: () => void;
+  /** Preview panel toggle */
+  onTogglePreview?: () => void;
+  showPreview?: boolean;
 }
 
-export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggleSidebar, showSidebar, onSessionActions }: Props) {
+export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggleSidebar, showSidebar, onSessionActions, onTogglePreview, showPreview }: Props) {
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(sessionName || "");
   const isMobile = useIsMobile();
@@ -168,6 +171,12 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
           {onToggleGit && (
             <button onClick={onToggleGit} className={`icon-btn ${showGit ? "icon-btn-active" : ""}`} aria-label="Toggle git panel" title="Source Control">
               <Icon name="git" size={14} />
+            </button>
+          )}
+
+          {onTogglePreview && (
+            <button onClick={onTogglePreview} className={`icon-btn ${showPreview ? "icon-btn-active" : ""}`} aria-label="Toggle preview" title="Preview (⌘P)">
+              <span className="text-xs">◧</span>
             </button>
           )}
 

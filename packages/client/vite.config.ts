@@ -20,6 +20,8 @@ export default defineConfig({
         target: `ws://localhost:${process.env.SERVER_PORT || "3069"}`,
         ws: true,
       },
+      "/preview": `http://localhost:${process.env.SERVER_PORT || "3069"}`,
+      "/__preview": `http://localhost:${process.env.SERVER_PORT || "3069"}`,
     },
   },
 });

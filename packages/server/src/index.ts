@@ -14,6 +14,9 @@ import { createTerminal, getTerminal, listTerminals, killTerminal } from "./pi-t
 import { getGitStatus, getGitDiff, gitStage, gitUnstage, gitCommit, gitLog, gitCheckout, gitDiscard, gitBranches, gitPush, gitPull, gitFetch, gitCreateBranch, gitDeleteBranch, gitRenameBranch, gitTags, gitCreateTag, gitDeleteTag, gitStashList, gitStashPush, gitStashPop, gitStashApply, gitStashDrop, gitAmend, gitCherryPick, gitRevert, gitResolveConflict, getGitDiffStats, gitDiffWithRef, gitShowCommit, gitLogSearch, gitBlame, gitRemotes, gitUnstageAll } from "./pi-git";
 import type { GitResult } from "./pi-git";
 import { getVersionInfo } from "./pi-version";
+import { startPreview, stopPreview, getPreview, listPreviews, addLogListener, stopAllPreviews, setPreviewPort } from "./pi-preview";
+import { handlePreviewRequest, parsePreviewPath } from "./pi-preview-proxy";
+import { getOverlayJS, getOverlayCSS } from "./pi-preview-overlay";
 import type { WSClientMessage, WSServerMessage } from "@pi-web/shared";
 
 const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>();
@@ -698,7 +701,165 @@ app.get("/api/fs/search-files", (c) => {
 });
 
 // Health
-app.get("/api/health", (c) => c.json({ status: "ok", time: Date.now(), pool: getPoolStats() }));
+app.get("/api/health", (c) => c.json({ status: "ok", time: Date.now(), pool: getPoolStats(), port: server.port }));
+
+// ==================== Preview API ====================
+
+// Serve overlay static assets
+app.get("/__preview/overlay.js", (c) => {
+  return c.text(getOverlayJS(), 200, {
+    "Content-Type": "application/javascript; charset=utf-8",
+    "Cache-Control": "no-cache",
+  });
+});
+
+app.get("/__preview/overlay.css", (c) => {
+  return c.text(getOverlayCSS(), 200, {
+    "Content-Type": "text/css; charset=utf-8",
+    "Cache-Control": "no-cache",
+  });
+});
+
+// List all previews or filter by project
+app.get("/api/preview", (c) => {
+  const projectId = c.req.query("projectId");
+  const previews = listPreviews(projectId || undefined);
+  return c.json({ previews });
+});
+
+// Get a specific preview
+app.get("/api/preview/:projectId/:label", (c) => {
+  const { projectId, label } = c.req.param();
+  const preview = getPreview(projectId, label);
+  if (!preview) return c.json({ error: "Preview not found" }, 404);
+  return c.json({ preview });
+});
+
+// Start a preview
+app.post("/api/preview/start", async (c) => {
+  const body = await c.req.json() as any;
+  const { projectId, cwd, label, command, port } = body;
+  if (!projectId || !cwd) return c.json({ error: "projectId and cwd are required" }, 400);
+
+  try {
+    const preview = await startPreview({ projectId, cwd, label, command, port });
+    return c.json({ preview }, 201);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Stop a preview
+app.post("/api/preview/:projectId/:label/stop", async (c) => {
+  const { projectId, label } = c.req.param();
+  const preview = getPreview(projectId, label);
+  if (!preview) return c.json({ error: "Preview not found" }, 404);
+  await stopPreview(projectId, label);
+  return c.json({ success: true });
+});
+
+// Switch proxy port for a running preview
+app.post("/api/preview/:projectId/:label/port", async (c) => {
+  const { projectId, label } = c.req.param();
+  const { port } = await c.req.json() as any;
+  if (!port || typeof port !== "number") return c.json({ error: "port (number) is required" }, 400);
+  const preview = await setPreviewPort(projectId, label, port);
+  if (!preview) return c.json({ error: "Preview not found" }, 404);
+  return c.json({ preview });
+});
+
+// Stop all previews for a project
+app.post("/api/preview/:projectId/stop-all", async (c) => {
+  const { projectId } = c.req.param();
+  const previews = listPreviews(projectId);
+  for (const p of previews) {
+    await stopPreview(p.projectId, p.label);
+  }
+  return c.json({ success: true, stopped: previews.length });
+});
+
+// Open a preview in the system browser
+app.post("/api/preview/:projectId/:label/open", async (c) => {
+  const { projectId, label } = c.req.param();
+  const preview = getPreview(projectId, label);
+  if (!preview) return c.json({ error: "Preview not found" }, 404);
+  if (preview.status !== "running") return c.json({ error: "Preview is not running" }, 503);
+
+  try {
+    const open = (await import("open")).default;
+    await open(`http://localhost:${preview.port}`);
+    return c.json({ success: true });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// Preview WS log stream
+app.get(
+  "/ws/preview/:projectId/:label",
+  upgradeWebSocket(() => {
+    return {
+      onOpen(_event, ws) {
+        // Params are extracted inside from the URL
+      },
+      onMessage(event, ws) {
+        try {
+          const msg = JSON.parse(event.data as string);
+          if (msg.type === "subscribe" && msg.projectId && msg.label) {
+            const raw = (ws as any).raw as ServerWebSocket;
+            const key = `${msg.projectId}:${msg.label}`;
+            wsToPreviewLog.set(raw, { projectId: msg.projectId, label: msg.label, unsub: null });
+
+            // Send existing logs
+            const preview = getPreview(msg.projectId, msg.label);
+            if (preview) {
+              for (const line of preview.logs) {
+                try { ws.send(JSON.stringify({ type: "preview_log", projectId: msg.projectId, label: msg.label, text: line, stream: "stdout" })); } catch {}
+              }
+            }
+
+            // Subscribe to new logs
+            const unsub = addLogListener(msg.projectId, msg.label, (text, stream) => {
+              try {
+                if (raw.readyState === 1) {
+                  raw.send(JSON.stringify({ type: "preview_log", projectId: msg.projectId, label: msg.label, text, stream }));
+                }
+              } catch {}
+            });
+            const entry = wsToPreviewLog.get(raw);
+            if (entry) entry.unsub = unsub;
+          }
+        } catch {}
+      },
+      onClose(_event, ws) {
+        const raw = (ws as any).raw as ServerWebSocket;
+        const entry = wsToPreviewLog.get(raw);
+        if (entry?.unsub) entry.unsub();
+        wsToPreviewLog.delete(raw);
+      },
+    };
+  })
+);
+
+// Proxy handler — extracts remaining path from the full URL for robustness
+const previewProxyHandler = async (c: any) => {
+  const { projectId, label } = c.req.param();
+  const url = new URL(c.req.url);
+  const prefix = `/preview/${projectId}/${label}`;
+  let remaining = url.pathname.slice(prefix.length);
+  if (!remaining || remaining === "/") remaining = "/";
+  // Preserve query string
+  if (url.search) remaining += url.search;
+  console.log(`[preview-proxy] route matched: ${c.req.path} → projectId=${projectId} label=${label} remaining=${remaining}`);
+  return handlePreviewRequest(c.req.raw, projectId, label, remaining);
+};
+
+// Catch-all proxy for /preview/:projectId/:label/* (anything after label)
+app.all("/preview/:projectId/:label/*", previewProxyHandler);
+// Also handle bare /preview/:projectId/:label (no trailing slash)
+app.all("/preview/:projectId/:label", previewProxyHandler);
+// And /preview/:projectId/:label/ (trailing slash, no additional path)
+app.all("/preview/:projectId/:label/", previewProxyHandler);
 
 // Simple HTML export builder (#84: use escapeHtml for all interpolated values)
 function buildSessionHtml(detail: any): string {
@@ -723,6 +884,8 @@ function buildSessionHtml(detail: any): string {
 const wsToAgent = new Map<ServerWebSocket, string>();
 // Map: raw ServerWebSocket -> terminalId (for terminal WS routing)
 const wsToTerminal = new Map<ServerWebSocket, string>();
+// Map: raw ServerWebSocket -> preview log subscription
+const wsToPreviewLog = new Map<ServerWebSocket, { projectId: string; label: string; unsub: (() => void) | null }>();
 
 // ── Unified WebSocket endpoint ──
 // Routes to chat or terminal handler based on ?type= query param
@@ -1021,6 +1184,11 @@ app.get("/sw.js", async (c) => {
 
 // SPA fallback — serve index.html for any unmatched route
 app.get("*", async (c) => {
+  // Safety net: if we somehow reach here for a preview path, return a clear error
+  if (c.req.path.startsWith("/preview/")) {
+    console.error(`[preview-proxy] MISROUTE: SPA fallback caught preview path ${c.req.path}`);
+    return c.html(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Preview Error</title><style>body{font-family:system-ui;background:#0a0a0a;color:#a0a0a0;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:12px}h1{color:#d4a020;font-size:18px;margin:0}p{font-size:13px;color:#666}</style></head><body><h1>Preview proxy misrouted</h1><p>Path ${escapeHtml(c.req.path)} reached SPA fallback. Check server logs.</p></body></html>`, 500);
+  }
   try {
     const indexPath = join(CLIENT_DIST, "index.html");
     const html = await readFile(indexPath, "utf-8");
@@ -1043,5 +1211,9 @@ const server = Bun.serve({
   fetch: app.fetch,
   websocket,
 });
+
+// Graceful shutdown — kill all preview processes
+process.on("SIGINT", () => { stopAllPreviews().catch(() => {}); process.exit(0); });
+process.on("SIGTERM", () => { stopAllPreviews().catch(() => {}); process.exit(0); });
 
 console.log(`PI Web server running at http://${hostname}:${server.port}`);

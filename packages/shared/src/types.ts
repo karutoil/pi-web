@@ -356,3 +356,63 @@ export interface APISessionListResponse {
 export interface APIProjectsResponse {
   projects: Project[];
 }
+
+// ─── Preview types ───
+
+export type PreviewStatus = "detecting" | "starting" | "running" | "crashed" | "stopped";
+
+export interface PreviewInfo {
+  id: string;
+  projectId: string;
+  label: string;
+  port: number;
+  url: string;
+  status: PreviewStatus;
+  /** Log entries (newest last) */
+  logs: string[];
+  startedAt: number;
+  /** Shell command used to spawn, e.g. "npm run dev" */
+  command: string | null;
+  /** PID of the spawned process, tracked for cleanup */
+  process: number | null;
+  /** Working directory of the dev server */
+  cwd: string;
+  /** All detected listening ports from the spawned process */
+  detectedPorts: number[];
+  /** Health-poll timer handle (for server internal use) */
+  healthTimer: ReturnType<typeof setInterval> | null;
+}
+
+export interface PreviewStartRequest {
+  projectId: string;
+  cwd: string;
+  label?: string;
+  command?: string;
+  port?: number;
+}
+
+export interface SerializedElement {
+  /** Unique CSS selector path, e.g. "html>body>div.container>button.btn" */
+  selector: string;
+  tagName: string;
+  /** Truncated to 5KB */
+  outerHTML: string;
+  boundingBox: { x: number; y: number; width: number; height: number };
+  computedStyles: Record<string, string>;
+  /** First 200 characters */
+  textContent: string;
+  /** React component source if __REACT_DEVTOOLS_GLOBAL_HOOK__ is available */
+  source?: { file?: string; line?: number; col?: number };
+  /** Base64-encoded PNG data URL (via modern-screenshot) */
+  screenshotPng?: string;
+  /** Unique token for @element mention */
+  token: string;
+}
+
+export interface PreviewLogMessage {
+  type: "preview_log";
+  projectId: string;
+  label: string;
+  text: string;
+  stream: "stdout" | "stderr";
+}
