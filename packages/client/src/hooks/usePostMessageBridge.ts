@@ -10,7 +10,7 @@ import type { SerializedElement } from "@pi-web/shared";
 import { usePreviewStore, type ConsoleEntry } from "./usePreviewStore";
 
 export type PreviewMessage =
-  | { type: "element:selected"; payload: SerializedElement }
+  | { type: "element:selected"; payload: SerializedElement; autoSend?: boolean; message?: string }
   | { type: "console:error"; payload: { message: string; timestamp: number } }
   | { type: "console:warn"; payload: { message: string; timestamp: number } }
   | { type: "console:log"; payload: { message: string; timestamp: number } };
@@ -43,7 +43,7 @@ export function usePostMessageBridge(
       switch (msg.type) {
         case "element:selected":
           if (msg.payload && msg.payload.token) {
-            addPickedElement(msg.payload);
+            addPickedElement(msg.payload, msg.autoSend ? msg.message : undefined);
           }
           break;
         case "console:error":

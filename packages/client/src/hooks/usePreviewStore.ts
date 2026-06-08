@@ -33,10 +33,9 @@ export interface PreviewState {
   // Element picker
   pickerActive: boolean;
   pickedElements: SerializedElement[];
-
+  autoSendMessage: string | null; // message to auto-send when element picked
   // Console
   consoleLogs: ConsoleEntry[];
-
   // Actions
   setOpen: (open: boolean) => void;
   setPanelWidth: (width: number) => void;
@@ -45,11 +44,13 @@ export interface PreviewState {
   removePreview: (projectId: string, label: string) => void;
   setActivePreview: (projectId: string | null, label?: string) => void;
   togglePicker: () => void;
-  addPickedElement: (element: SerializedElement) => void;
+  addPickedElement: (element: SerializedElement, autoSend?: string) => void;
   removePickedElement: (token: string) => void;
   clearPickedElements: () => void;
+  consumeAutoSend: () => string | null;
   addConsoleLog: (entry: ConsoleEntry) => void;
   clearConsoleLogs: () => void;
+
 }
 
 const DEFAULT_WIDTH = 480;
@@ -81,22 +82,19 @@ export const usePreviewStore = create<PreviewState>((set, get) => ({
 
   pickerActive: false,
   pickedElements: [],
-
+  autoSendMessage: null,
   consoleLogs: [],
-
   setOpen: (open) => set({ isOpen: open }),
   setPanelWidth: (width) => {
     const clamped = Math.max(MIN_WIDTH, Math.min(width, window.innerWidth * MAX_WIDTH_PCT));
     saveWidth(clamped);
     set({ panelWidth: clamped });
   },
-
   setPreviews: (previews) => {
     const map = new Map<string, PreviewInfo>();
     for (const p of previews) map.set(`${p.projectId}:${p.label}`, p);
     set({ previews: map });
   },
-
   upsertPreview: (preview) => {
     set((s) => {
       const next = new Map(s.previews);
@@ -104,7 +102,6 @@ export const usePreviewStore = create<PreviewState>((set, get) => ({
       return { previews: next };
     });
   },
-
   removePreview: (projectId, label) => {
     set((s) => {
       const next = new Map(s.previews);
@@ -112,29 +109,34 @@ export const usePreviewStore = create<PreviewState>((set, get) => ({
       return { previews: next };
     });
   },
-
   setActivePreview: (projectId, label) => {
     set({ activeProjectId: projectId, activeLabel: label || "default" });
   },
-
   togglePicker: () => set((s) => ({ pickerActive: !s.pickerActive })),
-
-  addPickedElement: (element) => {
-    // Avoid exact duplicates
+  addPickedElement: (element, autoSend) => {
     set((s) => {
       const exists = s.pickedElements.some((e) => e.token === element.token);
-      if (exists) return { pickedElements: s.pickedElements };
-      return { pickedElements: [...s.pickedElements, element] };
+      const next = exists ? s.pickedElements : [...s.pickedElements, element];
+      return {
+        pickedElements: next,
+        autoSendMessage: autoSend || null,
+      };
     });
   },
-
   removePickedElement: (token) => {
     set((s) => ({
       pickedElements: s.pickedElements.filter((e) => e.token !== token),
     }));
   },
-
-  clearPickedElements: () => set({ pickedElements: [] }),
+  clearPickedElements: () => set({ pickedElements: [], autoSendMessage: null }),
+  consumeAutoSend: () => {
+    const msg = get().autoSendMessage;
+    if (msg) {
+      set({ autoSendMessage: null });
+      return msg;
+    }
+    return null;
+  },
 
   addConsoleLog: (entry) => {
     set((s) => {

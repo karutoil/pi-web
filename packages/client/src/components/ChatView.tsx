@@ -5,7 +5,6 @@ import { SCROLL_THRESHOLD, SCROLL_THROTTLE_MS } from "../lib/constants";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
 import { ChatHeader } from "./ChatHeader";
-import { SelectionChips } from "./preview/SelectionChips";
 import { usePreviewStore } from "../hooks/usePreviewStore";
 import { ExtensionUIModal } from "./ExtensionUIModal";
 import { Icon } from "./Icon";
@@ -460,10 +459,6 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
         visible={showTerminal}
         onClose={() => setShowTerminal(false)}
       />
-
-      {/* Element selection chips from preview picker */}
-      <SelectionChips />
-
       {/* Extension error toasts — inline above input */}
       <ExtensionErrorToast
         errors={extensionErrorList}

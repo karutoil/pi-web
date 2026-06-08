@@ -7,11 +7,75 @@
  */
 
 const OVERLAY_CSS = `
-.pi-preview-overlay{all:initial;font-family:system-ui,sans-serif;position:fixed;z-index:2147483647;pointer-events:none}
-.pi-preview-highlight{position:fixed;pointer-events:none;z-index:2147483645;border:2px solid rgba(0,122,255,.7);background:rgba(0,122,255,.08);border-radius:2px;transition:all 60ms ease-out}
-.pi-preview-label{position:fixed;pointer-events:none;z-index:2147483646;background:rgba(0,122,255,.9);color:#fff;padding:2px 6px;border-radius:3px;font-size:11px;font-family:monospace;white-space:nowrap;transform:translateY(-100%);margin-top:-4px}
-.pi-preview-toast{position:fixed;bottom:50px;right:12px;z-index:2147483646;background:rgba(255,69,58,.9);color:#fff;padding:6px 12px;border-radius:8px;font-size:11px;font-family:system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3);pointer-events:auto;cursor:pointer;max-width:320px;animation:pi-fade-in .2s ease-out}
-@keyframes pi-fade-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+/* ── Highlight ── */
+.pi-preview-highlight{
+  position:fixed;
+  pointer-events:none;
+  z-index:2147483645;
+  border:2px solid rgba(59,130,246,.85);
+  background:rgba(59,130,246,.12);
+  border-radius:6px;
+  box-shadow:0 0 0 4px rgba(59,130,246,.15),0 4px 20px rgba(59,130,246,.25);
+  transition:all .15s cubic-bezier(.4,0,.2,1);
+  animation:pi-highlight-pulse 2s ease-in-out infinite;
+}
+@keyframes pi-highlight-pulse{
+  0%,100%{box-shadow:0 0 0 4px rgba(59,130,246,.15),0 4px 20px rgba(59,130,246,.25);}
+  50%{box-shadow:0 0 0 8px rgba(59,130,246,.08),0 4px 24px rgba(59,130,246,.35);}
+}
+
+/* ── Label ── */
+.pi-preview-label{
+  position:fixed;
+  pointer-events:none;
+  z-index:2147483646;
+  background:rgba(15,23,42,.92);
+  backdrop-filter:blur(8px);
+  color:#bfdbfe;
+  padding:4px 10px;
+  border-radius:6px;
+  font-size:12px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  white-space:nowrap;
+  transform:translateY(-120%);
+  margin-top:-6px;
+  border:1px solid rgba(59,130,246,.35);
+  box-shadow:0 2px 12px rgba(0,0,0,.3);
+  transition:all .15s cubic-bezier(.4,0,.2,1);
+}
+.pi-preview-label-tag{color:#60a5fa;font-weight:600;}
+.pi-preview-label-id{color:#a5b4fc;font-weight:500;}
+.pi-preview-label-cls{color:#c4b5fd;}
+
+/* ── Toast ── */
+.pi-preview-toast{
+  position:fixed;
+  bottom:50px;
+  right:12px;
+  z-index:2147483646;
+  background:rgba(239,68,68,.92);
+  backdrop-filter:blur(8px);
+  color:#fff;
+  padding:8px 14px;
+  border-radius:10px;
+  font-size:12px;
+  font-family:system-ui,sans-serif;
+  box-shadow:0 2px 12px rgba(0,0,0,.3);
+  pointer-events:auto;
+  cursor:pointer;
+  max-width:320px;
+  animation:pi-toast-in .25s cubic-bezier(.4,0,.2,1);
+  border:1px solid rgba(255,255,255,.1);
+}
+@keyframes pi-toast-in{
+  from{opacity:0;transform:translateY(8px) scale(.96);}
+  to{opacity:1;transform:translateY(0) scale(1);}
+}
+
+/* ── Picker active cursor ── */
+.pi-preview-cursor-crosshair{
+  cursor:crosshair !important;
+}
 `;
 
 const CSS_JSON = JSON.stringify(OVERLAY_CSS);
@@ -39,15 +103,6 @@ var PROXY_PREFIX = window.__PI_PREVIEW_PREFIX || '';
 var PROXY_ORIGIN = window.__PI_PREVIEW_ORIGIN || window.location.origin;
 
 // ── Resolve URL against current document URL (NOT <base>) ──
-// The <base> tag points to the dev server for asset loading, but
-// history.pushState uses <base> for URL resolution. That causes
-// root-relative URLs like '/dashboard' to resolve to the dev server's
-// origin, which is cross-origin from the iframe's origin, so pushState
-// throws a SecurityError.
-//
-// We work around this by intercepting pushState/replaceState and
-// resolving URLs against the document's actual URL instead of <base>.
-// We then pass the fully-resolved same-origin URL to the real pushState.
 function resolveAgainstDocument(url){
   try{
     return new URL(url,window.location.href).href;
@@ -71,19 +126,14 @@ history.replaceState=function(state,title,url){
 };
 
 // ── Fetch / XHR interception ──
-// Rewrite absolute requests targeting the dev server to go through the proxy,
-// avoiding cross-origin CORS and credentials issues inside the iframe.
 function toProxyUrl(url){
   try{
     var u=new URL(url,document.baseURI);
     var baseEl=document.querySelector('base[data-pi-preview]');
     var devOrigin=baseEl?new URL(baseEl.href).origin:null;
-    // Dev-server origin (matches <base>) → route through proxy
     if(devOrigin&&u.origin===devOrigin){
       return PROXY_ORIGIN+PROXY_PREFIX+u.pathname.slice(1)+u.search+u.hash;
     }
-    // App makes a request to the iframe origin (localhost) but with a path
-    // that is NOT under the proxy prefix → route through proxy
     if(u.origin===window.location.origin&&!u.pathname.startsWith(PROXY_PREFIX)){
       return PROXY_ORIGIN+PROXY_PREFIX+u.pathname.slice(1)+u.search+u.hash;
     }
@@ -111,12 +161,6 @@ XMLHttpRequest.prototype.open=function(method,url,async,user,password){
   return origXHROpen.call(this,method,url,async,user,password);
 };
 
-// Inject styles into document head
-var styleEl=document.createElement("style");
-styleEl.textContent=${CSS_JSON};
-styleEl.setAttribute("data-pi-preview","");
-document.head.appendChild(styleEl);
-
 // ── Shadow DOM container ──
 var root=document.createElement("div");
 root.id="__pi-preview-root";
@@ -124,6 +168,11 @@ root.style.cssText="position:fixed;top:0;left:0;width:0;height:0;z-index:2147483
 document.documentElement.appendChild(root);
 var shadow=root.attachShadow({mode:"open"});
 
+// Inject styles into shadow root (shadow DOM elements are isolated from document styles)
+var styleEl=document.createElement("style");
+styleEl.textContent=${CSS_JSON};
+styleEl.setAttribute("data-pi-preview","");
+shadow.appendChild(styleEl);
 // ── Overlay elements in shadow ──
 var overlay=document.createElement("div");
 overlay.className="pi-preview-overlay";
@@ -215,25 +264,44 @@ function serializeElement(el){
   };
 }
 
+// ── Build rich label HTML ──
+function buildLabelHTML(el){
+  var tag=el.tagName.toLowerCase();
+  var id=el.id?'#<span class="pi-preview-label-id">'+CSS.escape(el.id)+'</span>':'';
+  var cls='';
+  if(typeof el.className==="string"){
+    var classes=el.className.trim().split(/\\s+/).slice(0,2).join('.');
+    if(classes) cls='.<span class="pi-preview-label-cls">'+classes+'</span>';
+  }
+  var dims=function(){
+    var r=el.getBoundingClientRect();
+    return Math.round(r.width)+'×'+Math.round(r.height);
+  }();
+  return '<span class="pi-preview-label-tag">&lt;'+tag+'&gt;</span>'+id+cls+' <span style="opacity:.6">'+dims+'</span>';
+}
+
 // ── Highlight ──
 function showHighlight(el){
   var rect=el.getBoundingClientRect();
+  var pad=4;
   highlight.style.display="block";
-  highlight.style.left=rect.x+"px";
-  highlight.style.top=rect.y+"px";
-  highlight.style.width=rect.width+"px";
-  highlight.style.height=rect.height+"px";
+  highlight.style.left=(rect.x-pad)+"px";
+  highlight.style.top=(rect.y-pad)+"px";
+  highlight.style.width=(rect.width+pad*2)+"px";
+  highlight.style.height=(rect.height+pad*2)+"px";
   label.style.display="block";
   label.style.left=rect.x+"px";
   label.style.top=rect.y+"px";
-  var cls=typeof el.className==="string"?el.className.trim().split(/\\s+/).slice(0,2).join("."):"";
-  label.textContent=el.tagName.toLowerCase()+(el.id?"#"+el.id:"")+(cls?"."+cls:"");
+  label.innerHTML=buildLabelHTML(el);
 }
 function hideHighlight(){
   highlight.style.display="none";
   label.style.display="none";
 }
 
+// ── Build user message from picked element ──
+// (buildElementMessage inlined into onClick)
+// ── Mouse handlers ──
 // ── Mouse handlers ──
 function onMouseMove(e){
   if(!pickerActive)return;
@@ -247,13 +315,39 @@ function onClick(e){
   e.stopPropagation();
   pickerActive=false;
   document.body.style.cursor="";
+  document.body.classList.remove("pi-preview-cursor-crosshair");
   document.removeEventListener("mousemove",onMouseMove,{capture:true});
   document.removeEventListener("click",onClick,{capture:true});
   hideHighlight();
   var el=document.elementFromPoint(e.clientX,e.clientY);
   if(!el||isInOverlay(el))return;
   var data=serializeElement(el);
-  window.parent.postMessage({type:"element:selected",payload:data},PARENT_ORIGIN);
+  // Build markdown message for auto-send (avoid backtick chars in template literal)
+  var msgParts=["I selected this element in the UI:","","[HTML]"];
+  msgParts.push(data.outerHTML.slice(0,2000));
+  msgParts.push("[/HTML]");
+  msgParts.push("");
+  msgParts.push("CSS selector: "+data.selector);
+  msgParts.push("Bounding box: "+JSON.stringify(data.boundingBox));
+  if(data.textContent){
+    msgParts.push("Text content: "+data.textContent);
+  }
+  var sKeys=Object.keys(data.computedStyles);
+  if(sKeys.length>0){
+    msgParts.push("");
+    msgParts.push("Key computed styles:");
+    for(var ki=0;ki<Math.min(sKeys.length,15);ki++){
+      msgParts.push("  "+sKeys[ki]+": "+data.computedStyles[sKeys[ki]]+";");
+    }
+  }
+  msgParts.push("");
+  msgParts.push("Please help me with this element.");
+  window.parent.postMessage({
+    type:"element:selected",
+    payload:data,
+    autoSend:true,
+    message:msgParts.join("\\n"),
+  },PARENT_ORIGIN);
 }
 
 // ── Console capture ──
@@ -281,7 +375,7 @@ var lastErrorTime=0;
 
 window.addEventListener("error",function(e){
   var now=Date.now();
-  if(now-lastErrorTime<2000)return; // throttle
+  if(now-lastErrorTime<2000)return;
   lastErrorTime=now;
   var msg=(e.message||"Unknown error")+(e.filename?"\\n"+e.filename+":"+e.lineno:"");
   var toast=document.createElement("div");
@@ -301,7 +395,6 @@ window.addEventListener("error",function(e){
 
 // ── Listen for parent messages ──
 window.addEventListener("message",function(event){
-  // On first message, save the parent's origin for validated responses
   if(PARENT_ORIGIN==='*'){
     PARENT_ORIGIN=event.origin;
   }else if(event.origin!==PARENT_ORIGIN){
@@ -313,12 +406,14 @@ window.addEventListener("message",function(event){
     case"picker:on":
       pickerActive=true;
       document.body.style.cursor="crosshair";
+      document.body.classList.add("pi-preview-cursor-crosshair");
       document.addEventListener("mousemove",onMouseMove,{capture:true});
       document.addEventListener("click",onClick,{capture:true});
       break;
     case"picker:off":
       pickerActive=false;
       document.body.style.cursor="";
+      document.body.classList.remove("pi-preview-cursor-crosshair");
       document.removeEventListener("mousemove",onMouseMove,{capture:true});
       document.removeEventListener("click",onClick,{capture:true});
       hideHighlight();
