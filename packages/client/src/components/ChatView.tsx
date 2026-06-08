@@ -16,6 +16,7 @@ import { CompactionIndicator } from "./CompactionIndicator";
 import { ExtensionErrorToast } from "./ExtensionErrorToast";
 import { turnToMarkdown, copyToClipboard } from "../lib/markdownExport";
 
+
 // ─── Loading overlay: blurs chat + blocks interaction until PI is ready ───
 function SessionLoadingOverlay() {
   return (
@@ -486,7 +487,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
 
       {/* Branch / worktree selector below input */}
       {gitStatus && (
-        <div className="max-w-3xl w-full mx-auto flex items-center justify-between px-4 md:px-5 pb-2 md:pb-3 shrink-0">
+        <div className="max-w-3xl w-full mx-auto flex items-center justify-between px-4 md:px-5 pb-2 md:pb-3 shrink-0 flex-wrap gap-y-1">
           <span className="text-ink-500 text-xs font-mono flex items-center gap-1.5">
             <Icon name="folder" size={12} />
             Worktree

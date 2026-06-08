@@ -7,6 +7,8 @@ import { ModelSelectorDropdown } from "./ModelSelectorDropdown";
 import { compressImage } from "../lib/imageUtils";
 import { stripAnsi } from "../lib/stripAnsi";
 import { FileMentionCompleter } from "./FileMentionCompleter";
+import { usePreviewStore } from "../hooks/usePreviewStore";
+import { buildElementContext } from "../lib/elementMention";
 
 interface ChatInputProps {
   onSend: (text: string, images?: { data: string; mimeType: string }[]) => void;
@@ -46,7 +48,25 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
   const disabledRef = useRef(disabled);
   useEffect(() => { disabledRef.current = disabled; }, [disabled]);
   const mountedRef = useRef(true);
+
+  // Insert element context into input when picker selects an element
+  const pendingElementToken = usePreviewStore((s) => s.pendingElementToken);
+  useEffect(() => {
+    if (!pendingElementToken) return;
+    const store = usePreviewStore.getState();
+    const element = store.pickedElements.find(e => e.token === pendingElementToken);
+    const context = element ? buildElementContext(element) : `@${pendingElementToken}`;
+    const insertion = `@${pendingElementToken}\n${context}\n`;
+    setText(prev => {
+      const el = textareaRef.current;
+      if (!el) return prev + insertion;
+      const start = el.selectionStart;
+      return prev.slice(0, start) + insertion + prev.slice(start);
+    });
+    store.consumePendingElement();
+  }, [pendingElementToken]);
   useEffect(() => { return () => { mountedRef.current = false; }; }, []);
+
 
   const slashIndex = text.lastIndexOf("/");
   const commandFilter = (showCommands && slashIndex >= 0) ? text.slice(slashIndex + 1) : "";
@@ -80,6 +100,11 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
     el.style.height = "auto";
     el.style.height = Math.min(el.scrollHeight, maxH) + "px";
   }, []);
+
+  // Auto-resize textarea when text changes programmatically (e.g. element token insertion)
+  useEffect(() => {
+    handleInput();
+  }, [text, handleInput]);
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
@@ -247,7 +272,7 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
             </div>
 
             {/* Bottom toolbar: model | thinking | spacer | tokens | terminal | send */}
-            <div className="flex items-center gap-1.5 md:gap-2 pb-2.5 md:pb-3 pt-0.5">
+            <div className="flex items-center gap-1.5 md:gap-2 pb-2.5 md:pb-3 pt-0.5 flex-wrap">
               {/* Model pill */}
               <button
                 onClick={() => setModelOpen(true)}
@@ -270,7 +295,7 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
                 {thinkingLevel === "off" ? "No think" : thinkingLevel}
               </button>
 
-              <div className="flex-1" />
+              <div className="flex-1 min-w-[12px]" />
 
               {/* Token count */}
               {tokenCount !== null && (

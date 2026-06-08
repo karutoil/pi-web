@@ -105,9 +105,9 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
   // ─── Desktop layout — single row, model/thinking moved to ChatInput ───
   return (
     <>
-      <div className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 border-b border-ink-800 bg-ink-900/30 shrink-0">
+      <div className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 border-b border-ink-800 bg-ink-900/30 shrink-0 flex-wrap">
         {/* Logo + Session name */}
-        <div className="flex-1 min-w-0 flex items-center gap-2">
+        <div className="flex-1 min-w-[120px] flex items-center gap-2">
           {onToggleSidebar && !showSidebar && (
             <button onClick={onToggleSidebar} className="icon-btn" aria-label="Show sidebar" title="Show sidebar (⌘B)">
               <Icon name="chevron-right" size={16} />

@@ -43,7 +43,7 @@ export function usePostMessageBridge(
       switch (msg.type) {
         case "element:selected":
           if (msg.payload && msg.payload.token) {
-            addPickedElement(msg.payload, msg.autoSend ? msg.message : undefined);
+            addPickedElement(msg.payload);
           }
           break;
         case "console:error":

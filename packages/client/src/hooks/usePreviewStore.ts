@@ -33,6 +33,7 @@ export interface PreviewState {
   // Element picker
   pickerActive: boolean;
   pickedElements: SerializedElement[];
+  pendingElementToken: string | null; // token to insert into chat input
   autoSendMessage: string | null; // message to auto-send when element picked
   // Console
   consoleLogs: ConsoleEntry[];
@@ -48,6 +49,7 @@ export interface PreviewState {
   removePickedElement: (token: string) => void;
   clearPickedElements: () => void;
   consumeAutoSend: () => string | null;
+  consumePendingElement: () => string | null;
   addConsoleLog: (entry: ConsoleEntry) => void;
   clearConsoleLogs: () => void;
 
@@ -82,6 +84,7 @@ export const usePreviewStore = create<PreviewState>((set, get) => ({
 
   pickerActive: false,
   pickedElements: [],
+  pendingElementToken: null,
   autoSendMessage: null,
   consoleLogs: [],
   setOpen: (open) => set({ isOpen: open }),
@@ -120,6 +123,8 @@ export const usePreviewStore = create<PreviewState>((set, get) => ({
       return {
         pickedElements: next,
         autoSendMessage: autoSend || null,
+        // When NOT auto-sending, set the token for ChatInput insertion
+        pendingElementToken: autoSend ? s.pendingElementToken : element.token,
       };
     });
   },
@@ -128,12 +133,21 @@ export const usePreviewStore = create<PreviewState>((set, get) => ({
       pickedElements: s.pickedElements.filter((e) => e.token !== token),
     }));
   },
-  clearPickedElements: () => set({ pickedElements: [], autoSendMessage: null }),
+  clearPickedElements: () => set({ pickedElements: [], autoSendMessage: null, pendingElementToken: null }),
   consumeAutoSend: () => {
     const msg = get().autoSendMessage;
     if (msg) {
       set({ autoSendMessage: null });
       return msg;
+    }
+    return null;
+  },
+
+  consumePendingElement: () => {
+    const token = get().pendingElementToken;
+    if (token) {
+      set({ pendingElementToken: null });
+      return token;
     }
     return null;
   },

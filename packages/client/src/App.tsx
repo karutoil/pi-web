@@ -196,17 +196,9 @@ export default function App() {
     return () => clearInterval(interval);
   }, [fetchPreviews]);
 
-  // ── Auto-send element context when picker returns autoSend ──
-  const autoSendMessage = usePreviewStore((s) => s.autoSendMessage);
-  useEffect(() => {
-    if (autoSendMessage && ws) {
-      ws.sendPrompt(autoSendMessage);
-      usePreviewStore.getState().consumeAutoSend();
-    }
-  }, [autoSendMessage, ws]);
   // Handle @element mention from picker
   const handleElementSelected = useCallback((token: string, _context: string) => {
-    // Auto-send is handled by the store subscription above.
+    // Element tokens are resolved in ChatView.handleSend via the store.
   }, []);
 
   // Fetch sessions for selected project

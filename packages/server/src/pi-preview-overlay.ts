@@ -231,6 +231,58 @@ function getSelector(el){
   return parts.join(">");
 }
 
+// ── Reconstruct real dev-server URL (not proxied URL) ──
+function getRealUrl(){
+  var baseEl=document.querySelector('base[data-pi-preview]');
+  var realOrigin=baseEl ? new URL(baseEl.href).origin : window.location.origin;
+  var pathname=window.location.pathname;
+  if(PROXY_PREFIX && pathname.indexOf(PROXY_PREFIX)===0){
+    pathname=pathname.slice(PROXY_PREFIX.length);
+  }
+  return realOrigin+'/'+pathname.replace(/^\\//,'')+window.location.search+window.location.hash;
+}
+
+
+// ── React component source detection ──
+function getReactSource(el){
+  try{
+    // Find React fiber key on the DOM element (e.g. __reactFiber$abc123)
+    var fiberKey=Object.keys(el).find(function(k){return k.indexOf('__reactFiber$')===0;});
+    if(!fiberKey)return null;
+    var fiber=el[fiberKey];
+    if(!fiber)return null;
+    var componentName=null;
+    var sourceFile=null;
+    var sourceLine=null;
+    var stack=[];
+    // Walk up the fiber tree, collecting component names
+    var node=fiber;
+    while(node&&stack.length<10){
+      if(node.tag===1||node.tag===2||node.tag===0){ // Class, Function, or FunctionComponent
+        var name=null;
+        if(node.type){
+          name=node.type.displayName||node.type.name||null;
+        }
+        if(name&&stack.indexOf(name)===-1)stack.push(name);
+        if(!componentName)componentName=name;
+        // Get debug source info from the first component that has it
+        if(!sourceFile&&node._debugSource){
+          sourceFile=node._debugSource.fileName||null;
+          sourceLine=node._debugSource.lineNumber||null;
+        }
+      }
+      node=node.return||node._debugOwner;
+    }
+    if(!componentName&&!sourceFile&&stack.length===0)return null;
+    return {
+      componentName:componentName||undefined,
+      file:sourceFile||undefined,
+      line:sourceLine||undefined,
+      componentStack:stack.length>0?stack:undefined
+    };
+  }catch(_){}
+  return null;
+}
 // ── Element serializer ──
 function serializeElement(el){
   var importantProps=["display","position","width","height","margin","padding",
@@ -259,8 +311,10 @@ function serializeElement(el){
     boundingBox:{x:Math.round(rect.x),y:Math.round(rect.y),width:Math.round(rect.width),height:Math.round(rect.height)},
     computedStyles:styles,
     textContent:text,
-    source:null,
-    token:token
+    source:getReactSource(el),
+    token:token,
+    pageUrl:getRealUrl(),
+    pageTitle:document.title||""
   };
 }
 
@@ -322,31 +376,9 @@ function onClick(e){
   var el=document.elementFromPoint(e.clientX,e.clientY);
   if(!el||isInOverlay(el))return;
   var data=serializeElement(el);
-  // Build markdown message for auto-send (avoid backtick chars in template literal)
-  var msgParts=["I selected this element in the UI:","","[HTML]"];
-  msgParts.push(data.outerHTML.slice(0,2000));
-  msgParts.push("[/HTML]");
-  msgParts.push("");
-  msgParts.push("CSS selector: "+data.selector);
-  msgParts.push("Bounding box: "+JSON.stringify(data.boundingBox));
-  if(data.textContent){
-    msgParts.push("Text content: "+data.textContent);
-  }
-  var sKeys=Object.keys(data.computedStyles);
-  if(sKeys.length>0){
-    msgParts.push("");
-    msgParts.push("Key computed styles:");
-    for(var ki=0;ki<Math.min(sKeys.length,15);ki++){
-      msgParts.push("  "+sKeys[ki]+": "+data.computedStyles[sKeys[ki]]+";");
-    }
-  }
-  msgParts.push("");
-  msgParts.push("Please help me with this element.");
   window.parent.postMessage({
     type:"element:selected",
     payload:data,
-    autoSend:true,
-    message:msgParts.join("\\n"),
   },PARENT_ORIGIN);
 }
 

@@ -401,12 +401,24 @@ export interface SerializedElement {
   computedStyles: Record<string, string>;
   /** First 200 characters */
   textContent: string;
-  /** React component source if __REACT_DEVTOOLS_GLOBAL_HOOK__ is available */
-  source?: { file?: string; line?: number; col?: number };
+  /** React component info if __REACT_DEVTOOLS_GLOBAL_HOOK__ is available */
+  source?: {
+    file?: string;
+    line?: number;
+    col?: number;
+    /** React component name (displayName or function name) */
+    componentName?: string;
+    /** Full component ancestor chain, nearest first */
+    componentStack?: string[];
+  };
   /** Base64-encoded PNG data URL (via modern-screenshot) */
   screenshotPng?: string;
   /** Unique token for @element mention */
   token: string;
+  /** URL of the page where the element was selected */
+  pageUrl: string;
+  /** Document title of the page */
+  pageTitle: string;
 }
 
 export interface PreviewLogMessage {

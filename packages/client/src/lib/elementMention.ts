@@ -40,11 +40,38 @@ export function parseElementTokens(
  */
 export function buildElementContext(el: SerializedElement): string {
   const parts = [
+    `Page URL: ${el.pageUrl || "(unknown)"}`,
+    `Page title: ${el.pageTitle || "(none)"}`,
+    ``,
     `Element: <${el.tagName}>`,
     `CSS selector: \`${el.selector}\``,
     `Bounding box: ${JSON.stringify(el.boundingBox)}`,
     ``,
   ];
+
+  // React component source info (if available from fiber)
+  if (el.source?.componentName || el.source?.componentStack) {
+    if (el.source.componentName) {
+      parts.push(`React component: \`<${el.source.componentName}>\``);
+    }
+    if (el.source.componentStack && el.source.componentStack.length > 0) {
+      parts.push(`Component stack: ${el.source.componentStack.map(c => `<${c}>`).join(" → ")}`);
+    }
+    if (el.source.file) {
+      parts.push(`Source file: ${el.source.file}${el.source.line ? `:${el.source.line}` : ""}`);
+    }
+    parts.push(``);
+  }
+
+  // Framework-agnostic search hints: grep these in the project to find the element
+  const hints = buildSearchHints(el);
+  if (hints.length > 0) {
+    parts.push(`Search hints (grep the project for these):`);
+    for (const h of hints) {
+      parts.push(`  ${h}`);
+    }
+    parts.push(``);
+  }
 
   if (el.textContent) {
     parts.push(`Text content: "${el.textContent}"`);
@@ -72,4 +99,53 @@ export function buildElementContext(el: SerializedElement): string {
   parts.push("```");
 
   return parts.join("\n");
+}
+
+/** Extract grep-friendly strings from the element's HTML attributes and text. */
+function buildSearchHints(el: SerializedElement): string[] {
+  const hints: string[] = [];
+  const seen = new Set<string>();
+
+  // Parse attributes from outerHTML
+  const attrRe = /\s([\w-]+)(?:=\\s*"([^"]*)")?/g;
+  let m: RegExpExecArray | null;
+  while ((m = attrRe.exec(el.outerHTML)) !== null) {
+    const name = m[1];
+    const value = m[2];
+    // Class values: split and add individual classes
+    if (name === "class" && value) {
+      for (const cls of value.split(/\s+/)) {
+        if (cls.length > 1 && !seen.has(cls)) {
+          seen.add(cls);
+          hints.push(`class="${cls}"`);
+        }
+      }
+    }
+    // ID
+    if (name === "id" && value && !seen.has(value)) {
+      seen.add(value);
+      hints.push(`id="${value}"`);
+    }
+    // Data attributes
+    if (name.startsWith("data-") && value && !seen.has(value)) {
+      seen.add(value);
+      hints.push(`${name}="${value}"`);
+    }
+    // ARIA attributes with useful values
+    if ((name === "aria-label" || name === "role") && value && !seen.has(value)) {
+      seen.add(value);
+      hints.push(`${name}="${value}"`);
+    }
+  }
+
+  // Text content (first 60 chars, trimmed)
+  if (el.textContent && el.textContent.length > 1) {
+    const text = el.textContent.slice(0, 60).trim();
+    if (text && !seen.has(text)) {
+      seen.add(text);
+      hints.push(`text: "${text}"`);
+    }
+  }
+
+  return hints.slice(0, 12); // keep it concise
 }
