@@ -26,6 +26,7 @@ interface ServerRailProps {
   onRequestConfirm: (title: string, message: string, onConfirm: () => void) => void;
   collapsed?: boolean;
   onExpand?: () => void;
+  orientation?: "vertical" | "horizontal";
 }
 
 const STAMP_SIZE = 48; // px
@@ -308,10 +309,10 @@ function AddStamp({
 
 // ─── Rail hairline (the slim divider Discord uses between groups) ───
 
-function RailDivider() {
-  return (
-    <div className="mx-auto w-8 my-1 h-px bg-ink-700/45" aria-hidden />
-  );
+function RailDivider({ orientation }: { orientation: "vertical" | "horizontal" }) {
+  return orientation === "horizontal"
+    ? <div className="w-px h-8 mx-1 bg-ink-700/45" aria-hidden />
+    : <div className="mx-auto w-8 my-1 h-px bg-ink-700/45" aria-hidden />;
 }
 
 // ─── Main component ───
@@ -328,6 +329,7 @@ export function ServerRail({
   isHomeActive,
   onRequestConfirm,
   collapsed = true,
+  orientation = "vertical",
 }: ServerRailProps) {
   // Re-measure container width to support the (theoretical) expanded mode
   const railRef = useRef<HTMLElement>(null);
@@ -363,9 +365,10 @@ export function ServerRail({
     <aside
       ref={railRef}
       className={[
-        "shrink-0 flex flex-col items-stretch bg-ink-950/55",
-        "border-r border-ink-800/70 overflow-x-hidden overflow-y-hidden",
-        "py-2.5 gap-0.5",
+        "shrink-0 flex items-stretch bg-ink-950/55",
+        orientation === "horizontal"
+          ? "flex-row border-b border-ink-800/70 overflow-x-auto overflow-y-hidden px-2.5 py-2 gap-1.5"
+          : "flex-col border-r border-ink-800/70 overflow-x-hidden overflow-y-auto py-2.5 gap-0.5",
         "transition-[width] duration-200",
       ].join(" ")}
       style={{ width: RAIL_WIDTH }}
@@ -381,7 +384,7 @@ export function ServerRail({
         />
       </div>
 
-      <RailDivider />
+      <RailDivider orientation={orientation} />
 
       {/* Project stamps — scrollable middle */}
       <div
@@ -421,7 +424,7 @@ export function ServerRail({
         )}
       </div>
 
-      <RailDivider />
+      <RailDivider orientation={orientation} />
 
       {/* Add project stamp — bottom */}
       <div className="animate-stamp-drop" style={{ animationDelay: `${100 + ordered.length * 28}ms` }}>

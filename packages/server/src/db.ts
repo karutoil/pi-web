@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { mkdirSync } from "node:fs";
-import type { Project } from "@pi-web/shared";
+import type { Project, WorkspaceLayout } from "@pi-web/shared";
 
 // #80: Resolve DB path to $HOME/.pi-web/.pi-web.db
 const DB_PATH = join(homedir(), ".pi-web", ".pi-web.db");
@@ -30,6 +30,13 @@ function initSchema() {
       path TEXT NOT NULL UNIQUE,
       added_at TEXT NOT NULL DEFAULT (datetime('now')),
       last_opened_at TEXT
+    )
+  `);
+  db.run(`
+    CREATE TABLE IF NOT EXISTS app_layouts (
+      key TEXT PRIMARY KEY,
+      layout TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `);
 }
@@ -86,4 +93,29 @@ export function getProject(id: string): Project | null {
 export function touchProject(id: string) {
   const d = getDb();
   d.run("UPDATE projects SET last_opened_at = datetime('now') WHERE id = ?", [id]);
+}
+
+export function getLayout(key = "workspace"): WorkspaceLayout | null {
+  const d = getDb();
+  const row = d.query("SELECT layout FROM app_layouts WHERE key = ?").get(key) as { layout?: string } | undefined;
+  if (!row?.layout) return null;
+  try {
+    return JSON.parse(row.layout) as WorkspaceLayout;
+  } catch {
+    return null;
+  }
+}
+
+export function saveLayout(key: string, layout: WorkspaceLayout) {
+  const d = getDb();
+  d.run(
+    `INSERT INTO app_layouts (key, layout, updated_at) VALUES (?, ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET layout = excluded.layout, updated_at = datetime('now')`,
+    [key, JSON.stringify(layout)],
+  );
+}
+
+export function deleteLayout(key = "workspace") {
+  const d = getDb();
+  d.run("DELETE FROM app_layouts WHERE key = ?", [key]);
 }

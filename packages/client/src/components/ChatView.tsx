@@ -9,7 +9,6 @@ import { usePreviewStore } from "../hooks/usePreviewStore";
 import { useRightPanelStore } from "../hooks/useRightPanelStore";
 import { ExtensionUIModal } from "./ExtensionUIModal";
 import { Icon } from "./Icon";
-import { TerminalPanel } from "./TerminalPanel";
 import { SessionActions } from "./SessionActions";
 import { GitBranchSelector } from "./GitBranchSelector";
 import { CompactionIndicator } from "./CompactionIndicator";
@@ -74,7 +73,6 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
   const autoScrollRef = useRef(true);
   useEffect(() => { autoScrollRef.current = autoScroll; }, [autoScroll]);
   const contentRef = useRef<HTMLDivElement>(null);
-  const [showTerminal, setShowTerminal] = useState(false);
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Virtualization: only render the last RENDER_LIMIT messages
@@ -289,22 +287,22 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
   }, []);
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden relative">
-      <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} onToggleGit={toggleGit} showGit={gitOpen} onToggleSidebar={onToggleSidebar} showSidebar={showSidebar} onSessionActions={() => setShowSessionActions(true)} onTogglePreview={togglePreview} showPreview={previewOpen} onToggleTerminal={() => setShowTerminal(v => !v)} showTerminal={showTerminal} />
+    <div className="flex-1 flex flex-col min-h-0 min-w-0 h-full max-h-full max-w-full overflow-hidden relative">
+      <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} onToggleGit={toggleGit} showGit={gitOpen} onToggleSidebar={onToggleSidebar} showSidebar={showSidebar} onSessionActions={() => setShowSessionActions(true)} onTogglePreview={togglePreview} showPreview={previewOpen} />
 
       <div aria-live="polite" className="sr-only">{srAnnouncement}</div>
 
       {/* Main content row: chat area + right-side panels */}
-      <div className="flex-1 flex min-h-0 overflow-hidden relative">
+      <div className="flex-1 flex min-h-0 min-w-0 h-full max-w-full max-h-full overflow-hidden relative">
         {/* Loading overlay — blurs + blocks interaction until connected + state received */}
         {isLoading && <SessionLoadingOverlay />}
 
         {/* Chat column — takes remaining space after terminal panel */}
-        <div className={`flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden ${showTerminal ? '' : ''}`}>
+        <div className="flex-1 flex flex-col min-h-0 min-w-0 h-full max-h-full max-w-full overflow-hidden">
           <div
             ref={scrollRef}
             onScroll={handleScroll}
-            className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar px-3 md:px-5 pt-6 pb-4 relative"
+            className="flex-1 min-h-0 max-h-full overflow-y-auto overflow-x-hidden custom-scrollbar px-3 md:px-5 pt-6 pb-4 relative"
           >
         {/* Notification toast — absolute overlay pinned to top of scroll area */}
         {ws.pendingNotification && (
@@ -469,8 +467,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
         disabled={!ws.isConnected}
         commands={ws.commands}
         onRequestCommands={handleRequestCommands}
-        showTerminal={showTerminal}
-        onToggleTerminal={() => setShowTerminal(v => !v)}
+        showTerminal={false}
         statusEntries={ws.statusEntries}
         widgets={ws.widgets}
         autoRetry={ws.autoRetry}
@@ -499,14 +496,6 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
       )}
     </div>{/* end chat column */}
   </div>{/* end main content row */}
-
-  {/* Terminal panel — below the entire chat area, as a separate bottom panel */}
-  <TerminalPanel
-    projectId={project?.id || null}
-    projectPath={project?.path || null}
-    visible={showTerminal}
-    onClose={() => setShowTerminal(false)}
-  />
 
       {/* Extension UI Modal — dialog methods (confirm, select, input, editor) */}
       {ws.pendingDialog && (

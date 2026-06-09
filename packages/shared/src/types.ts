@@ -357,6 +357,40 @@ export interface APIProjectsResponse {
   projects: Project[];
 }
 
+// ─── Workspace layout ───
+
+export type WorkspacePanelKind = "chat" | "preview" | "git" | "terminal" | "rail" | "channels";
+export type WorkspaceRegionId = "left" | "center" | "right" | "top" | "bottom";
+export type WorkspaceRegionMode = "tabs" | "split";
+
+export interface WorkspaceRegionLayout {
+  id: WorkspaceRegionId;
+  size: number;
+  mode: WorkspaceRegionMode;
+}
+
+export interface WorkspacePanelLayout {
+  id: WorkspacePanelKind;
+  region: WorkspaceRegionId;
+  order: number;
+  size: number;
+}
+
+export interface WorkspaceLayout {
+  version: number;
+  regions: WorkspaceRegionLayout[];
+  panels: WorkspacePanelLayout[];
+  updatedAt: string | null;
+}
+
+export interface APILayoutResponse {
+  layout: WorkspaceLayout;
+}
+
+export interface SaveLayoutRequest {
+  layout: WorkspaceLayout;
+}
+
 // ─── Preview types ───
 
 export type PreviewStatus = "detecting" | "starting" | "running" | "crashed" | "stopped";

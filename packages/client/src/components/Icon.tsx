@@ -415,6 +415,24 @@ const SVG_PATHS = {
     ),
   },
 
+  // ── Grip / drag handle ───────────────────────────────────
+  grip: {
+    viewBox: "0 0 16 16",
+    fill: "currentColor",
+    stroke: "none",
+    strokeWidth: "0",
+    children: (
+      <>
+        <circle cx="5" cy="4" r="1" />
+        <circle cx="11" cy="4" r="1" />
+        <circle cx="5" cy="8" r="1" />
+        <circle cx="11" cy="8" r="1" />
+        <circle cx="5" cy="12" r="1" />
+        <circle cx="11" cy="12" r="1" />
+      </>
+    ),
+  },
+
   // ── Terminal ──────────────────────────────────────────────
   // Prompt chevron plus cursor underscore — pure text feel
   terminal: {

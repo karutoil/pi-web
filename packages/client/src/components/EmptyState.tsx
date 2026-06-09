@@ -9,7 +9,7 @@ interface EmptyStateProps {
 
 export function EmptyState({ projects, onSelectProject, onAddProject }: EmptyStateProps) {
   return (
-    <div className="flex-1 flex flex-col items-center justify-center p-4 md:p-8">
+    <div className="flex-1 flex flex-col items-center justify-center p-4 md:p-8 max-h-full max-w-full min-h-0 overflow-hidden">
       <div className="max-w-md w-full text-center animate-fade-in-up">
         {/* Logo */}
         <div className="mb-8">

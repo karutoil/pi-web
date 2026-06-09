@@ -18,7 +18,6 @@ interface ChatInputProps {
   commands: CommandInfo[];
   onRequestCommands: () => void;
   showTerminal?: boolean;
-  onToggleTerminal?: () => void;
   // Extension UI state
   statusEntries: Record<string, string>;
   widgets: Record<string, { lines: string[]; placement: string }>;
@@ -33,7 +32,7 @@ interface ChatInputProps {
 
 interface PendingImage { data: string; mimeType: string; }
 
-export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, onRequestCommands, showTerminal, onToggleTerminal, statusEntries, widgets, autoRetry, onAbortRetry, projectPath, ws, sessionStats }: ChatInputProps) {
+export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, onRequestCommands, showTerminal, statusEntries, widgets, autoRetry, onAbortRetry, projectPath, ws, sessionStats }: ChatInputProps) {
   const [text, setText] = useState("");
   const [showCommands, setShowCommands] = useState(false);
   const [showFileMentions, setShowFileMentions] = useState(false);
@@ -209,7 +208,7 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
   const contextPercent = sessionStats?.contextUsage?.percent ?? null;
 
   return (
-    <div className="px-2 md:px-4 pb-2 md:pb-4 pt-2 flex justify-center mobile-safe-bottom shrink-0">
+    <div className="px-2 md:px-4 pb-2 md:pb-4 pt-2 flex justify-center mobile-safe-bottom shrink-0 max-h-[45vh] overflow-y-auto">
       <div className="max-w-3xl w-full min-w-0">
         {/* Image previews */}
         {pendingImages.length > 0 && (
@@ -308,12 +307,11 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
               )}
 
               {/* Terminal toggle */}
-              {onToggleTerminal && (
+              {showTerminal && (
                 <button
-                  onClick={onToggleTerminal}
-                  className={`p-2 rounded-full transition-theme touch-target ${showTerminal ? "bg-amber-600/20 text-amber-500" : "text-ink-400 hover:text-ink-200 hover:bg-ink-800/40"}`}
-                  title="Toggle terminal"
-                  aria-label="Toggle terminal"
+                  className="p-2 rounded-full bg-amber-600/20 text-amber-500 transition-theme touch-target shrink-0"
+                  title="Terminal open"
+                  aria-label="Terminal open"
                 >
                   <Icon name="terminal" size={14} />
                 </button>

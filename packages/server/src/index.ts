@@ -7,7 +7,7 @@ import { existsSync, statSync, readdirSync, realpathSync } from "node:fs";
 import { readFile, writeFile, unlink, rename as renameFs } from "node:fs/promises";
 import { homedir } from "node:os";
 
-import { addProject, removeProject, listProjects, getProject, touchProject } from "./db";
+import { addProject, removeProject, listProjects, getProject, touchProject, getLayout, saveLayout, deleteLayout } from "./db";
 import { listProjectSessions, getSessionDetail } from "./pi-sessions";
 import { getOrCreateAgent, stopAllAgents, getPoolStats, lookupAgent, detachFromAgent, deleteFromPool, rekeyAgent } from "./pi-agent";
 import { createTerminal, getTerminal, listTerminals, killTerminal } from "./pi-terminal";
@@ -17,7 +17,7 @@ import { getVersionInfo } from "./pi-version";
 import { startPreview, stopPreview, getPreview, listPreviews, addLogListener, stopAllPreviews, setPreviewPort, setPreviewRemoteUrl } from "./pi-preview";
 import { handlePreviewRequest, parsePreviewPath } from "./pi-preview-proxy";
 import { getOverlayJS, getOverlayCSS } from "./pi-preview-overlay";
-import type { WSClientMessage, WSServerMessage } from "@pi-web/shared";
+import type { WSClientMessage, WSServerMessage, WorkspaceLayout } from "@pi-web/shared";
 
 const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>();
 
@@ -107,6 +107,88 @@ function gitResponse(result: GitResult) {
   return { success: true as const, result: result.stdout };
 }
 
+const DEFAULT_WORKSPACE_LAYOUT: WorkspaceLayout = {
+  version: 2,
+  regions: [
+    { id: "left", size: 352, mode: "split" },
+    { id: "center", size: 100, mode: "tabs" },
+    { id: "right", size: 420, mode: "tabs" },
+    { id: "top", size: 220, mode: "tabs" },
+    { id: "bottom", size: 260, mode: "tabs" },
+  ],
+  panels: [
+    { id: "channels", region: "left", order: 0, size: 100 },
+    { id: "chat", region: "center", order: 0, size: 100 },
+    { id: "terminal", region: "bottom", order: 0, size: 100 },
+    { id: "preview", region: "right", order: 0, size: 100 },
+    { id: "git", region: "right", order: 1, size: 100 },
+  ],
+  updatedAt: null,
+};
+
+const WORKSPACE_PANEL_IDS = new Set(["channels", "chat", "terminal", "preview", "git", "rail"]);
+const WORKSPACE_REGION_IDS = new Set(["left", "center", "right", "top", "bottom"]);
+
+function normalizeLayout(input: unknown): WorkspaceLayout {
+  const source = input as Partial<WorkspaceLayout> | null;
+  const regionIds = ["left", "center", "right", "top", "bottom"] as const;
+  const panelIds = ["channels", "chat", "terminal", "preview", "git", "rail"] as const;
+  const seenPanels = new Set<string>();
+
+  const normalizedRegions = regionIds.map((id, index) => {
+    const fallback = DEFAULT_WORKSPACE_LAYOUT.regions[index];
+    const region = Array.isArray(source?.regions) ? source.regions.find(r => r?.id === id) : undefined;
+    const size = typeof region?.size === "number" ? region.size : Number(region?.size);
+    const mode: WorkspaceLayout["regions"][number]["mode"] = region?.mode === "split" ? "split" : "tabs";
+    return {
+      id,
+      size: Number.isFinite(size) ? Math.max(id === "center" ? 80 : 0, Math.min(size, id === "center" ? 100 : 720)) : fallback.size,
+      mode,
+    };
+  });
+
+  const normalizedPanels = Array.isArray(source?.panels)
+    ? source.panels.map((panel, index) => {
+        const id = typeof panel?.id === "string" && WORKSPACE_PANEL_IDS.has(panel.id) ? panel.id : null;
+        if (!id || seenPanels.has(id)) return null;
+        seenPanels.add(id);
+        const fallbackPanel = DEFAULT_WORKSPACE_LAYOUT.panels.find(p => p.id === id);
+        const region = typeof panel?.region === "string" && WORKSPACE_REGION_IDS.has(panel.region) ? panel.region : fallbackPanel?.region ?? "center";
+        const order = Number.isFinite(Number(panel?.order)) ? Number(panel.order) : index;
+        const size = typeof panel?.size === "number" ? panel.size : Number(panel?.size);
+        return {
+          id: id as WorkspaceLayout["panels"][number]["id"],
+          region: region as WorkspaceLayout["panels"][number]["region"],
+          order,
+          size: Number.isFinite(size) ? Math.max(8, Math.min(size, 100)) : fallbackPanel?.size ?? 100,
+        };
+      }).filter((panel): panel is WorkspaceLayout["panels"][number] => panel !== null)
+    : [...DEFAULT_WORKSPACE_LAYOUT.panels];
+
+  const hasRail = normalizedPanels.some(panel => panel.id === "rail");
+  const hasChannels = normalizedPanels.some(panel => panel.id === "channels");
+  if (hasRail && hasChannels) {
+    const merged = normalizedPanels.filter(panel => panel.id !== "rail");
+    normalizedPanels.splice(0, normalizedPanels.length, ...merged);
+    seenPanels.delete("rail");
+  } else if (hasRail && !hasChannels) {
+    normalizedPanels.splice(0, normalizedPanels.length, ...normalizedPanels.map(panel => panel.id === "rail" ? { ...panel, id: "channels" as const } : panel));
+    seenPanels.delete("rail");
+    seenPanels.add("channels");
+  }
+
+  for (const panel of DEFAULT_WORKSPACE_LAYOUT.panels) {
+    if (!seenPanels.has(panel.id)) normalizedPanels.push({ ...panel });
+  }
+
+  return {
+    version: 2,
+    regions: normalizedRegions,
+    panels: normalizedPanels,
+    updatedAt: typeof source?.updatedAt === "string" ? source.updatedAt : null,
+  };
+}
+
 // ==================== REST API ====================
 
 // List projects
@@ -157,6 +239,27 @@ app.delete("/api/projects/:id", (c) => {
   }
   const ok = removeProject(id);
   return c.json({ success: ok }, ok ? 200 : 404);
+});
+
+app.get("/api/layout", (c) => {
+  const key = c.req.query("key") || "workspace";
+  const saved = getLayout(key);
+  return c.json({ layout: saved || DEFAULT_WORKSPACE_LAYOUT });
+});
+
+app.put("/api/layout", async (c) => {
+  const key = c.req.query("key") || "workspace";
+  const body = await c.req.json().catch(() => ({}));
+  const layout = normalizeLayout(body.layout || body);
+  const saved = { ...layout, updatedAt: new Date().toISOString() };
+  saveLayout(key, saved);
+  return c.json({ layout: saved });
+});
+
+app.delete("/api/layout", (c) => {
+  const key = c.req.query("key") || "workspace";
+  deleteLayout(key);
+  return c.json({ layout: DEFAULT_WORKSPACE_LAYOUT });
 });
 
 // List sessions for a project

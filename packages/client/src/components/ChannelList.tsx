@@ -20,6 +20,8 @@ interface ChannelListProps {
   sessions: SessionSummary[];
   activeSession: SessionSummary | null;
   search: string;
+  width?: number;
+  fill?: boolean;
   onSearch: (q: string) => void;
   onSelectSession: (s: SessionSummary) => void;
   onNewSession: () => void;
@@ -106,7 +108,7 @@ function ProjectHeader({
   }, [menu]);
 
   return (
-    <div className="px-3 pt-3 pb-2.5">
+    <div className="shrink-0 px-3 pt-3 pb-2.5">
       <div className="flex items-start gap-2">
         <div className="flex-1 min-w-0">
           <h2
@@ -176,7 +178,7 @@ function SearchBox({
   placeholder?: string;
 }) {
   return (
-    <div className="relative mx-2.5 mb-2">
+    <div className="relative shrink-0 mx-2.5 mb-2">
       <Icon
         name="search"
         size={11}
@@ -212,7 +214,7 @@ function SectionLabel({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between px-3.5 pt-3 pb-1">
+    <div className="shrink-0 flex items-center justify-between px-3.5 pt-3 pb-1">
       <span
         className="text-ink-500 text-[0.58rem] font-mono uppercase tracking-[0.2em]"
       >
@@ -429,7 +431,7 @@ function UserPanel({
   onToggleTheme: () => void;
 }) {
   return (
-    <div className="px-2.5 py-2 border-t border-ink-800/70 bg-ink-950/40">
+    <div className="shrink-0 px-2.5 py-2 border-t border-ink-800/70 bg-ink-950/40">
       <div className="flex items-center gap-2">
         <div className="flex-1 min-w-0">
           <VersionChecker compact />
@@ -454,6 +456,8 @@ export function ChannelList({
   sessions,
   activeSession,
   search,
+  width,
+  fill = false,
   onSearch,
   onSelectSession,
   onNewSession,
@@ -518,7 +522,8 @@ export function ChannelList({
 
   return (
     <aside
-      className="shrink-0 flex flex-col bg-ink-900/35 border-r border-ink-800/70 w-60 overflow-x-hidden"
+      className="shrink-0 flex flex-col min-w-0 min-h-0 bg-ink-900/35 border-r border-ink-800/70 overflow-x-hidden max-h-full max-w-full"
+      style={fill ? { flex: "1 1 0", height: "100%" } : { width: width ? `${width}vw` : 240 }}
       aria-label="Session list"
       onKeyDown={handleKeyDown}
     >
@@ -535,7 +540,7 @@ export function ChannelList({
 
       <div
         ref={listRef}
-        className="flex-1 overflow-y-auto overflow-x-hidden sidebar-scroll pb-2"
+        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden sidebar-scroll pb-2"
         role="list"
       >
         {/* Continue latest — subtle amber action card */}

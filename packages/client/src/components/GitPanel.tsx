@@ -124,9 +124,11 @@ interface GitPanelProps {
   cwd: string | null;
   visible: boolean;
   onClose: () => void;
+  embedded?: boolean;
+  width?: number;
 }
 
-export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
+export function GitPanel({ cwd, visible, onClose, embedded = false, width }: GitPanelProps) {
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -143,12 +145,13 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
   const [diffStats, setDiffStats] = useState<Map<string, GitDiffStats>>(new Map());
   const isMobile = useIsMobile();
 
-  const { width, isDragging, handleMouseDown } = useResizable({
-    defaultWidth: 380,
+  const { width: resizableWidth, isDragging, handleMouseDown } = useResizable({
+    defaultWidth: embedded ? (width ?? 380) : 380,
     minWidth: 260,
     maxWidth: typeof window !== "undefined" ? window.innerWidth * 0.7 : 600,
-    persistKey: "pi-git-width",
+    persistKey: embedded ? undefined : "pi-git-width",
   });
+  const panelWidth = embedded ? "100%" : resizableWidth;
 
   // Fetch status
   const refresh = useCallback(() => {
@@ -360,6 +363,7 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
           onToggleSelect={toggleFileSelect}
           onRefresh={refresh}
           onClose={onClose}
+          embedded={embedded}
         />
       </div>
     );
@@ -368,13 +372,13 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
   // ── Desktop: right-side panel matching PreviewPanel ──
   return (
     <div
-      className="flex flex-col shrink-0 relative select-none border-l border-ink-800/70 bg-ink-900/35"
+      className="flex flex-col shrink-0 h-full min-h-0 min-w-0 max-h-full max-w-full relative select-none border-l border-ink-800/70 bg-ink-900/35"
       style={{
-        width,
+        width: panelWidth,
         ...(isDragging ? { userSelect: "none", transition: "none" } : {}),
       }}
     >
-      {/* Drag handle */}
+      {!embedded && (
       <div
         onMouseDown={handleMouseDown}
         className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize z-10 group/handle"
@@ -383,6 +387,7 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
           <div className="w-0.5 h-10 rounded-full bg-ink-600/60" />
         </div>
       </div>
+      )}
 
       <GitPanelContent
         cwd={cwd}
@@ -423,10 +428,11 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
         onResolveConflict={handleResolveConflict}
         onStageSelected={handleStageSelected}
         onUnstageSelected={handleUnstageSelected}
-        onToggleSelect={toggleFileSelect}
-        onRefresh={refresh}
-        onClose={onClose}
-      />
+          onToggleSelect={toggleFileSelect}
+          onRefresh={refresh}
+          onClose={onClose}
+          embedded={embedded}
+        />
     </div>
   );
 }
@@ -444,7 +450,7 @@ function GitPanelContent({
   onCommit, onPush, onPull, onFetch,
   onViewDiff, onBlame, onComparePrev, onResolveConflict,
   onStageSelected, onUnstageSelected, onToggleSelect,
-  onRefresh, onClose,
+  onRefresh, onClose, embedded,
 }: {
   cwd: string;
   status: GitStatus | null;
@@ -487,6 +493,7 @@ function GitPanelContent({
   onToggleSelect: (path: string, shiftKey: boolean) => void;
   onRefresh: () => void;
   onClose: () => void;
+  embedded?: boolean;
 }) {
   return (
     <>
@@ -524,6 +531,7 @@ function GitPanelContent({
           </button>
         </div>
 
+        {!embedded && (
         <button
           onClick={onClose}
           className="p-1.5 rounded-md text-ink-500 hover:text-ink-200 hover:bg-ink-800/50 transition-theme"
@@ -531,6 +539,7 @@ function GitPanelContent({
         >
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
         </button>
+        )}
       </div>
 
       {/* ── Branch selector ── */}

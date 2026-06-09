@@ -54,7 +54,7 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
   if (isMobile) {
     return (
       <>
-        <div className="shrink-0 border-b border-ink-800 bg-ink-900/30 mobile-safe-top">
+        <div className="shrink-0 max-h-[35vh] overflow-y-auto border-b border-ink-800 bg-ink-900/30 mobile-safe-top">
           {/* Row 1: hamburger + session name + status */}
           <div className="flex items-center gap-2 px-3 py-2">
             {onToggleSidebar && !showSidebar && (
@@ -108,7 +108,7 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
   // ─── Desktop layout — single row, model/thinking moved to ChatInput ───
   return (
     <>
-      <div className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 border-b border-ink-800 bg-ink-900/30 shrink-0 flex-wrap">
+      <div className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-2 border-b border-ink-800 bg-ink-900/30 shrink-0 flex-wrap max-h-[35vh] overflow-y-auto">
         {/* Logo + Session name */}
         <div className="flex-1 min-w-[120px] flex items-center gap-2">
           {onToggleSidebar && !showSidebar && (

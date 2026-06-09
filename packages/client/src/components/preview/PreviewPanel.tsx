@@ -72,6 +72,8 @@ interface PreviewPanelProps {
   preview: PreviewInfo | null;
   onElementSelected?: (token: string, context: string) => void;
   onRefresh?: () => void;
+  embedded?: boolean;
+  width?: number;
 }
 
 export function PreviewPanel({
@@ -81,6 +83,8 @@ export function PreviewPanel({
   onElementSelected,
   preview,
   onRefresh,
+  embedded = false,
+  width,
 }: PreviewPanelProps) {
   const isOpen = usePreviewStore((s) => s.isOpen);
   const setOpen = usePreviewStore((s) => s.setOpen);
@@ -97,12 +101,13 @@ export function PreviewPanel({
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const { postMessage } = usePostMessageBridge(iframeRef);
 
-  const { width, isDragging, handleMouseDown } = useResizable({
-    defaultWidth: 460,
+  const { width: resizableWidth, isDragging, handleMouseDown } = useResizable({
+    defaultWidth: embedded ? (width ?? 460) : 460,
     minWidth: 320,
     maxWidth: typeof window !== "undefined" ? window.innerWidth * 0.7 : 800,
-    persistKey: "pi-preview-width",
+    persistKey: embedded ? undefined : "pi-preview-width",
   });
+  const panelWidth = embedded ? "100%" : resizableWidth;
 
   // Determine backend origin for preview iframe.
   const backendOrigin = (() => {
@@ -187,7 +192,7 @@ export function PreviewPanel({
   };
 
   // ── Closed state: thin toggle strip ──
-  if (!isOpen) {
+  if (!isOpen && !embedded) {
     return (
       <div className="flex flex-col items-center shrink-0 border-l border-ink-800/70 bg-ink-900/35" role="complementary">
         <button
@@ -216,13 +221,13 @@ export function PreviewPanel({
 
   return (
     <div
-      className="flex flex-col shrink-0 relative select-none border-l border-ink-800/70 bg-ink-900/35"
+      className="flex flex-col shrink-0 h-full min-h-0 min-w-0 max-h-full max-w-full relative select-none border-l border-ink-800/70 bg-ink-900/35"
       style={{
-        width,
+        width: panelWidth,
         ...(isDragging ? { userSelect: "none", transition: "none" } : {}),
       }}
     >
-      {/* Drag handle */}
+      {!embedded && (
       <div
         onMouseDown={handleMouseDown}
         className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize z-10 group/handle"
@@ -231,6 +236,7 @@ export function PreviewPanel({
           <div className="w-0.5 h-10 rounded-full bg-ink-600/60" />
         </div>
       </div>
+      )}
 
       {/* ── Header bar — matches ChannelList project header pattern ── */}
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-ink-800/40 shrink-0"
@@ -274,6 +280,7 @@ export function PreviewPanel({
           )}
         </div>
 
+        {!embedded && (
         <button
           onClick={() => setOpen(false)}
           className="p-1.5 rounded-md text-ink-500 hover:text-ink-200 hover:bg-ink-800/50 transition-theme"
@@ -281,10 +288,11 @@ export function PreviewPanel({
         >
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
         </button>
+        )}
       </div>
 
       {/* ── Content area ── */}
-      <div className="flex-1 flex flex-col min-h-0">
+      <div className="flex-1 flex flex-col min-h-0 min-w-0">
 
         {/* ── Idle / Detecting state (also shown when stopped) ── */}
         {(!preview || preview.status === "stopped" || isDetecting) && (

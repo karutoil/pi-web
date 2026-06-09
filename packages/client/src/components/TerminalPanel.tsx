@@ -228,9 +228,10 @@ interface TerminalPanelProps {
   projectPath: string | null;
   visible: boolean;
   onClose: () => void;
+  embedded?: boolean;
 }
 
-export function TerminalPanel({ projectId, projectPath, visible, onClose }: TerminalPanelProps) {
+export function TerminalPanel({ projectId, projectPath, visible, onClose, embedded = false }: TerminalPanelProps) {
   const [tabs, setTabs] = useState<TerminalTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [height, setHeight] = useState(240);
@@ -370,18 +371,19 @@ export function TerminalPanel({ projectId, projectPath, visible, onClose }: Term
   return (
     <>
     {/* Mobile: backdrop behind bottom sheet */}
-    {isMobile && (
+    {isMobile && !embedded && (
       <div className="fixed inset-0 z-39 bg-ink-950/40" onClick={onClose} />
     )}
     <div
       ref={panelRef}
-      className={`flex flex-col bg-ink-900/35 border-t border-ink-800/70 select-none ${
-        isMobile ? "fixed bottom-0 left-0 right-0 z-40 border-t-0 rounded-t-xl mobile-safe-bottom" : ""
+      className={`flex flex-col bg-ink-900/35 border-t border-ink-800/70 select-none h-full min-h-0 min-w-0 max-h-full max-w-full ${
+        isMobile && !embedded ? "fixed bottom-0 left-0 right-0 z-40 border-t-0 rounded-t-xl mobile-safe-bottom" : ""
       }`}
-      style={{ touchAction: "manipulation", ...(isMobile ? { height: `${mobileSnap * 100}vh` } : { height: `${height}px` }) }}
+      style={{ touchAction: "manipulation", ...(embedded ? {} : isMobile ? { height: `${mobileSnap * 100}vh` } : { height: `${height}px` }) }}
     >
       {/* ── Resize handle ── */}
-      {!isMobile ? (
+      {!embedded ? (
+        !isMobile ? (
       <div
         className="h-1.5 cursor-ns-resize flex items-center justify-center group hover:bg-amber-500/10 transition-theme"
         onMouseDown={handleResizeMouseDown}
@@ -398,7 +400,8 @@ export function TerminalPanel({ projectId, projectPath, visible, onClose }: Term
       >
         <div className="w-10 h-1 rounded-full bg-ink-600" />
       </div>
-      )}
+      )
+      ) : null}
 
       {/* ── Tab bar ── */}
       <div className="flex items-center gap-0 px-1 border-b border-ink-800/40 min-h-0">
@@ -436,7 +439,7 @@ export function TerminalPanel({ projectId, projectPath, visible, onClose }: Term
       </div>
 
       {/* ── Terminal content ── */}
-      <div className="flex-1 min-h-0 overflow-hidden">
+      <div className="flex-1 min-h-0 min-w-0 max-h-full max-w-full overflow-hidden">
         {activeTab && (
           <TerminalInstance key={activeTab.id} tab={activeTab} />
         )}

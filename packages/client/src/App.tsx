@@ -1,9 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import type { Project, SessionSummary, SessionDetail, ChatMessage } from "@pi-web/shared";
+import type { Project, SessionSummary, SessionDetail, ChatMessage, WorkspacePanelKind } from "@pi-web/shared";
 import { formatTimeAgo } from "./lib/utils";
 import { SESSION_CACHE_TTL, SESSION_FETCH_DELAY_MS } from "./lib/constants";
-import { ServerRail } from "./components/ServerRail";
-import { ChannelList } from "./components/ChannelList";
 import { ChatView } from "./components/ChatView";
 import { EmptyState } from "./components/EmptyState";
 import { BackgroundSessionToast } from "./components/BackgroundSessionToast";
@@ -11,12 +9,16 @@ import { ConfirmDialog } from "./components/ConfirmDialog";
 import { AddProjectExplorer } from "./components/AddProjectExplorer";
 import { useWebSocketPool } from "./hooks/useWebSocketPool";
 import { useTheme } from "./hooks/useTheme";
-import { useIsMobile } from "./hooks/useIsMobile";
 import { PWABanner } from "./components/PWABanner";
 import { PreviewPanel } from "./components/preview/PreviewPanel";
+import { ProjectSessionSidebar } from "./components/ProjectSessionSidebar";
 import { GitPanel } from "./components/GitPanel";
+import { TerminalPanel } from "./components/TerminalPanel";
 import { usePreviewStore } from "./hooks/usePreviewStore";
 import { useRightPanelStore } from "./hooks/useRightPanelStore";
+import { useWorkspaceLayout } from "./hooks/useWorkspaceLayout";
+import { WorkspaceDock } from "./components/WorkspaceDock";
+import { Icon } from "./components/Icon";
 import { uuidV4 } from "./lib/uuid";
 import { sessionToMarkdown, copyToClipboard } from "./lib/markdownExport";
 
@@ -24,11 +26,8 @@ const MAX_SESSION_CACHE = 50;
 
 export type ViewState = "projects" | "sessions" | "chat";
 
-// Layout state for the Discord-style three-pane shell:
-// - "rail" hidden on mobile until the user opens it
-// - "channels" hidden on mobile after a project is selected
-// - "main" always visible on desktop
-type MobilePane = "rail" | "channels" | "main";
+// Layout state for the dock shell:
+// - "channels" contains Projects + Sessions
 
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -40,10 +39,11 @@ export default function App() {
   const [showAddProject, setShowAddProject] = useState(false);
   const [newSessionId, setNewSessionId] = useState<string | null>(null);
   const [isAddingProject, setIsAddingProject] = useState(false);
-  const [mobilePane, setMobilePane] = useState<MobilePane>("rail");
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [channelSearch, setChannelSearch] = useState("");
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; title: string; message: string; onConfirm: () => void }>({ open: false, title: "", message: "", onConfirm: () => {} });
-  const isMobile = useIsMobile();
+  const workspaceLayout = useWorkspaceLayout();
 
   // Session detail cache with 30s TTL (capped at MAX_SESSION_CACHE entries)
   const sessionCacheRef = useRef<Map<string, { data: SessionDetail; timestamp: number }>>(new Map());
@@ -188,7 +188,40 @@ export default function App() {
     ? previewMap.get(`${selectedProject.id}:default`)
     : null;
 
-  // Fetch preview status when project changes
+  const closedPanels = useMemo(() => [
+    ...(!sidebarOpen ? [{
+      id: "channels" as const,
+      title: "Projects & Sessions",
+      icon: <Icon name="hash" size={10} />,
+      children: null,
+    }] : []),
+    ...(selectedProject && !rightPanel.isOpen("preview") ? [{
+      id: "preview" as const,
+      title: "Preview",
+      icon: <span className="text-xs">◧</span>,
+      children: null,
+    }] : []),
+    ...(selectedProject && !gitOpen ? [{
+      id: "git" as const,
+      title: "Source Control",
+      icon: <Icon name="git" size={10} />,
+      children: null,
+    }] : []),
+    ...(!terminalOpen ? [{
+      id: "terminal" as const,
+      title: "Terminal",
+      icon: <Icon name="terminal" size={10} />,
+      children: null,
+    }] : []),
+  ], [gitOpen, rightPanel, selectedProject, sidebarOpen, terminalOpen]);
+
+  const reopenPanel = useCallback((panelId: WorkspacePanelKind) => {
+    if (panelId === "channels") setSidebarOpen(true);
+    if (panelId === "preview") rightPanel.open("preview");
+    if (panelId === "git") rightPanel.open("git");
+    if (panelId === "terminal") setTerminalOpen(true);
+  }, [rightPanel]);
+
   const fetchPreviews = useCallback(() => {
     if (!selectedProject) return;
     fetch(`/api/preview?projectId=${selectedProject.id}`)
@@ -264,13 +297,11 @@ export default function App() {
     setActiveSession(null);
     setSessionDetail(null);
     setView("sessions");
-    if (isMobile) setMobilePane("channels");
-  }, [isMobile]);
+  }, []);
 
   const handleSelectSession = useCallback(async (session: SessionSummary) => {
     setActiveSession(session);
     setView("chat");
-    if (isMobile) setMobilePane("main");
 
     // Do NOT call `ws.loadSession(...)` here. With the multi-session pool, each
     // session has its own PI process. Sending load_session on the OLD WS would
@@ -308,7 +339,7 @@ export default function App() {
         console.error("Failed to load session detail:", e);
       }
     }
-  }, [ws, isMobile]);
+  }, []);
 
   /**
    * Copy a session's full transcript to the clipboard as raw API markdown.
@@ -352,24 +383,21 @@ export default function App() {
     setSessionDetail(null);
     // #64 — Only set view to 'chat' when a project is selected (ws requires projectId)
     if (selectedProject) setView("chat");
-    if (isMobile) setMobilePane("main");
     // Refresh session list after PI creates the new session file
     safeTimeout(() => fetchSessions(), SESSION_FETCH_DELAY_MS);
-  }, [fetchSessions, isMobile, selectedProject]);
+  }, [fetchSessions, selectedProject]);
 
   const handleBack = useCallback(() => {
     if (view === "chat") {
       setView("sessions");
       setActiveSession(null);
       setSessionDetail(null);
-      if (isMobile) setMobilePane("channels");
     } else if (view === "sessions") {
       setView("projects");
       setSelectedProject(null);
       setSessions([]);
-      if (isMobile) setMobilePane("rail");
     }
-  }, [view, isMobile]);
+  }, [view]);
 
   // New: "go home" — collapse everything, no project selected
   const handleGoHome = useCallback(() => {
@@ -378,8 +406,7 @@ export default function App() {
     setActiveSession(null);
     setSessionDetail(null);
     setSessions([]);
-    if (isMobile) setMobilePane("rail");
-  }, [isMobile]);
+  }, []);
 
   const handleAddProject = useCallback(async (path: string, name: string) => {
     setIsAddingProject(true);
@@ -493,17 +520,13 @@ export default function App() {
 
   // Cmd/Ctrl+N shortcut — new session
   // Cmd/Ctrl+K — quick project switcher (⌘P) by cycling through projects.
-  // Cmd/Ctrl+B — toggle the server rail (mobile only; desktop keeps the rail pinned).
+  // Cmd/Ctrl+B — toggle the project/session sidebar.
   // Cmd/Ctrl+1..9 — jump to a project by index.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "n") {
         e.preventDefault();
         handleNewSession();
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key === "b") {
-        e.preventDefault();
-        setMobilePane(p => (p === "rail" ? "main" : "rail"));
       }
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
@@ -541,92 +564,130 @@ export default function App() {
     <div className="flex h-screen overflow-hidden bg-ink-950">
       <PWABanner />
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-0 focus:left-0 focus:z-80 focus:bg-ink-900 focus:p-4 focus:text-amber-500">Skip to chat</a>
-      {/* Server rail — always visible on desktop; on mobile it overlays everything when active */}
-      {(!isMobile || mobilePane === "rail") && (
-        <ServerRail
-          projects={projects}
-          selectedProject={selectedProject}
-          streamingProjectIds={streamingProjectIds}
-          isAddingProject={isAddingProject}
-          isHomeActive={view === "projects"}
-          onSelectProject={handleSelectProject}
-          onSelectHome={handleGoHome}
-          onAddProject={() => setShowAddProject(true)}
-          onDeleteProject={handleDeleteProject}
-          onRequestConfirm={(title, message, onConfirm) => setConfirmDialog({ open: true, title, message, onConfirm })}
-        />
-      )}
-
-      {/* Channel list — desktop: always visible when a project is selected.
-          Mobile: shown when a project is open and the user hasn't tapped
-          a session yet. */}
-      {selectedProject && (!isMobile || mobilePane === "channels") && (
-        <ChannelList
-          project={selectedProject}
-          sessions={sessions}
-          activeSession={activeSession}
-          search={channelSearch}
-          onSearch={setChannelSearch}
-          onSelectSession={handleSelectSession}
-          onNewSession={handleNewSession}
-          onDeleteSession={handleDeleteSession}
-          onRenameSession={handleRenameSession}
-          onForkSession={handleForkSession}
-          onCopySession={handleCopySession}
-          onRefreshSessions={handleRefreshSessions}
-          onContinueLatest={handleContinueLatest}
-          streamingSessionIds={streamingSessionIds}
-          onDeleteProject={(p) => handleDeleteProject(p.id)}
-          onRequestConfirm={(title, message, onConfirm) => setConfirmDialog({ open: true, title, message, onConfirm })}
-          theme={theme}
-          onToggleTheme={toggleTheme}
-        />
-      )}
-
       <main id="main-content" className="flex-1 flex flex-row min-w-0">
-        <div className="flex-1 flex flex-col min-w-0">
-          {view === "chat" && ws ? (
-            <ChatView
-              ws={ws}
-              sessionDetail={sessionDetail}
-              project={selectedProject}
-              session={activeSession}
-              onToggleSidebar={() => setMobilePane("rail")}
-              showSidebar={false}
-            />
-          ) : view === "sessions" ? (
-            <SessionWelcome
-              project={selectedProject}
-              sessions={sessions}
-              onSelectSession={handleSelectSession}
-            />
-          ) : (
-            <EmptyState
-              projects={projects}
-              onSelectProject={handleSelectProject}
-              onAddProject={() => setShowAddProject(true)}
-            />
-          )}
-        </div>
-
-        {/* Right-side panels — preview + git */}
-        {rightPanel.isOpen("preview") && selectedProject && (
-          <PreviewPanel
-            projectId={selectedProject.id}
-            projectName={selectedProject.name}
-            projectPath={selectedProject.path}
-            preview={activePreview || null}
-            onElementSelected={handleElementSelected}
-            onRefresh={fetchPreviews}
-          />
-        )}
-        {gitOpen && selectedProject && (
-          <GitPanel
-            cwd={selectedProject.path}
-            visible={true}
-            onClose={() => rightPanel.close("git")}
-          />
-        )}
+        <WorkspaceDock
+          layout={workspaceLayout.layout}
+          panels={[
+            ...(sidebarOpen ? [{
+              id: "channels" as const,
+              title: "Projects & Sessions",
+              icon: <Icon name="hash" size={12} />,
+              children: (
+                <ProjectSessionSidebar
+                  projects={projects}
+                  selectedProject={selectedProject}
+                  streamingProjectIds={streamingProjectIds}
+                  isAddingProject={isAddingProject}
+                  sessions={sessions}
+                  activeSession={activeSession}
+                  search={channelSearch}
+                  onSearch={setChannelSearch}
+                  onSelectProject={handleSelectProject}
+                  onSelectSession={handleSelectSession}
+                  onSelectHome={handleGoHome}
+                  onAddProject={() => setShowAddProject(true)}
+                  onNewSession={handleNewSession}
+                  onDeleteProject={(project) => handleDeleteProject(project.id)}
+                  onDeleteSession={handleDeleteSession}
+                  onRenameSession={handleRenameSession}
+                  onForkSession={handleForkSession}
+                  onCopySession={handleCopySession}
+                  onRefreshSessions={handleRefreshSessions}
+                  onContinueLatest={handleContinueLatest}
+                  streamingSessionIds={streamingSessionIds}
+                  onRequestConfirm={(title, message, onConfirm) => setConfirmDialog({ open: true, title, message, onConfirm })}
+                  theme={theme}
+                  onToggleTheme={toggleTheme}
+                />
+              ),
+              onClose: () => setSidebarOpen(false),
+            }] : []),
+            {
+              id: "chat",
+              title: "Conversation",
+              icon: <Icon name="pi-logo" size={12} />,
+              children: (
+                <div className="flex-1 flex flex-col min-w-0 min-h-0">
+                  {view === "chat" && ws ? (
+                    <ChatView
+                      ws={ws}
+                      sessionDetail={sessionDetail}
+                      project={selectedProject}
+                      session={activeSession}
+                      showSidebar={false}
+                    />
+                  ) : view === "sessions" ? (
+                    <SessionWelcome
+                      project={selectedProject}
+                      sessions={sessions}
+                      onSelectSession={handleSelectSession}
+                    />
+                  ) : (
+                    <EmptyState
+                      projects={projects}
+                      onSelectProject={handleSelectProject}
+                      onAddProject={() => setShowAddProject(true)}
+                    />
+                  )}
+                </div>
+              ),
+            },
+            ...(rightPanel.isOpen("preview") && selectedProject ? [{
+              id: "preview" as const,
+              title: "Preview",
+              icon: <span className="text-xs">◧</span>,
+              children: (
+                <PreviewPanel
+                  projectId={selectedProject.id}
+                  projectName={selectedProject.name}
+                  projectPath={selectedProject.path}
+                  preview={activePreview || null}
+                  onElementSelected={handleElementSelected}
+                  onRefresh={fetchPreviews}
+                  embedded
+                />
+              ),
+              onClose: () => rightPanel.close("preview"),
+            }] : []),
+            ...(gitOpen && selectedProject ? [{
+              id: "git" as const,
+              title: "Source Control",
+              icon: <Icon name="git" size={12} />,
+              children: (
+                <GitPanel
+                  cwd={selectedProject.path}
+                  visible={true}
+                  onClose={() => rightPanel.close("git")}
+                  embedded
+                />
+              ),
+              onClose: () => rightPanel.close("git"),
+            }] : []),
+            ...(terminalOpen ? [{
+              id: "terminal" as const,
+              title: "Terminal",
+              icon: <Icon name="terminal" size={12} />,
+              children: (
+                <TerminalPanel
+                  projectId={selectedProject?.id || null}
+                  projectPath={selectedProject?.path || null}
+                  visible={true}
+                  onClose={() => setTerminalOpen(false)}
+                  embedded
+                />
+              ),
+              onClose: () => setTerminalOpen(false),
+            }] : []),
+          ]}
+          onMovePanel={workspaceLayout.movePanel}
+          onResizeRegion={workspaceLayout.resizeRegion}
+          onResizePanel={workspaceLayout.resizePanel}
+          onReset={workspaceLayout.reset}
+          closedPanels={closedPanels}
+          onReopenPanel={reopenPanel}
+          saving={workspaceLayout.saving}
+          error={workspaceLayout.error}
+        />
       </main>
 
       <BackgroundSessionToast
@@ -660,7 +721,7 @@ function SessionWelcome({ project, sessions, onSelectSession }: {
   onSelectSession: (s: SessionSummary) => void;
 }) {
   return (
-    <div className="flex-1 flex flex-col items-center justify-center p-6 md:p-10 mobile-safe-top relative overflow-hidden">
+    <div className="flex-1 flex flex-col items-center justify-center p-6 md:p-10 mobile-safe-top relative overflow-hidden max-h-full max-w-full min-h-0 h-full">
       {/* Decorative paper-grain background tint — subtle manuscript page feel */}
       <div
         className="absolute inset-0 pointer-events-none opacity-[0.025]"
@@ -671,7 +732,7 @@ function SessionWelcome({ project, sessions, onSelectSession }: {
         aria-hidden
       />
 
-      <div className="max-w-xl w-full text-center animate-fade-in-up relative">
+      <div className="max-w-xl w-full max-h-full overflow-y-auto custom-scrollbar text-center animate-fade-in-up relative">
         {/* Editorial header: rule + label + rule */}
         <div className="flex items-center gap-3 mb-6 max-w-md mx-auto">
           <div className="flex-1 h-px bg-gradient-to-r from-transparent via-ink-700/50 to-transparent" />
