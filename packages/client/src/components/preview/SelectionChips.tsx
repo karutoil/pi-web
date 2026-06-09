@@ -27,12 +27,12 @@ export function SelectionChips({ onChipClick, onRemove }: SelectionChipsProps) {
         return (
           <div
             key={el.token}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 font-mono text-[0.65rem] group cursor-pointer hover:bg-amber-500/15 transition-theme"
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-500/[0.08] border border-amber-500/20 text-amber-500 font-mono text-[0.65rem] group cursor-pointer hover:bg-amber-500/[0.14] transition-theme"
             title={`${el.tagName} — ${el.selector.slice(0, 60)}`}
             onClick={() => onChipClick?.(el.selector)}
           >
-            <span className="text-amber-500/70 text-[0.55rem] font-semibold">&lt;{el.tagName}&gt;</span>
-            <span className="text-amber-400/50 truncate max-w-[120px]">
+            <span className="text-amber-600/70 text-[0.55rem] font-semibold">&lt;{el.tagName}&gt;</span>
+            <span className="text-amber-500/50 truncate max-w-[120px]">
               {el.selector.replace(/^html>body>/, "").slice(0, 30)}
             </span>
             <button
@@ -41,7 +41,7 @@ export function SelectionChips({ onChipClick, onRemove }: SelectionChipsProps) {
                 removePickedElement(el.token);
                 onRemove?.(el.token);
               }}
-              className="text-amber-500/40 hover:text-red-400 transition-theme ml-0.5"
+              className="text-amber-500/40 hover:text-rose-400 transition-theme ml-0.5"
               aria-label={`Remove ${el.tagName}`}
             >
               ×

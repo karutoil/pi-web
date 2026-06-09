@@ -461,5 +461,12 @@ window.addEventListener("message",function(event){
   }
 });
 
+// ── Notify parent that overlay is ready ──
+// Send "overlay:ready" so the parent can re-send the current picker state.
+// This handles the race where picker:on was sent before the overlay loaded.
+try{
+  window.parent.postMessage({type:"overlay:ready"},'*');
+}catch(_){}
+
 })();`;
 }

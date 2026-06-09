@@ -14,7 +14,7 @@ import { createTerminal, getTerminal, listTerminals, killTerminal } from "./pi-t
 import { getGitStatus, getGitDiff, gitStage, gitUnstage, gitCommit, gitLog, gitCheckout, gitDiscard, gitBranches, gitPush, gitPull, gitFetch, gitCreateBranch, gitDeleteBranch, gitRenameBranch, gitTags, gitCreateTag, gitDeleteTag, gitStashList, gitStashPush, gitStashPop, gitStashApply, gitStashDrop, gitAmend, gitCherryPick, gitRevert, gitResolveConflict, getGitDiffStats, gitDiffWithRef, gitShowCommit, gitLogSearch, gitBlame, gitRemotes, gitUnstageAll } from "./pi-git";
 import type { GitResult } from "./pi-git";
 import { getVersionInfo } from "./pi-version";
-import { startPreview, stopPreview, getPreview, listPreviews, addLogListener, stopAllPreviews, setPreviewPort } from "./pi-preview";
+import { startPreview, stopPreview, getPreview, listPreviews, addLogListener, stopAllPreviews, setPreviewPort, setPreviewRemoteUrl } from "./pi-preview";
 import { handlePreviewRequest, parsePreviewPath } from "./pi-preview-proxy";
 import { getOverlayJS, getOverlayCSS } from "./pi-preview-overlay";
 import type { WSClientMessage, WSServerMessage } from "@pi-web/shared";
@@ -738,11 +738,14 @@ app.get("/api/preview/:projectId/:label", (c) => {
 // Start a preview
 app.post("/api/preview/start", async (c) => {
   const body = await c.req.json() as any;
-  const { projectId, cwd, label, command, port } = body;
+  const { projectId, cwd, label, command, port, remoteUrl } = body;
   if (!projectId || !cwd) return c.json({ error: "projectId and cwd are required" }, 400);
+  if (!remoteUrl && !port && !command) {
+    // Allow: just projectId + cwd (auto-detect) OR remoteUrl OR port OR command
+  }
 
   try {
-    const preview = await startPreview({ projectId, cwd, label, command, port });
+    const preview = await startPreview({ projectId, cwd, label, command, port, remoteUrl });
     return c.json({ preview }, 201);
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -768,6 +771,20 @@ app.post("/api/preview/:projectId/:label/port", async (c) => {
   return c.json({ preview });
 });
 
+// Update remote URL for a running preview
+app.post("/api/preview/:projectId/:label/remote-url", async (c) => {
+  const { projectId, label } = c.req.param();
+  const { remoteUrl } = await c.req.json() as any;
+  if (!remoteUrl || typeof remoteUrl !== "string") return c.json({ error: "remoteUrl (string) is required" }, 400);
+  try {
+    const preview = await setPreviewRemoteUrl(projectId, label, remoteUrl);
+    if (!preview) return c.json({ error: "Preview not found" }, 404);
+    return c.json({ preview });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 400);
+  }
+});
+
 // Stop all previews for a project
 app.post("/api/preview/:projectId/stop-all", async (c) => {
   const { projectId } = c.req.param();
@@ -787,7 +804,8 @@ app.post("/api/preview/:projectId/:label/open", async (c) => {
 
   try {
     const open = (await import("open")).default;
-    await open(`http://localhost:${preview.port}`);
+    const openUrl = preview.remoteUrl || `http://localhost:${preview.port}`;
+    await open(openUrl);
     return c.json({ success: true });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);

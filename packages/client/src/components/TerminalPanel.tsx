@@ -12,15 +12,79 @@ interface TerminalTab {
   cwd: string;
 }
 
+// ─── Theme-safe xterm colors (match ink palette) ───
+
+const XTERM_THEME_DARK = {
+  background: "#1c1a16",
+  foreground: "#b0a798",
+  cursor: "#d4a020",
+  cursorAccent: "#1c1a16",
+  selectionBackground: "#d4a02040",
+  black: "#1c1a16",
+  red: "#c45454",
+  green: "#6aab73",
+  yellow: "#e2a832",
+  blue: "#6a9ec8",
+  magenta: "#b07dc8",
+  cyan: "#6ab0b8",
+  white: "#b0a798",
+  brightBlack: "#7d7568",
+  brightRed: "#e07070",
+  brightGreen: "#8cc897",
+  brightYellow: "#f0c850",
+  brightBlue: "#8abce0",
+  brightMagenta: "#c89de0",
+  brightCyan: "#8ad0d8",
+  brightWhite: "#faf6ed",
+};
+
+const XTERM_THEME_LIGHT = {
+  background: "#ede7df",
+  foreground: "#423b33",
+  cursor: "#a07508",
+  cursorAccent: "#ede7df",
+  selectionBackground: "#c08d0e40",
+  black: "#ede7df",
+  red: "#b03030",
+  green: "#3a7a43",
+  yellow: "#906a10",
+  blue: "#3a6a98",
+  magenta: "#7a50a0",
+  cyan: "#3a8088",
+  white: "#423b33",
+  brightBlack: "#80776b",
+  brightRed: "#c04040",
+  brightGreen: "#5a9a63",
+  brightYellow: "#b08a20",
+  brightBlue: "#5a8ab8",
+  brightMagenta: "#9a6ac0",
+  brightCyan: "#5aa0a8",
+  brightWhite: "#17120e",
+};
+
 // ─── Single Terminal Instance ───
-// Only rendered when it's the active tab. xterm needs a real visible container.
 
 function TerminalInstance({ tab }: { tab: TerminalTab }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const termRef = useRef<any>(null); // xterm Terminal instance
+  const termRef = useRef<any>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const fitAddonRef = useRef<any>(null);
   const isMobile = useIsMobile();
+
+  // Detect current theme for xterm
+  const [isDark, setIsDark] = useState(() => {
+    try {
+      return document.documentElement.getAttribute("data-theme") === "dark";
+    } catch { return false; }
+  });
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setIsDark(document.documentElement.getAttribute("data-theme") === "dark");
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -31,7 +95,6 @@ function TerminalInstance({ tab }: { tab: TerminalTab }) {
     let fitAddon: any = null;
     let ws: WebSocket | null = null;
 
-    // Dynamic imports for xterm — heavy libs, only load when needed
     Promise.all([
       import("@xterm/xterm"),
       import("@xterm/addon-fit"),
@@ -42,30 +105,8 @@ function TerminalInstance({ tab }: { tab: TerminalTab }) {
       term = new Terminal({
         cursorBlink: true,
         fontSize: isMobile ? 14 : 13,
-        fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
-        theme: {
-          background: "#0d0c0a",
-          foreground: "#c8c0b4",
-          cursor: "#e2a832",
-          cursorAccent: "#0d0c0a",
-          selectionBackground: "#e2a83240",
-          black: "#1c1a16",
-          red: "#c45454",
-          green: "#6aab73",
-          yellow: "#e2a832",
-          blue: "#6a9ec8",
-          magenta: "#b07dc8",
-          cyan: "#6ab0b8",
-          white: "#c8c0b4",
-          brightBlack: "#6e685d",
-          brightRed: "#e07070",
-          brightGreen: "#8cc897",
-          brightYellow: "#f0c850",
-          brightBlue: "#8abce0",
-          brightMagenta: "#c89de0",
-          brightCyan: "#8ad0d8",
-          brightWhite: "#fcfaf6",
-        },
+        fontFamily: "'Geist Mono', 'JetBrains Mono', 'Fira Code', monospace",
+        theme: isDark ? XTERM_THEME_DARK : XTERM_THEME_LIGHT,
         allowProposedApi: true,
         scrollback: 5000,
       });
@@ -99,7 +140,7 @@ function TerminalInstance({ tab }: { tab: TerminalTab }) {
         wsRef.current = ws;
 
         ws.onopen = () => {
-          retryCount = 0; // reset on successful connect
+          retryCount = 0;
           requestAnimationFrame(() => {
             if (destroyed) return;
             try { fitAddon.fit(); } catch {}
@@ -125,7 +166,7 @@ function TerminalInstance({ tab }: { tab: TerminalTab }) {
         ws.onclose = () => {
           if (!destroyed && retryCount < MAX_RETRIES) {
             retryCount++;
-            const delay = Math.min(2000 * Math.pow(2, retryCount - 1), 30000); // exponential backoff, cap 30s
+            const delay = Math.min(2000 * Math.pow(2, retryCount - 1), 30000);
             setTimeout(() => {
               if (!destroyed && containerRef.current) {
                 connectWs();
@@ -137,20 +178,18 @@ function TerminalInstance({ tab }: { tab: TerminalTab }) {
 
       connectWs();
 
-      // Terminal input → WS
       term.onData((data: string) => {
         if (ws && ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: "term_input", data }));
         }
       });
 
-      // Resize handling
       term.onResize(({ cols, rows }: { cols: number; rows: number }) => {
         if (ws && ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: "term_resize", cols, rows }));
         }
       });
-    }); // end Promise.all().then()
+    });
 
     return () => {
       destroyed = true;
@@ -160,7 +199,7 @@ function TerminalInstance({ tab }: { tab: TerminalTab }) {
       termRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [tab.id]);
+  }, [tab.id, isDark]);
 
   // Fit on window resize
   useEffect(() => {
@@ -182,7 +221,7 @@ function TerminalInstance({ tab }: { tab: TerminalTab }) {
   );
 }
 
-// ─── Terminal Panel ───
+// ─── Terminal Panel (bottom) ───
 
 interface TerminalPanelProps {
   projectId: string | null;
@@ -201,12 +240,11 @@ export function TerminalPanel({ projectId, projectPath, visible, onClose }: Term
   const startHeightRef = useRef(0);
   const isMobile = useIsMobile();
 
-  // Mobile: bottom-sheet snap heights as percentage of viewport
+  // Mobile: bottom-sheet snap heights
   const SNAP_POINTS = [0.3, 0.5, 0.7];
-  const [mobileSnap, setMobileSnap] = useState(0.5); // default to 50%
+  const [mobileSnap, setMobileSnap] = useState(0.5);
   const mobileDragStart = useRef<{ y: number; snap: number } | null>(null);
 
-  // Mobile touch drag handler for bottom sheet
   const handleMobileTouchStart = useCallback((e: React.TouchEvent) => {
     mobileDragStart.current = { y: e.touches[0].clientY, snap: mobileSnap };
   }, [mobileSnap]);
@@ -221,11 +259,9 @@ export function TerminalPanel({ projectId, projectPath, visible, onClose }: Term
 
   const handleMobileTouchEnd = useCallback(() => {
     if (mobileDragStart.current === null) return;
-    // Snap to nearest snap point
     const nearest = SNAP_POINTS.reduce((best, point) =>
       Math.abs(point - mobileSnap) < Math.abs(best - mobileSnap) ? point : best
     );
-    // Only snap if close enough, otherwise keep current position
     if (Math.abs(nearest - mobileSnap) < 0.08) {
       setMobileSnap(nearest);
     }
@@ -297,7 +333,6 @@ export function TerminalPanel({ projectId, projectPath, visible, onClose }: Term
       setIsResizing(false);
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
-      // Refit xterm after resize
       requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
     };
 
@@ -340,12 +375,12 @@ export function TerminalPanel({ projectId, projectPath, visible, onClose }: Term
     )}
     <div
       ref={panelRef}
-      className={`flex flex-col bg-ink-950 border-t border-ink-800/60 select-none ${
+      className={`flex flex-col bg-ink-900/35 border-t border-ink-800/70 select-none ${
         isMobile ? "fixed bottom-0 left-0 right-0 z-40 border-t-0 rounded-t-xl mobile-safe-bottom" : ""
       }`}
       style={{ touchAction: "manipulation", ...(isMobile ? { height: `${mobileSnap * 100}vh` } : { height: `${height}px` }) }}
     >
-      {/* ── Resize handle (desktop: drag, mobile: touch drag bottom sheet) ── */}
+      {/* ── Resize handle ── */}
       {!isMobile ? (
       <div
         className="h-1.5 cursor-ns-resize flex items-center justify-center group hover:bg-amber-500/10 transition-theme"
@@ -411,7 +446,7 @@ export function TerminalPanel({ projectId, projectPath, visible, onClose }: Term
               <p className="text-ink-500 text-xs font-mono mb-3">No terminals open</p>
               <button
                 onClick={addTerminal}
-                className="px-3 py-1.5 bg-amber-600/80 hover:bg-amber-500 text-ink-950 text-xs font-medium rounded-md transition-theme"
+                className="px-4 py-2 bg-amber-500/[0.08] border border-amber-500/25 text-amber-500 text-xs font-medium rounded-lg hover:bg-amber-500/[0.14] hover:border-amber-400/45 transition-all"
               >
                 Open Terminal
               </button>
@@ -451,7 +486,7 @@ function TabButton({ tab, isActive, onSelect, onClose, onRename }: {
     <div
       className={`flex items-center gap-1.5 px-2.5 py-1 text-xs cursor-pointer group transition-theme border-b-2 ${
         isActive
-          ? "text-amber-400 bg-ink-900/40 border-b-amber-500"
+          ? "text-amber-500 bg-ink-900/40 border-b-amber-500"
           : "text-ink-500 hover:text-ink-300 border-b-transparent hover:bg-ink-900/20"
       }`}
       onClick={onSelect}
@@ -469,7 +504,7 @@ function TabButton({ tab, isActive, onSelect, onClose, onRename }: {
             if (e.key === "Escape") { setRenameValue(tab.name); setIsRenaming(false); }
           }}
           onClick={e => e.stopPropagation()}
-          className="bg-ink-900 border border-ink-700 rounded px-1 py-0 text-xs text-ink-200 outline-none focus:border-amber-500/50 w-20"
+          className="bg-ink-950/40 border border-ink-800/40 rounded px-1 py-0 text-xs text-ink-200 outline-none focus:border-amber-500/40 w-20 transition-theme"
         />
       ) : (
         <span className="truncate max-w-[100px]">{tab.name}</span>

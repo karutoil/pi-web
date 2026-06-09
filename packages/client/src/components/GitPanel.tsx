@@ -5,6 +5,7 @@ import { GitLog } from "./GitLog";
 import { GitBlame } from "./GitBlame";
 import { GitBranchSelector } from "./GitBranchSelector";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { useResizable } from "../hooks/useResizable";
 
 // ─── Types ───
 
@@ -33,11 +34,11 @@ interface GitStatus {
 
 type ViewMode = "changes" | "log";
 
-// ─── Status badge colors ───
+// ─── Status badge colors — theme-aware tokens ───
 
 const STATUS_COLORS: Record<string, string> = {
-  M: "text-amber-400",
-  A: "text-emerald-400",
+  M: "text-amber-500",
+  A: "text-teal-400",
   D: "text-rose-400",
   R: "text-sky-400",
   C: "text-sky-400",
@@ -58,7 +59,6 @@ function DiffViewer({ diff, path, onClose, showBlame, showComparePrev }: {
   showBlame?: (path: string) => void;
   showComparePrev?: (path: string) => void;
 }) {
-  // Escape to close diff
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -71,7 +71,7 @@ function DiffViewer({ diff, path, onClose, showBlame, showComparePrev }: {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-ink-800/60 bg-ink-900/30 shrink-0">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-ink-800/40 bg-ink-900/30 shrink-0">
         <button onClick={onClose} className="p-1 text-ink-400 hover:text-ink-300 hover:bg-ink-800/50 rounded transition-theme" aria-label="Back">
           <Icon name="chevron-left" size={12} />
         </button>
@@ -84,16 +84,16 @@ function DiffViewer({ diff, path, onClose, showBlame, showComparePrev }: {
         )}
         <button onClick={onClose} className="px-2.5 py-1 text-xs text-ink-400 hover:text-ink-200 bg-ink-800/40 hover:bg-ink-800/60 rounded transition-theme">Back</button>
       </div>
-      <div className="flex-1 overflow-y-auto overflow-x-auto custom-scrollbar font-mono text-xs leading-5 bg-ink-950">
+      <div className="flex-1 overflow-y-auto overflow-x-auto custom-scrollbar font-mono text-xs leading-5 bg-ink-950/40">
         {lines.map((line, i) => {
           let cls = "text-ink-400";
           if (line.startsWith("+++ ") || line.startsWith("--- ") || line.startsWith("diff ")) cls = "text-amber-500 font-bold";
-          else if (line.startsWith("@@")) cls = "text-sky-400/60";
-          else if (line.startsWith("+")) cls = "text-emerald-400";
+          else if (line.startsWith("@@")) cls = "text-ink-500/60";
+          else if (line.startsWith("+")) cls = "text-teal-400";
           else if (line.startsWith("-")) cls = "text-rose-400";
 
           return (
-            <div key={i} className={`px-3 whitespace-pre ${line.startsWith("+") && !line.startsWith("++") ? "bg-emerald-500/5" : line.startsWith("-") && !line.startsWith("--") ? "bg-rose-500/5" : ""}`}>
+            <div key={i} className={`px-3 whitespace-pre ${line.startsWith("+") && !line.startsWith("++") ? "bg-teal-500/5" : line.startsWith("-") && !line.startsWith("--") ? "bg-rose-500/5" : ""}`}>
               <span className={cls}>{line}</span>
             </div>
           );
@@ -107,7 +107,7 @@ function DiffViewer({ diff, path, onClose, showBlame, showComparePrev }: {
 
 function ConflictBanner({ path, onResolve }: { path: string; onResolve: (strategy: "ours" | "theirs" | "both") => void }) {
   return (
-    <div className="px-3 py-2 bg-rose-500/5 border-b border-rose-500/20">
+    <div className="px-3 py-2 bg-rose-400/5 border-b border-rose-400/20">
       <p className="text-rose-400 text-xs font-mono mb-1.5">Merge conflict: {path}</p>
       <div className="flex gap-1.5">
         <button onClick={() => onResolve("ours")} className="px-2.5 py-1.5 text-xs min-h-[36px] bg-ink-800/60 hover:bg-ink-800 text-ink-300 hover:text-ink-100 rounded transition-theme">Accept Current</button>
@@ -118,7 +118,7 @@ function ConflictBanner({ path, onResolve }: { path: string; onResolve: (strateg
   );
 }
 
-// ─── Git Panel ───
+// ─── Git Panel — right-side panel matching PreviewPanel styling ───
 
 interface GitPanelProps {
   cwd: string | null;
@@ -141,11 +141,14 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
   const [committing, setCommitting] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const [diffStats, setDiffStats] = useState<Map<string, GitDiffStats>>(new Map());
-  const [width, setWidth] = useState(340);
-  const isResizing = useRef(false);
-  const startX = useRef(0);
-  const startWidth = useRef(0);
   const isMobile = useIsMobile();
+
+  const { width, isDragging, handleMouseDown } = useResizable({
+    defaultWidth: 380,
+    minWidth: 260,
+    maxWidth: typeof window !== "undefined" ? window.innerWidth * 0.7 : 600,
+    persistKey: "pi-git-width",
+  });
 
   // Fetch status
   const refresh = useCallback(() => {
@@ -158,7 +161,6 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
         if (d.error) { setError(d.error); setStatus(null); }
         else {
           setStatus(d);
-          // Fetch diff stats for each file
           const allFiles = [...(d.staged || []), ...(d.unstaged || [])];
           allFiles.forEach((f: GitFile) => {
             const isStaged = (d.staged || []).some((sf: GitFile) => sf.path === f.path);
@@ -176,25 +178,6 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
   }, [cwd, visible]);
 
   useEffect(() => { refresh(); }, [refresh]);
-
-  // Resize handler
-  const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    isResizing.current = true;
-    startX.current = e.clientX;
-    startWidth.current = width;
-    const handleMouseMove = (ev: MouseEvent) => {
-      const delta = startX.current - ev.clientX;
-      setWidth(Math.max(260, Math.min(600, startWidth.current + delta)));
-    };
-    const handleMouseUp = () => {
-      isResizing.current = false;
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    };
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-  }, [width]);
 
   // Actions
   const handleStage = useCallback(async (path: string) => {
@@ -295,7 +278,6 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
     refresh();
   }, [cwd, refresh]);
 
-  // Multi-select: stage/unstage selected files
   const handleStageSelected = useCallback(async () => {
     if (!cwd || selectedFiles.size === 0) return;
     for (const path of selectedFiles) await handleStage(path);
@@ -330,64 +312,248 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
   if (!visible || !cwd) return null;
 
   const totalChanges = (status?.staged.length || 0) + (status?.unstaged.length || 0) + (status?.untracked.length || 0);
-  const hasConflicts = status?.unstaged.some(f => f.status === "U") || status?.staged.some(f => f.status === "U");
+  const hasConflicts = !!(status?.unstaged.some(f => f.status === "U") || status?.staged.some(f => f.status === "U"));
 
+  // ── Mobile: full-screen overlay ──
+  if (isMobile) {
+    return (
+      <div className="fixed inset-0 z-45 bg-ink-900/35 border-l-0 flex flex-col select-none mobile-safe-top mobile-safe-bottom">
+        <GitPanelContent
+          cwd={cwd}
+          status={status}
+          loading={loading}
+          error={error}
+          view={view}
+          setView={setView}
+          commitMsg={commitMsg}
+          setCommitMsg={setCommitMsg}
+          amend={amend}
+          setAmend={setAmend}
+          committing={committing}
+          diffView={diffView}
+          setDiffView={setDiffView}
+          blameView={blameView}
+          setBlameView={setBlameView}
+          expandedStaged={expandedStaged}
+          expandedChanges={expandedChanges}
+          selectedFiles={selectedFiles}
+          diffStats={diffStats}
+          totalChanges={totalChanges}
+          hasConflicts={hasConflicts}
+          onToggleStaged={() => setExpandedStaged(v => !v)}
+          onToggleChanges={() => setExpandedChanges(v => !v)}
+          onStage={handleStage}
+          onStageAll={handleStageAll}
+          onUnstage={handleUnstage}
+          onUnstageAll={handleUnstageAll}
+          onDiscard={handleDiscard}
+          onCommit={handleCommit}
+          onPush={handlePush}
+          onPull={handlePull}
+          onFetch={handleFetch}
+          onViewDiff={handleViewDiff}
+          onBlame={handleBlame}
+          onComparePrev={handleComparePrev}
+          onResolveConflict={handleResolveConflict}
+          onStageSelected={handleStageSelected}
+          onUnstageSelected={handleUnstageSelected}
+          onToggleSelect={toggleFileSelect}
+          onRefresh={refresh}
+          onClose={onClose}
+        />
+      </div>
+    );
+  }
+
+  // ── Desktop: right-side panel matching PreviewPanel ──
   return (
     <div
-      className={`flex flex-col bg-ink-950 border-l border-ink-800/60 shrink-0 select-none h-full relative mobile-safe-top mobile-safe-bottom ${
-        isMobile ? "fixed inset-0 border-l-0" : ""
-      }`}
-      style={isMobile ? { zIndex: 45 } : { width: `${width}px` }}
+      className="flex flex-col shrink-0 relative select-none border-l border-ink-800/70 bg-ink-900/35"
+      style={{
+        width,
+        ...(isDragging ? { userSelect: "none", transition: "none" } : {}),
+      }}
     >
-      {/* ── Resize handle (desktop only) ── */}
-      {!isMobile && (
+      {/* Drag handle */}
       <div
-        className="w-2 -ml-1 cursor-ew-resize absolute left-0 top-0 bottom-0 z-10 hover:bg-amber-500/30 active:bg-amber-500/20 transition-theme"
-        onMouseDown={handleResizeMouseDown}
+        onMouseDown={handleMouseDown}
+        className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize z-10 group/handle"
+      >
+        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full flex justify-center opacity-0 group-hover/handle:opacity-100 transition-opacity">
+          <div className="w-0.5 h-10 rounded-full bg-ink-600/60" />
+        </div>
+      </div>
+
+      <GitPanelContent
+        cwd={cwd}
+        status={status}
+        loading={loading}
+        error={error}
+        view={view}
+        setView={setView}
+        commitMsg={commitMsg}
+        setCommitMsg={setCommitMsg}
+        amend={amend}
+        setAmend={setAmend}
+        committing={committing}
+        diffView={diffView}
+        setDiffView={setDiffView}
+        blameView={blameView}
+        setBlameView={setBlameView}
+        expandedStaged={expandedStaged}
+        expandedChanges={expandedChanges}
+        selectedFiles={selectedFiles}
+        diffStats={diffStats}
+        totalChanges={totalChanges}
+        hasConflicts={hasConflicts}
+        onToggleStaged={() => setExpandedStaged(v => !v)}
+        onToggleChanges={() => setExpandedChanges(v => !v)}
+        onStage={handleStage}
+        onStageAll={handleStageAll}
+        onUnstage={handleUnstage}
+        onUnstageAll={handleUnstageAll}
+        onDiscard={handleDiscard}
+        onCommit={handleCommit}
+        onPush={handlePush}
+        onPull={handlePull}
+        onFetch={handleFetch}
+        onViewDiff={handleViewDiff}
+        onBlame={handleBlame}
+        onComparePrev={handleComparePrev}
+        onResolveConflict={handleResolveConflict}
+        onStageSelected={handleStageSelected}
+        onUnstageSelected={handleUnstageSelected}
+        onToggleSelect={toggleFileSelect}
+        onRefresh={refresh}
+        onClose={onClose}
       />
-      )}
+    </div>
+  );
+}
 
-      {/* ── Header ── */}
-      <div className="px-3 py-2.5 border-b border-ink-800/60 bg-ink-900/20 shrink-0">
-        <div className="flex items-center gap-2 mb-1.5">
-          <Icon name="git" size={14} className="text-amber-500" />
-          <span className="text-ink-200 text-xs font-semibold tracking-wide flex-1">Source Control</span>
+// ─── Shared content (used by both desktop right-side and mobile full-screen) ───
 
-          {/* Sync buttons */}
-          <div className="flex items-center gap-0.5">
-            <button onClick={handleFetch} className="p-1.5 md:p-1 text-ink-400 hover:text-sky-400 transition-theme rounded hover:bg-ink-800/50 touch-target" aria-label="Fetch" title="Fetch">
-              <Icon name="refresh" size={11} />
-            </button>
-            <button onClick={handlePull} className="p-1.5 md:p-1 text-ink-400 hover:text-emerald-400 transition-theme rounded hover:bg-ink-800/50 touch-target" aria-label="Pull" title="Pull">↓</button>
-            <button onClick={handlePush} className="p-1.5 md:p-1 text-ink-400 hover:text-amber-400 transition-theme rounded hover:bg-ink-800/50 touch-target" aria-label="Push" title="Push">↑</button>
-          </div>
-          <button onClick={refresh} className="p-1.5 md:p-1 text-ink-400 hover:text-amber-500 transition-theme rounded hover:bg-ink-800/50 touch-target" aria-label="Refresh" title="Refresh">
-            <Icon name="refresh" size={12} />
+function GitPanelContent({
+  cwd, status, loading, error, view, setView,
+  commitMsg, setCommitMsg, amend, setAmend, committing,
+  diffView, setDiffView, blameView, setBlameView,
+  expandedStaged, expandedChanges, selectedFiles, diffStats,
+  totalChanges, hasConflicts,
+  onToggleStaged, onToggleChanges,
+  onStage, onStageAll, onUnstage, onUnstageAll, onDiscard,
+  onCommit, onPush, onPull, onFetch,
+  onViewDiff, onBlame, onComparePrev, onResolveConflict,
+  onStageSelected, onUnstageSelected, onToggleSelect,
+  onRefresh, onClose,
+}: {
+  cwd: string;
+  status: GitStatus | null;
+  loading: boolean;
+  error: string | null;
+  view: ViewMode;
+  setView: (v: ViewMode) => void;
+  commitMsg: string;
+  setCommitMsg: (v: string) => void;
+  amend: boolean;
+  setAmend: (v: boolean) => void;
+  committing: boolean;
+  diffView: { path: string; staged: boolean; diff: string } | null;
+  setDiffView: (v: { path: string; staged: boolean; diff: string } | null) => void;
+  blameView: string | null;
+  setBlameView: (v: string | null) => void;
+  expandedStaged: boolean;
+  expandedChanges: boolean;
+  selectedFiles: Set<string>;
+  diffStats: Map<string, GitDiffStats>;
+  totalChanges: number;
+  hasConflicts: boolean;
+  onToggleStaged: () => void;
+  onToggleChanges: () => void;
+  onStage: (path: string) => void;
+  onStageAll: () => void;
+  onUnstage: (path: string) => void;
+  onUnstageAll: () => void;
+  onDiscard: (path: string) => void;
+  onCommit: () => void;
+  onPush: () => void;
+  onPull: () => void;
+  onFetch: () => void;
+  onViewDiff: (path: string, staged: boolean) => void;
+  onBlame: (path: string) => void;
+  onComparePrev: (path: string) => void;
+  onResolveConflict: (path: string, strategy: "ours" | "theirs" | "both") => void;
+  onStageSelected: () => void;
+  onUnstageSelected: () => void;
+  onToggleSelect: (path: string, shiftKey: boolean) => void;
+  onRefresh: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <>
+      {/* ── Header bar — matches PreviewPanel header pattern ── */}
+      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-ink-800/40 shrink-0"
+           style={{ paddingLeft: "1.25rem" }}>
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <span className="text-ink-500 font-mono text-[0.65rem] tracking-[0.15em] uppercase">
+            Source Control
+          </span>
+          {status && (
+            <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[0.55rem] font-mono
+                           bg-amber-500/[0.08] text-amber-500 border border-amber-500/20">
+              {status.branch}
+            </span>
+          )}
+          {status && (status.ahead > 0 || status.behind > 0) && (
+            <span className="text-ink-600 font-mono text-[0.55rem]">
+              {status.ahead > 0 && `↑${status.ahead}`}
+              {status.ahead > 0 && status.behind > 0 && " "}
+              {status.behind > 0 && `↓${status.behind}`}
+            </span>
+          )}
+        </div>
+
+        {/* Sync buttons */}
+        <div className="flex items-center gap-0.5">
+          <button onClick={onFetch} className="p-1 text-ink-500 hover:text-ink-200 hover:bg-ink-800/50 rounded transition-theme" aria-label="Fetch" title="Fetch">
+            <Icon name="refresh" size={11} />
           </button>
-          <button onClick={onClose} className="p-1.5 md:p-1 text-ink-400 hover:text-ink-300 transition-theme rounded hover:bg-ink-800/50 touch-target" aria-label="Close panel">
-            <Icon name="close" size={12} />
+          <button onClick={onPull} className="p-1 text-ink-500 hover:text-teal-400 hover:bg-ink-800/50 rounded transition-theme" aria-label="Pull" title="Pull">↓</button>
+          <button onClick={onPush} className="p-1 text-ink-500 hover:text-amber-500 hover:bg-ink-800/50 rounded transition-theme" aria-label="Push" title="Push">↑</button>
+          <button onClick={onRefresh} className="p-1 text-ink-500 hover:text-amber-500 hover:bg-ink-800/50 rounded transition-theme" aria-label="Refresh" title="Refresh">
+            <Icon name="refresh" size={11} />
           </button>
         </div>
 
-        {status && (
+        <button
+          onClick={onClose}
+          className="p-1.5 rounded-md text-ink-500 hover:text-ink-200 hover:bg-ink-800/50 transition-theme"
+          aria-label="Close panel"
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+        </button>
+      </div>
+
+      {/* ── Branch selector ── */}
+      {status && (
+        <div className="px-3 py-1.5 border-b border-ink-800/30 shrink-0">
           <GitBranchSelector
             cwd={cwd}
             currentBranch={status.branch}
             ahead={status.ahead}
             behind={status.behind}
-            onRefresh={refresh}
+            onRefresh={onRefresh}
           />
-        )}
-      </div>
+        </div>
+      )}
 
       {/* ── Conflict banners ── */}
       {hasConflicts && status && (
         <>
           {status.staged.filter(f => f.status === "U").map(f => (
-            <ConflictBanner key={f.path} path={f.path} onResolve={(s) => handleResolveConflict(f.path, s)} />
+            <ConflictBanner key={f.path} path={f.path} onResolve={(s) => onResolveConflict(f.path, s)} />
           ))}
           {status.unstaged.filter(f => f.status === "U").map(f => (
-            <ConflictBanner key={f.path} path={f.path} onResolve={(s) => handleResolveConflict(f.path, s)} />
+            <ConflictBanner key={f.path} path={f.path} onResolve={(s) => onResolveConflict(f.path, s)} />
           ))}
         </>
       )}
@@ -396,17 +562,15 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
       <div className="flex border-b border-ink-800/40 shrink-0">
         <button
           onClick={() => setView("changes")}
-          className={`flex-1 py-2 text-xs font-medium transition-theme border-b-2 min-h-[44px] ${
-            view === "changes" ? "text-amber-400 border-b-amber-500" : "text-ink-500 border-b-transparent hover:text-ink-300"
-          }`}
+          className={`flex-1 py-2 text-xs font-medium transition-theme border-b-2 min-h-[36px]
+            ${view === "changes" ? "text-amber-500 border-b-amber-500" : "text-ink-500 border-b-transparent hover:text-ink-300"}`}
         >
           Changes {totalChanges > 0 && <span className="text-ink-500 ml-1">({totalChanges})</span>}
         </button>
         <button
           onClick={() => setView("log")}
-          className={`flex-1 py-2 text-xs font-medium transition-theme border-b-2 min-h-[44px] ${
-            view === "log" ? "text-amber-400 border-b-amber-500" : "text-ink-500 border-b-transparent hover:text-ink-300"
-          }`}
+          className={`flex-1 py-2 text-xs font-medium transition-theme border-b-2 min-h-[36px]
+            ${view === "log" ? "text-amber-500 border-b-amber-500" : "text-ink-500 border-b-transparent hover:text-ink-300"}`}
         >
           Log
         </button>
@@ -414,11 +578,11 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
 
       {/* ── Multi-select actions bar ── */}
       {selectedFiles.size > 0 && view === "changes" && (
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/5 border-b border-amber-500/10 shrink-0">
-          <span className="text-amber-400 text-[0.65rem] font-mono">{selectedFiles.size} selected</span>
-          <button onClick={handleStageSelected} className="px-2 py-1 text-xs min-h-[36px] bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 rounded transition-theme">Stage</button>
-          <button onClick={handleUnstageSelected} className="px-2 py-1 text-xs min-h-[36px] bg-ink-800/40 hover:bg-ink-800/60 text-ink-300 rounded transition-theme">Unstage</button>
-          <button onClick={() => setSelectedFiles(new Set())} className="ml-auto text-xs min-h-[36px] text-ink-400 hover:text-ink-300 transition-theme">Clear</button>
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/[0.06] border-b border-amber-500/10 shrink-0">
+          <span className="text-amber-500 text-[0.65rem] font-mono">{selectedFiles.size} selected</span>
+          <button onClick={onStageSelected} className="px-2 py-1 text-xs min-h-[36px] bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 rounded transition-theme">Stage</button>
+          <button onClick={onUnstageSelected} className="px-2 py-1 text-xs min-h-[36px] bg-ink-800/40 hover:bg-ink-800/60 text-ink-300 rounded transition-theme">Unstage</button>
+          <button onClick={() => selectedFiles && (() => {})} className="ml-auto text-xs min-h-[36px] text-ink-400 hover:text-ink-300 transition-theme">Clear</button>
         </div>
       )}
 
@@ -431,8 +595,8 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
             diff={diffView.diff}
             path={diffView.path}
             onClose={() => setDiffView(null)}
-            showBlame={handleBlame}
-            showComparePrev={handleComparePrev}
+            showBlame={onBlame}
+            showComparePrev={onComparePrev}
           />
         ) : view === "changes" ? (
           <ChangesView
@@ -444,53 +608,53 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
             expandedChanges={expandedChanges}
             selectedFiles={selectedFiles}
             diffStats={diffStats}
-            onToggleStaged={() => setExpandedStaged(v => !v)}
-            onToggleChanges={() => setExpandedChanges(v => !v)}
-            onStage={handleStage}
-            onStageAll={handleStageAll}
-            onUnstage={handleUnstage}
-            onUnstageAll={handleUnstageAll}
-            onDiscard={handleDiscard}
-            onViewDiff={handleViewDiff}
-            onBlame={handleBlame}
-            onComparePrev={handleComparePrev}
-            onToggleSelect={toggleFileSelect}
+            onToggleStaged={onToggleStaged}
+            onToggleChanges={onToggleChanges}
+            onStage={onStage}
+            onStageAll={onStageAll}
+            onUnstage={onUnstage}
+            onUnstageAll={onUnstageAll}
+            onDiscard={onDiscard}
+            onViewDiff={onViewDiff}
+            onBlame={onBlame}
+            onComparePrev={onComparePrev}
+            onToggleSelect={onToggleSelect}
           />
         ) : (
-          <GitLog cwd={cwd} onRefresh={refresh} />
+          <GitLog cwd={cwd} onRefresh={onRefresh} />
         )}
       </div>
 
       {/* ── Stash section ── */}
       {view === "changes" && status && status.stashCount > 0 && (
-        <GitStash cwd={cwd} stashCount={status.stashCount} onRefresh={refresh} />
+        <GitStash cwd={cwd} stashCount={status.stashCount} onRefresh={onRefresh} />
       )}
 
       {/* ── Commit input ── */}
       {view === "changes" && (
-        <div className="px-3 py-2.5 border-t border-ink-800/60 bg-ink-900/20 shrink-0">
+        <div className="px-3 py-2.5 border-t border-ink-800/40 bg-ink-900/20 shrink-0">
           <div className="flex items-center gap-2 mb-1.5">
             <textarea
               value={commitMsg}
               onChange={e => setCommitMsg(e.target.value)}
               placeholder={amend ? "Amend commit message" : "Commit message"}
               rows={2}
-              className="flex-1 bg-ink-900/60 border border-ink-800/50 rounded-md px-2.5 py-1.5 text-ink-200 text-xs placeholder-ink-500 outline-none focus:border-amber-500/50 resize-none transition-theme font-mono"
+              className="flex-1 bg-ink-950/40 border border-ink-800/40 rounded-md px-2.5 py-1.5 text-ink-200 text-xs placeholder-ink-500 outline-none focus:border-amber-500/40 resize-none transition-theme font-mono"
               onKeyDown={e => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); handleCommit(); }
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onCommit(); }
               }}
               enterKeyHint="send"
             />
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={handleCommit}
+              onClick={onCommit}
               disabled={!commitMsg.trim() || committing || (!amend && !status?.staged.length)}
-              className={`flex-1 py-1.5 min-h-[44px] rounded-md text-xs font-medium transition-theme ${
-                commitMsg.trim() && (amend || status?.staged.length) && !committing
+              className={`flex-1 py-1.5 min-h-[36px] rounded-md text-xs font-medium transition-theme
+                ${commitMsg.trim() && (amend || status?.staged.length) && !committing
                   ? "bg-amber-600 hover:bg-amber-500 text-ink-950"
                   : "bg-ink-800/40 text-ink-400 cursor-not-allowed"
-              }`}
+                }`}
             >
               {committing ? "…" : amend ? "Amend" : "Commit"}
             </button>
@@ -507,7 +671,7 @@ export function GitPanel({ cwd, visible, onClose }: GitPanelProps) {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -673,7 +837,7 @@ function FileRow({ file, stats, staged, selected, onStage, onUnstage, onDiscard,
 
   return (
     <div
-      className={`flex items-center gap-1 px-3 py-1 hover:bg-ink-900/30 transition-theme group cursor-pointer ${selected ? "bg-amber-500/5" : ""}`}
+      className={`flex items-center gap-1 px-3 py-1 hover:bg-ink-900/30 transition-theme group cursor-pointer ${selected ? "bg-amber-500/[0.06]" : ""}`}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onClick={(e) => {
@@ -709,7 +873,7 @@ function FileRow({ file, stats, staged, selected, onStage, onUnstage, onDiscard,
       {/* Diff stats */}
       {stats && (stats.additions > 0 || stats.deletions > 0) && !showActions && (
         <span className="text-[0.6rem] font-mono shrink-0">
-          <span className="text-emerald-400">+{stats.additions}</span>
+          <span className="text-teal-400">+{stats.additions}</span>
           <span className="text-rose-400">-{stats.deletions}</span>
         </span>
       )}
@@ -733,7 +897,7 @@ function FileRow({ file, stats, staged, selected, onStage, onUnstage, onDiscard,
             </button>
           )}
           {onBlame && file.status !== "?" && !isMobile && (
-            <button onClick={(e) => { e.stopPropagation(); onBlame(file.path); }} className="p-1 md:p-0.5 text-ink-500 hover:text-sky-400 transition-theme touch-target" aria-label="Blame" title="Blame">B</button>
+            <button onClick={(e) => { e.stopPropagation(); onBlame(file.path); }} className="p-1 md:p-0.5 text-ink-500 hover:text-ink-200 transition-theme touch-target" aria-label="Blame" title="Blame">B</button>
           )}
           {onComparePrev && file.status !== "?" && !isMobile && (
             <button onClick={(e) => { e.stopPropagation(); onComparePrev(file.path); }} className="p-1 md:p-0.5 text-ink-500 hover:text-amber-400 transition-theme touch-target" aria-label="Compare with previous" title="Compare with previous">⇄</button>
@@ -742,20 +906,4 @@ function FileRow({ file, stats, staged, selected, onStage, onUnstage, onDiscard,
       )}
     </div>
   );
-}
-
-// ─── Helpers ───
-
-function formatRelativeDate(isoDate: string): string {
-  const d = new Date(isoDate);
-  const now = new Date();
-  const diffMs = Math.max(0, now.getTime() - d.getTime());
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return "just now";
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  const diffDay = Math.floor(diffHr / 24);
-  if (diffDay < 30) return `${diffDay}d ago`;
-  return d.toLocaleDateString();
 }

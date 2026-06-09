@@ -381,6 +381,8 @@ export interface PreviewInfo {
   detectedPorts: number[];
   /** Health-poll timer handle (for server internal use) */
   healthTimer: ReturnType<typeof setInterval> | null;
+  /** Remote URL to proxy to (e.g. "https://panel.catalystctl.com"). When set, no local dev server is spawned. */
+  remoteUrl?: string;
 }
 
 export interface PreviewStartRequest {
@@ -389,6 +391,8 @@ export interface PreviewStartRequest {
   label?: string;
   command?: string;
   port?: number;
+  /** Remote URL to proxy to instead of a local dev server */
+  remoteUrl?: string;
 }
 
 export interface SerializedElement {

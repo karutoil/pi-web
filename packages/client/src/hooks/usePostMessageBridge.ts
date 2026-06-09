@@ -13,7 +13,8 @@ export type PreviewMessage =
   | { type: "element:selected"; payload: SerializedElement; autoSend?: boolean; message?: string }
   | { type: "console:error"; payload: { message: string; timestamp: number } }
   | { type: "console:warn"; payload: { message: string; timestamp: number } }
-  | { type: "console:log"; payload: { message: string; timestamp: number } };
+  | { type: "console:log"; payload: { message: string; timestamp: number } }
+  | { type: "overlay:ready" };
 
 export function usePostMessageBridge(
   iframeRef: React.RefObject<HTMLIFrameElement | null>,
@@ -22,9 +23,33 @@ export function usePostMessageBridge(
   const addConsoleLog = usePreviewStore((s) => s.addConsoleLog);
   const pickerActive = usePreviewStore((s) => s.pickerActive);
 
-  // Keep ref for picker toggle to avoid stale closure
+  // Keep refs for callbacks to avoid stale closures
   const pickerActiveRef = useRef(pickerActive);
   useEffect(() => { pickerActiveRef.current = pickerActive; }, [pickerActive]);
+
+  // Send message to iframe
+  const postMessage = useCallback(
+    (msg: { type: string; [k: string]: unknown }) => {
+      const el = iframeRef.current;
+      if (el?.contentWindow) {
+        el.contentWindow.postMessage(msg, '*');
+      }
+    },
+    [iframeRef],
+  );
+
+  // Send current picker state to the iframe overlay
+  const sendPickerState = useCallback(() => {
+    if (pickerActiveRef.current) {
+      postMessage({ type: "picker:on" });
+    } else {
+      postMessage({ type: "picker:off" });
+    }
+  }, [postMessage]);
+
+  // Ref so the message handler can call sendPickerState without stale closure
+  const sendPickerStateRef = useRef(sendPickerState);
+  useEffect(() => { sendPickerStateRef.current = sendPickerState; }, [sendPickerState]);
 
   // Listen for messages from iframe
   useEffect(() => {
@@ -55,6 +80,11 @@ export function usePostMessageBridge(
         case "console:log":
           addConsoleLog({ level: "log", message: msg.payload.message, timestamp: msg.payload.timestamp });
           break;
+        case "overlay:ready":
+          // Overlay finished loading — re-send current picker state
+          // so the overlay doesn't miss picker:on sent before it loaded
+          sendPickerStateRef.current();
+          break;
       }
     }
 
@@ -62,25 +92,10 @@ export function usePostMessageBridge(
     return () => window.removeEventListener("message", handler);
   }, [addPickedElement, addConsoleLog]);
 
-  // Send message to iframe
-  const postMessage = useCallback(
-    (msg: { type: string; [k: string]: unknown }) => {
-      const el = iframeRef.current;
-      if (el?.contentWindow) {
-        el.contentWindow.postMessage(msg, '*');
-      }
-    },
-    [iframeRef],
-  );
-
   // Toggle picker in iframe when store changes
   useEffect(() => {
-    if (pickerActiveRef.current) {
-      postMessage({ type: "picker:on" });
-    } else {
-      postMessage({ type: "picker:off" });
-    }
-  }, [pickerActive, postMessage]);
+    sendPickerState();
+  }, [pickerActive, sendPickerState]);
 
   return { postMessage };
 }

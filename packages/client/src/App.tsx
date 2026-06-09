@@ -14,7 +14,9 @@ import { useTheme } from "./hooks/useTheme";
 import { useIsMobile } from "./hooks/useIsMobile";
 import { PWABanner } from "./components/PWABanner";
 import { PreviewPanel } from "./components/preview/PreviewPanel";
+import { GitPanel } from "./components/GitPanel";
 import { usePreviewStore } from "./hooks/usePreviewStore";
+import { useRightPanelStore } from "./hooks/useRightPanelStore";
 import { uuidV4 } from "./lib/uuid";
 import { sessionToMarkdown, copyToClipboard } from "./lib/markdownExport";
 
@@ -170,8 +172,16 @@ export default function App() {
 
   const [theme, toggleTheme] = useTheme();
 
-  // ── Preview state ──
+  // ── Right panel state (preview + git) ──
   const previewOpen = usePreviewStore((s) => s.isOpen);
+  const rightPanel = useRightPanelStore();
+  const gitOpen = rightPanel.isOpen("git");
+
+  // Sync preview store → right panel store
+  useEffect(() => {
+    if (previewOpen && !rightPanel.isOpen("preview")) rightPanel.open("preview");
+    if (!previewOpen && rightPanel.isOpen("preview")) rightPanel.close("preview");
+  }, [previewOpen]);
   const setPreviews = usePreviewStore((s) => s.setPreviews);
   const previewMap = usePreviewStore((s) => s.previews);
   const activePreview = selectedProject
@@ -599,8 +609,8 @@ export default function App() {
           )}
         </div>
 
-        {/* Preview panel — slides out from right side */}
-        {previewOpen && selectedProject && (
+        {/* Right-side panels — preview + git */}
+        {rightPanel.isOpen("preview") && selectedProject && (
           <PreviewPanel
             projectId={selectedProject.id}
             projectName={selectedProject.name}
@@ -608,6 +618,13 @@ export default function App() {
             preview={activePreview || null}
             onElementSelected={handleElementSelected}
             onRefresh={fetchPreviews}
+          />
+        )}
+        {gitOpen && selectedProject && (
+          <GitPanel
+            cwd={selectedProject.path}
+            visible={true}
+            onClose={() => rightPanel.close("git")}
           />
         )}
       </main>

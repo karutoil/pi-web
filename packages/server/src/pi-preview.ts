@@ -159,6 +159,7 @@ export async function startPreview(opts: {
   label?: string;
   port?: number;
   command?: string;
+  remoteUrl?: string;
   onLog?: LogCallback;
 }): Promise<PreviewInfo> {
   const label = opts.label || "default";
@@ -168,6 +169,36 @@ export async function startPreview(opts: {
   const existing = previews.get(k);
   if (existing && (existing.status === "running" || existing.status === "starting")) {
     await stopPreview(opts.projectId, label);
+  }
+
+  // ── Remote URL mode: no dev server spawned, just proxy to a public URL ──
+  if (opts.remoteUrl) {
+    let remoteUrl = opts.remoteUrl;
+    // Ensure the URL has a protocol
+    if (!/^https?:\/\//i.test(remoteUrl)) remoteUrl = "https://" + remoteUrl;
+    // Validate that the URL parses
+    try { new URL(remoteUrl); } catch { throw new Error(`Invalid remote URL: ${remoteUrl}`); }
+
+    const id = nanoid(12);
+    const info: PreviewInfo = {
+      id,
+      projectId: opts.projectId,
+      label,
+      port: 0,
+      url: `/preview/${opts.projectId}/${label}/`,
+      status: "running",
+      logs: [`[system] Proxying to remote URL: ${remoteUrl}`],
+      startedAt: Date.now(),
+      command: null,
+      process: null,
+      cwd: opts.cwd,
+      detectedPorts: [],
+      healthTimer: null,
+      remoteUrl,
+    };
+    previews.set(k, info);
+    await persistPreviews();
+    return info;
   }
 
   let command = opts.command;
@@ -475,6 +506,20 @@ export async function setPreviewPort(projectId: string, label: string, newPort: 
 
 export function getPreview(projectId: string, label: string): PreviewInfo | null {
   return previews.get(key(projectId, label)) || null;
+}
+
+/** Update the remote URL for a running preview */
+export async function setPreviewRemoteUrl(projectId: string, label: string, newRemoteUrl: string): Promise<PreviewInfo | null> {
+  const k = key(projectId, label);
+  const info = previews.get(k);
+  if (!info) return null;
+  // Ensure URL has protocol
+  if (!/^https?:\/\//i.test(newRemoteUrl)) newRemoteUrl = "https://" + newRemoteUrl;
+  try { new URL(newRemoteUrl); } catch { throw new Error(`Invalid remote URL: ${newRemoteUrl}`); }
+  info.remoteUrl = newRemoteUrl;
+  info.logs.push(`[system] Switched proxy to remote URL: ${newRemoteUrl}`);
+  await persistPreviews();
+  return info;
 }
 
 export function listPreviews(projectId?: string): PreviewInfo[] {

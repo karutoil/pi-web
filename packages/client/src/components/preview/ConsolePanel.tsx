@@ -11,8 +11,8 @@ interface ConsolePanelProps {
 }
 
 const LEVEL_STYLES: Record<ConsoleEntry["level"], string> = {
-  error: "text-red-400 bg-red-500/5 border-red-500/15",
-  warn: "text-amber-400 bg-amber-500/5 border-amber-500/15",
+  error: "text-rose-400 bg-rose-400/5 border-rose-400/15",
+  warn: "text-amber-500 bg-amber-400/5 border-amber-400/15",
   log: "text-ink-300 border-ink-800",
 };
 
@@ -39,12 +39,12 @@ export function ConsolePanel({ logs, onClear }: ConsolePanelProps) {
   return (
     <div className="flex flex-col flex-1 min-h-0">
       {/* Summary bar */}
-      <div className="flex items-center gap-3 px-3 py-2 border-b border-ink-800 shrink-0 pl-5">
-        <span className="flex items-center gap-1 text-[0.6rem] font-mono text-red-400">
-          <span className="w-2 h-2 rounded-full bg-red-500 inline-block" />
+      <div className="flex items-center gap-3 px-3 py-2 border-b border-ink-800/40 shrink-0 pl-5">
+        <span className="flex items-center gap-1 text-[0.6rem] font-mono text-rose-400">
+          <span className="w-2 h-2 rounded-full bg-rose-400 inline-block" />
           {errors.length}
         </span>
-        <span className="flex items-center gap-1 text-[0.6rem] font-mono text-amber-400">
+        <span className="flex items-center gap-1 text-[0.6rem] font-mono text-amber-500">
           <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
           {warnings.length}
         </span>
@@ -54,7 +54,7 @@ export function ConsolePanel({ logs, onClear }: ConsolePanelProps) {
         <div className="flex-1" />
         <button
           onClick={onClear}
-          className="text-ink-500 hover:text-ink-200 font-mono text-[0.6rem] transition-theme"
+          className="text-ink-500 hover:text-ink-200 hover:bg-ink-800/40 px-1.5 py-0.5 rounded font-mono text-[0.6rem] transition-theme"
         >
           Clear
         </button>
@@ -67,7 +67,7 @@ export function ConsolePanel({ logs, onClear }: ConsolePanelProps) {
             No console output yet.
           </div>
         ) : (
-          <div className="divide-y divide-ink-800/50">
+          <div className="divide-y divide-ink-800/30">
             {logs.map((entry, i) => (
               <div
                 key={i}
@@ -78,9 +78,9 @@ export function ConsolePanel({ logs, onClear }: ConsolePanelProps) {
                     className={
                       "text-[0.55rem] font-semibold uppercase shrink-0 mt-px " +
                       (entry.level === "error"
-                        ? "text-red-400"
+                        ? "text-rose-400"
                         : entry.level === "warn"
-                        ? "text-amber-400"
+                        ? "text-amber-500"
                         : "text-ink-500")
                     }
                   >

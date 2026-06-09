@@ -6,10 +6,10 @@ import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
 import { ChatHeader } from "./ChatHeader";
 import { usePreviewStore } from "../hooks/usePreviewStore";
+import { useRightPanelStore } from "../hooks/useRightPanelStore";
 import { ExtensionUIModal } from "./ExtensionUIModal";
 import { Icon } from "./Icon";
 import { TerminalPanel } from "./TerminalPanel";
-import { GitPanel } from "./GitPanel";
 import { SessionActions } from "./SessionActions";
 import { GitBranchSelector } from "./GitBranchSelector";
 import { CompactionIndicator } from "./CompactionIndicator";
@@ -66,13 +66,15 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
   const [showThinking, setShowThinking] = useState(true);
   const previewOpen = usePreviewStore((s) => s.isOpen);
   const togglePreview = useCallback(() => usePreviewStore.getState().setOpen(!usePreviewStore.getState().isOpen), []);
+  const rightPanel = useRightPanelStore();
+  const gitOpen = rightPanel.isOpen("git");
+  const toggleGit = useCallback(() => rightPanel.toggle("git"), [rightPanel]);
   const [srAnnouncement, setSrAnnouncement] = useState('');
   const [autoScroll, setAutoScroll] = useState(true);
   const autoScrollRef = useRef(true);
   useEffect(() => { autoScrollRef.current = autoScroll; }, [autoScroll]);
   const contentRef = useRef<HTMLDivElement>(null);
   const [showTerminal, setShowTerminal] = useState(false);
-  const [showGit, setShowGit] = useState(false);
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Virtualization: only render the last RENDER_LIMIT messages
@@ -288,17 +290,17 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
 
   return (
     <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden relative">
-      <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} onToggleGit={() => setShowGit(v => !v)} showGit={showGit} onToggleSidebar={onToggleSidebar} showSidebar={showSidebar} onSessionActions={() => setShowSessionActions(true)} onTogglePreview={togglePreview} showPreview={previewOpen} />
+      <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} onToggleGit={toggleGit} showGit={gitOpen} onToggleSidebar={onToggleSidebar} showSidebar={showSidebar} onSessionActions={() => setShowSessionActions(true)} onTogglePreview={togglePreview} showPreview={previewOpen} onToggleTerminal={() => setShowTerminal(v => !v)} showTerminal={showTerminal} />
 
       <div aria-live="polite" className="sr-only">{srAnnouncement}</div>
 
-      {/* Main content row: chat area + git panel */}
+      {/* Main content row: chat area + right-side panels */}
       <div className="flex-1 flex min-h-0 overflow-hidden relative">
         {/* Loading overlay — blurs + blocks interaction until connected + state received */}
         {isLoading && <SessionLoadingOverlay />}
 
-        {/* Chat column */}
-        <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
+        {/* Chat column — takes remaining space after terminal panel */}
+        <div className={`flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden ${showTerminal ? '' : ''}`}>
           <div
             ref={scrollRef}
             onScroll={handleScroll}
@@ -453,13 +455,6 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
         )}
       </div>
 
-      {/* Terminal panel */}
-      <TerminalPanel
-        projectId={project?.id || null}
-        projectPath={project?.path || null}
-        visible={showTerminal}
-        onClose={() => setShowTerminal(false)}
-      />
       {/* Extension error toasts — inline above input */}
       <ExtensionErrorToast
         errors={extensionErrorList}
@@ -503,14 +498,15 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
         </div>
       )}
     </div>{/* end chat column */}
-
-    {/* Git panel */}
-    <GitPanel
-      cwd={cwd}
-      visible={showGit}
-      onClose={() => setShowGit(false)}
-    />
   </div>{/* end main content row */}
+
+  {/* Terminal panel — below the entire chat area, as a separate bottom panel */}
+  <TerminalPanel
+    projectId={project?.id || null}
+    projectPath={project?.path || null}
+    visible={showTerminal}
+    onClose={() => setShowTerminal(false)}
+  />
 
       {/* Extension UI Modal — dialog methods (confirm, select, input, editor) */}
       {ws.pendingDialog && (

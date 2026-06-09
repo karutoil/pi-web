@@ -1,9 +1,10 @@
 /**
  * PreviewPanel — Right-side developer viewport.
  *
- * Design direction: "Dark Viewfinder" — a focused observation tool.
- * Deep espresso blacks, amber glow accents, monospace precision.
- * One clear CTA, obvious state transitions, zero confusion.
+ * Design direction: Theme-aware "Viewfinder" — a focused observation tool
+ * that adapts to both light and dark ink palettes. Uses the same ink color
+ * tokens as the rest of the shell, with amber glow accents and monospace
+ * precision. No hardcoded dark-mode colors.
  *
  * States:
  *   • Idle       — "Start Preview" button, project name hint
@@ -91,6 +92,8 @@ export function PreviewPanel({
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [manualPort, setManualPort] = useState<string>("");
+  const [remoteUrl, setRemoteUrl] = useState<string>("");
+  const [inputMode, setInputMode] = useState<"port" | "url">("port");
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const { postMessage } = usePostMessageBridge(iframeRef);
 
@@ -102,10 +105,6 @@ export function PreviewPanel({
   });
 
   // Determine backend origin for preview iframe.
-  // MUST go directly to the Hono server, NOT through Vite (which has its own
-  // SPA fallback that would serve pi-web'\''s index.html instead of the proxied app).
-  // In dev: Hono is on port 3069 (from package.json "dev:server" script).
-  // In prod: Hono serves the client on the same origin.
   const backendOrigin = (() => {
     try {
       if (import.meta.env?.DEV) return 'http://localhost:3069';
@@ -126,12 +125,13 @@ export function PreviewPanel({
   }, [pickedElements.length]);
 
   // ── Actions ──
-  const startPreview = useCallback(async (overridePort?: number) => {
+  const startPreview = useCallback(async (overridePort?: number, overrideRemoteUrl?: string) => {
     setStarting(true);
     setStartError(null);
     try {
       const body: any = { projectId, cwd: projectPath, label: "default" };
-      if (overridePort) body.port = overridePort;
+      if (overrideRemoteUrl) body.remoteUrl = overrideRemoteUrl;
+      else if (overridePort) body.port = overridePort;
       const r = await fetch("/api/preview/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -189,11 +189,11 @@ export function PreviewPanel({
   // ── Closed state: thin toggle strip ──
   if (!isOpen) {
     return (
-      <div className="flex flex-col items-center shrink-0 border-l border-ink-800/60 bg-ink-950/80" role="complementary">
+      <div className="flex flex-col items-center shrink-0 border-l border-ink-800/70 bg-ink-900/35" role="complementary">
         <button
           onClick={() => setOpen(true)}
           className="flex-1 flex flex-col items-center justify-center gap-1.5 px-2 w-9
-                     text-ink-500 hover:text-amber-400 hover:bg-ink-900/60 transition-colors
+                     text-ink-500 hover:text-amber-500 hover:bg-ink-850/40 transition-theme
                      group"
           aria-label="Open preview"
           title="Preview"
@@ -203,7 +203,7 @@ export function PreviewPanel({
             PREVIEW
           </span>
           {preview?.status === "running" && (
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+            <span className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse shrink-0" />
           )}
         </button>
       </div>
@@ -216,10 +216,9 @@ export function PreviewPanel({
 
   return (
     <div
-      className="flex flex-col shrink-0 relative select-none border-l border-ink-800/60"
+      className="flex flex-col shrink-0 relative select-none border-l border-ink-800/70 bg-ink-900/35"
       style={{
         width,
-        background: "linear-gradient(180deg, rgba(15,14,13,0.98) 0%, rgba(10,9,8,0.98) 100%)",
         ...(isDragging ? { userSelect: "none", transition: "none" } : {}),
       }}
     >
@@ -233,38 +232,43 @@ export function PreviewPanel({
         </div>
       </div>
 
-      {/* ── Header bar ── */}
+      {/* ── Header bar — matches ChannelList project header pattern ── */}
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-ink-800/40 shrink-0"
            style={{ paddingLeft: "1.25rem" }}>
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <span className="text-ink-400 font-mono text-[0.65rem] tracking-[0.15em] uppercase truncate">
+          <span className="text-ink-500 font-mono text-[0.65rem] tracking-[0.15em] uppercase truncate">
             {projectName}
           </span>
           {isRunning && (
             <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[0.55rem] font-mono
-                           bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              <span className="w-1 h-1 rounded-full bg-emerald-400" />
-              Live
+                           bg-teal-400/10 text-teal-500 border border-teal-400/20">
+              <span className="w-1 h-1 rounded-full bg-teal-400" />
+              {preview?.remoteUrl ? "Remote" : "Live"}
+            </span>
+          )}
+          {isRunning && preview?.remoteUrl && (
+            <span className="text-ink-600 font-mono text-[0.55rem] truncate" title={preview.remoteUrl}>
+              {preview.remoteUrl.replace(/^https?:\/\//, "")}
             </span>
           )}
           {isDetecting && (
             <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[0.55rem] font-mono
-                           bg-blue-500/10 text-blue-400 border border-blue-500/20">
-              <span className="w-1 h-1 rounded-full bg-blue-400 animate-pulse" />
+                           bg-ink-400/10 text-ink-500 border border-ink-400/20">
+              <span className="w-1 h-1 rounded-full bg-ink-500 animate-pulse" />
               Detecting
             </span>
           )}
           {isStarting && (
             <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[0.55rem] font-mono
-                           bg-amber-500/10 text-amber-400 border border-amber-500/20">
-              <span className="w-1 h-1 rounded-full bg-amber-400 animate-pulse" />
+                           bg-amber-400/10 text-amber-500 border border-amber-400/20">
+              <span className="w-1 h-1 rounded-full bg-amber-500 animate-pulse" />
               Starting
             </span>
           )}
           {preview?.status === "crashed" && (
             <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[0.55rem] font-mono
-                           bg-red-500/10 text-red-400 border border-red-500/20">
-              <span className="w-1 h-1 rounded-full bg-red-400" />
+                           bg-rose-400/10 text-rose-400 border border-rose-400/20">
+              <span className="w-1 h-1 rounded-full bg-rose-400" />
               Crashed
             </span>
           )}
@@ -272,7 +276,7 @@ export function PreviewPanel({
 
         <button
           onClick={() => setOpen(false)}
-          className="p-1.5 rounded-md text-ink-500 hover:text-ink-200 hover:bg-ink-800/50 transition-colors"
+          className="p-1.5 rounded-md text-ink-500 hover:text-ink-200 hover:bg-ink-800/50 transition-theme"
           aria-label="Close preview"
         >
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
@@ -282,70 +286,140 @@ export function PreviewPanel({
       {/* ── Content area ── */}
       <div className="flex-1 flex flex-col min-h-0">
 
-        {/* ── Idle / Detecting state ── */}
-        {(!preview || isDetecting) && (
-          <div className="flex-1 flex flex-col items-center justify-center gap-5 p-6">
+        {/* ── Idle / Detecting state (also shown when stopped) ── */}
+        {(!preview || preview.status === "stopped" || isDetecting) && (
+          <div className="flex-1 flex flex-col items-center justify-center gap-5 p-6 relative">
+            {/* Ambient glow — uses ink tokens for theme-safe tinting */}
             <div className="absolute inset-0 overflow-hidden pointer-events-none">
               <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2
                             w-48 h-48 rounded-full bg-amber-500/[0.03] blur-3xl" />
             </div>
 
             {!isDetecting ? (
-              /* ── Truly idle: show Start button + manual port input ── */
+              /* ── Truly idle: show Start button + manual port/URL input ── */
               <>
                 <div className="flex flex-col items-center gap-3 relative">
                   <div className="w-12 h-12 rounded-2xl border border-ink-700/60 flex items-center justify-center
-                                bg-ink-900/40 shadow-[0_0_32px_rgba(212,160,32,0.04)]">
+                                bg-ink-850/40 shadow-[0_0_32px_rgba(212,160,32,0.04)]
+                                text-amber-500">
                     <PlayIcon />
                   </div>
                   <p className="text-ink-400 text-sm font-mono text-center leading-relaxed max-w-[220px]">
-                    Run your dev server
+                    {inputMode === "url" ? "Proxy to a remote URL" : "Run your dev server"}
                   </p>
                 </div>
 
-                {/* Manual port (optional) */}
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    value={manualPort}
-                    onChange={(e) => setManualPort(e.target.value)}
-                    placeholder="Port (auto)"
-                    className="w-28 px-3 py-2 rounded-lg bg-ink-900/60 border border-ink-700/60
-                             font-mono text-xs text-ink-300 placeholder:text-ink-600
-                             focus:border-amber-500/40 focus:outline-none transition-colors"
-                  />
+                {/* Input mode toggle — mirrors ChannelList search bar styling */}
+                <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-ink-950/40 border border-ink-800/40">
                   <button
-                    onClick={() => {
-                      const p = parseInt(manualPort, 10);
-                      startPreview(p > 0 && p < 65536 ? p : undefined);
-                    }}
-                    disabled={starting}
-                    className="relative px-5 py-2 rounded-xl font-mono text-sm font-medium
-                             bg-gradient-to-b from-amber-500/15 to-amber-600/5
-                             border border-amber-500/30
-                             text-amber-400
-                             hover:border-amber-400/50 hover:bg-amber-500/20
-                             active:scale-[0.97]
-                             transition-all duration-200
-                             shadow-[0_8px_24px_-8px_rgba(212,160,32,0.1)]
-                             disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={() => setInputMode("port")}
+                    className={`px-3 py-1 rounded-md font-mono text-[0.65rem] transition-all
+                      ${inputMode === "port"
+                        ? "bg-ink-800/80 text-ink-200"
+                        : "text-ink-500 hover:text-ink-300"
+                      }`}
                   >
-                    {starting ? (
-                      <span className="flex items-center gap-2">
-                        <span className="w-3 h-3 border-2 border-amber-400/40 border-t-amber-400 rounded-full animate-spin" />
-                        Launching…
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-2">
-                        <PlayIcon />
-                        Start Preview
-                      </span>
-                    )}
+                    Port
+                  </button>
+                  <button
+                    onClick={() => setInputMode("url")}
+                    className={`px-3 py-1 rounded-md font-mono text-[0.65rem] transition-all
+                      ${inputMode === "url"
+                        ? "bg-ink-800/80 text-ink-200"
+                        : "text-ink-500 hover:text-ink-300"
+                      }`}
+                  >
+                    URL
                   </button>
                 </div>
 
+                {/* Manual port or URL input */}
+                {inputMode === "port" ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      value={manualPort}
+                      onChange={(e) => setManualPort(e.target.value)}
+                      placeholder="Port (auto)"
+                      className="w-28 px-3 py-2 rounded-lg bg-ink-950/40 border border-ink-700/60
+                               font-mono text-xs text-ink-300 placeholder:text-ink-600
+                               focus:border-amber-500/40 focus:outline-none transition-theme"
+                    />
+                    <button
+                      onClick={() => {
+                        const p = parseInt(manualPort, 10);
+                        startPreview(p > 0 && p < 65536 ? p : undefined);
+                      }}
+                      disabled={starting}
+                      className="relative px-5 py-2 rounded-xl font-mono text-sm font-medium
+                               bg-amber-500/[0.08] border border-amber-500/25
+                               text-amber-500
+                               hover:border-amber-400/45 hover:bg-amber-500/[0.14]
+                               active:scale-[0.97]
+                               transition-all duration-200
+                               shadow-[0_8px_24px_-8px_rgba(212,160,32,0.08)]
+                               disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {starting ? (
+                        <span className="flex items-center gap-2">
+                          <span className="w-3 h-3 border-2 border-amber-500/40 border-t-amber-500 rounded-full animate-spin" />
+                          Launching…
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-2">
+                          <PlayIcon />
+                          Start Preview
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={remoteUrl}
+                      onChange={(e) => setRemoteUrl(e.target.value)}
+                      placeholder="panel.catalystctl.com"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && remoteUrl.trim()) {
+                          startPreview(undefined, remoteUrl.trim());
+                        }
+                      }}
+                      className="w-52 px-3 py-2 rounded-lg bg-ink-950/40 border border-ink-700/60
+                               font-mono text-xs text-ink-300 placeholder:text-ink-600
+                               focus:border-amber-500/40 focus:outline-none transition-theme"
+                    />
+                    <button
+                      onClick={() => {
+                        if (remoteUrl.trim()) startPreview(undefined, remoteUrl.trim());
+                      }}
+                      disabled={starting || !remoteUrl.trim()}
+                      className="relative px-5 py-2 rounded-xl font-mono text-sm font-medium
+                               bg-amber-500/[0.08] border border-amber-500/25
+                               text-amber-500
+                               hover:border-amber-400/45 hover:bg-amber-500/[0.14]
+                               active:scale-[0.97]
+                               transition-all duration-200
+                               shadow-[0_8px_24px_-8px_rgba(212,160,32,0.08)]
+                               disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {starting ? (
+                        <span className="flex items-center gap-2">
+                          <span className="w-3 h-3 border-2 border-amber-500/40 border-t-amber-500 rounded-full animate-spin" />
+                          Connecting…
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-2">
+                          <PlayIcon />
+                          Connect
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                )}
+
                 {startError && (
-                  <p className="text-red-400 text-xs font-mono text-center max-w-[260px] leading-relaxed">
+                  <p className="text-rose-400 text-xs font-mono text-center max-w-[260px] leading-relaxed">
                     {startError}
                   </p>
                 )}
@@ -353,17 +427,17 @@ export function PreviewPanel({
             ) : (
               /* ── Detecting: spinner + detected ports ── */
               <>
-                <div className="w-10 h-10 border-2 border-amber-500/20 border-t-amber-400 rounded-full animate-spin" />
-                <p className="text-amber-400/80 text-sm font-mono">
+                <div className="w-10 h-10 border-2 border-ink-700 border-t-amber-500 rounded-full animate-spin" />
+                <p className="text-ink-400 text-sm font-mono">
                   {preview?.detectedPorts && preview.detectedPorts.length > 0
                     ? "Select a port"
                     : "Detecting ports…"}
                 </p>
 
-                {/* Port chips — only shown when ports are actually detected */}
+                {/* Port chips */}
                 {preview?.detectedPorts && preview.detectedPorts.length > 0 && (
                   <div className="flex flex-col items-center gap-2 mt-1">
-                    <p className="text-ink-600 text-[0.55rem] font-mono uppercase tracking-widest">Found</p>
+                    <p className="text-ink-500 text-[0.55rem] font-mono uppercase tracking-widest">Found</p>
                     <div className="flex gap-1.5 flex-wrap justify-center">
                       {preview.detectedPorts.map((p) => (
                         <button
@@ -371,8 +445,8 @@ export function PreviewPanel({
                           onClick={() => selectPort(p)}
                           className={`px-3 py-1.5 rounded-lg font-mono text-sm transition-all
                             ${preview.port === p
-                              ? "bg-amber-500/20 text-amber-400 border border-amber-500/30 shadow-[0_0_12px_rgba(212,160,32,0.1)]"
-                              : "bg-ink-900/40 text-ink-400 border border-ink-800 hover:border-ink-600 hover:text-ink-200"
+                              ? "bg-amber-500/[0.12] text-amber-500 border border-amber-500/25 shadow-[0_0_12px_rgba(212,160,32,0.06)]"
+                              : "bg-ink-850/40 text-ink-400 border border-ink-800 hover:border-ink-600 hover:text-ink-200"
                             }`}
                         >
                           :{p}
@@ -384,7 +458,7 @@ export function PreviewPanel({
 
                 {/* Logs during detection */}
                 {preview?.logs && preview.logs.length > 0 && (
-                  <div className="mt-4 w-full max-w-xs max-h-24 overflow-y-auto rounded-lg bg-ink-900/40 border border-ink-800/40 p-3
+                  <div className="mt-4 w-full max-w-xs max-h-24 overflow-y-auto rounded-lg bg-ink-950/40 border border-ink-800/40 p-3
                                 font-mono text-[0.6rem] text-ink-500 leading-relaxed whitespace-pre-wrap">
                     {preview.logs.slice(-6).join("\n")}
                   </div>
@@ -394,13 +468,13 @@ export function PreviewPanel({
           </div>
         )}
 
-        {/* ── Starting state: Spinner + logs (post-detection, pre-running) ── */}
+        {/* ── Starting state: Spinner + logs ── */}
         {isStarting && (
           <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6">
-            <div className="w-10 h-10 border-2 border-amber-500/20 border-t-amber-400 rounded-full animate-spin" />
-            <p className="text-amber-400/80 text-sm font-mono">Starting dev server…</p>
+            <div className="w-10 h-10 border-2 border-ink-700 border-t-amber-500 rounded-full animate-spin" />
+            <p className="text-ink-400 text-sm font-mono">Starting dev server…</p>
             {preview?.logs && preview.logs.length > 0 && (
-              <div className="mt-4 w-full max-w-xs max-h-32 overflow-y-auto rounded-lg bg-ink-900/40 border border-ink-800/40 p-3
+              <div className="mt-4 w-full max-w-xs max-h-32 overflow-y-auto rounded-lg bg-ink-950/40 border border-ink-800/40 p-3
                             font-mono text-[0.6rem] text-ink-500 leading-relaxed whitespace-pre-wrap">
                 {preview.logs.slice(-8).join("\n")}
               </div>
@@ -411,8 +485,8 @@ export function PreviewPanel({
         {/* ── Running state: Iframe + toolbar ── */}
         {isRunning && iframeSrc && (
           <>
-            {/* Viewport wrapper */}
-            <div className="flex-1 flex items-start justify-center overflow-auto bg-white/[0.02] p-1">
+            {/* Viewport wrapper — uses ink tokens instead of bg-white */}
+            <div className="flex-1 flex items-start justify-center overflow-auto bg-ink-950/40 p-1">
               <div
                 className="relative transition-all duration-300 overflow-hidden rounded-md shadow-2xl
                           border border-ink-800/50"
@@ -426,23 +500,23 @@ export function PreviewPanel({
                 <iframe
                   ref={iframeRef}
                   src={iframeSrc}
-                  className="w-full h-full border-0"
+                  className="w-full h-full border-0 bg-ink-950"
                   sandbox="allow-scripts allow-same-origin"
                   title={`Preview: ${projectName}`}
                 />
               </div>
             </div>
 
-            {/* ── Bottom toolbar ── */}
+            {/* ── Bottom toolbar — matches ChannelList footer pattern ── */}
             <div className="flex items-center gap-0.5 px-2 py-1.5 border-t border-ink-800/40 shrink-0
-                          bg-gradient-to-t from-ink-950 to-ink-950/80 backdrop-blur-sm">
+                          bg-ink-950/40">
               {/* Element picker toggle */}
               <button
                 onClick={togglePicker}
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg font-mono text-[0.65rem] font-medium
                           transition-all duration-200
                           ${pickerActive
-                            ? "bg-blue-500/20 text-blue-400 border border-blue-400/40 shadow-[0_0_12px_rgba(59,130,246,0.15)]"
+                            ? "bg-amber-500/[0.12] text-amber-500 border border-amber-400/40 shadow-[0_0_12px_rgba(212,160,32,0.08)]"
                             : "text-ink-500 hover:text-ink-200 hover:bg-ink-800/50 border border-transparent"
                           }`}
                 title={pickerActive ? "Click an element in the preview" : "Enter element picker mode"}
@@ -463,7 +537,7 @@ export function PreviewPanel({
                         onClick={() => selectPort(p)}
                         className={`px-2 py-1 rounded font-mono text-[0.6rem] transition-all
                           ${preview.port === p
-                            ? "bg-amber-500/15 text-amber-400 border border-amber-500/25"
+                            ? "bg-amber-500/[0.1] text-amber-500 border border-amber-500/20"
                             : "text-ink-500 hover:text-ink-200 hover:bg-ink-800/50 border border-transparent"
                           }`}
                         title={`Switch to port ${p}`}
@@ -479,7 +553,7 @@ export function PreviewPanel({
               {/* Picked element count */}
               {pickedElements.length > 0 && (
                 <span className="flex items-center gap-1 px-2 py-1 rounded-lg font-mono text-[0.6rem]
-                               bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                               bg-amber-500/[0.08] text-amber-500 border border-amber-500/20">
                   <SelectIcon />
                   {pickedElements.length}
                 </span>
@@ -492,7 +566,7 @@ export function PreviewPanel({
               <button
                 onClick={cycleViewport}
                 className="px-2 py-1.5 rounded-lg font-mono text-[0.6rem] text-ink-500
-                         hover:text-ink-200 hover:bg-ink-800/50 transition-colors min-w-[48px]"
+                         hover:text-ink-200 hover:bg-ink-800/50 transition-theme min-w-[48px]"
                 title="Cycle viewport size"
               >
                 {VIEWPORT_LABELS[viewport]}
@@ -501,7 +575,7 @@ export function PreviewPanel({
               {/* Refresh */}
               <button
                 onClick={handleRefresh}
-                className="p-1.5 rounded-lg text-ink-500 hover:text-ink-200 hover:bg-ink-800/50 transition-colors"
+                className="p-1.5 rounded-lg text-ink-500 hover:text-ink-200 hover:bg-ink-800/50 transition-theme"
                 title="Refresh"
               >
                 <RefreshIcon />
@@ -510,7 +584,7 @@ export function PreviewPanel({
               {/* Open in browser */}
               <button
                 onClick={handleOpen}
-                className="p-1.5 rounded-lg text-ink-500 hover:text-ink-200 hover:bg-ink-800/50 transition-colors"
+                className="p-1.5 rounded-lg text-ink-500 hover:text-ink-200 hover:bg-ink-800/50 transition-theme"
                 title="Open in browser"
               >
                 <OpenIcon />
@@ -519,7 +593,7 @@ export function PreviewPanel({
               {/* Stop */}
               <button
                 onClick={stopPreview}
-                className="p-1.5 rounded-lg text-ink-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                className="p-1.5 rounded-lg text-ink-500 hover:text-rose-400 hover:bg-rose-400/10 transition-theme"
                 title="Stop preview"
               >
                 <StopIcon />
@@ -531,10 +605,10 @@ export function PreviewPanel({
         {/* ── Crashed state ── */}
         {preview?.status === "crashed" && (
           <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6">
-            <div className="w-10 h-10 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400">
+            <div className="w-10 h-10 rounded-full bg-rose-400/10 border border-rose-400/20 flex items-center justify-center text-rose-400">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 5v4M9 12h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
             </div>
-            <p className="text-red-400 text-sm font-mono text-center">Dev server crashed</p>
+            <p className="text-rose-400 text-sm font-mono text-center">Dev server crashed</p>
             {preview.logs.slice(-5).map((l, i) => (
               <p key={i} className="text-ink-500 text-[0.6rem] font-mono max-w-xs text-center truncate">{l}</p>
             ))}
@@ -542,9 +616,8 @@ export function PreviewPanel({
               onClick={() => startPreview()}
               disabled={starting}
               className="px-5 py-2 rounded-xl font-mono text-sm font-medium
-                       bg-gradient-to-b from-amber-500/10 to-amber-600/5
-                       border border-amber-500/30 text-amber-400
-                       hover:border-amber-400/50 hover:bg-amber-500/15
+                       bg-amber-500/[0.08] border border-amber-500/25 text-amber-500
+                       hover:border-amber-400/45 hover:bg-amber-500/[0.14]
                        transition-all duration-200
                        disabled:opacity-50"
             >
@@ -553,24 +626,7 @@ export function PreviewPanel({
           </div>
         )}
 
-        {/* ── Stopped state ── */}
-        {preview?.status === "stopped" && (
-          <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6">
-            <p className="text-ink-500 text-sm font-mono">Preview stopped</p>
-            <button
-              onClick={() => startPreview()}
-              disabled={starting}
-              className="px-5 py-2 rounded-xl font-mono text-sm font-medium
-                       bg-gradient-to-b from-amber-500/10 to-amber-600/5
-                       border border-amber-500/30 text-amber-400
-                       hover:border-amber-400/50 hover:bg-amber-500/15
-                       transition-all duration-200
-                       disabled:opacity-50"
-            >
-              Restart
-            </button>
-          </div>
-        )}
+
       </div>
     </div>
   );

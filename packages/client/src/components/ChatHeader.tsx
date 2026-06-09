@@ -16,9 +16,12 @@ interface Props {
   /** Preview panel toggle */
   onTogglePreview?: () => void;
   showPreview?: boolean;
+  /** Terminal panel toggle */
+  onToggleTerminal?: () => void;
+  showTerminal?: boolean;
 }
 
-export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggleSidebar, showSidebar, onSessionActions, onTogglePreview, showPreview }: Props) {
+export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggleSidebar, showSidebar, onSessionActions, onTogglePreview, showPreview, onToggleTerminal, showTerminal }: Props) {
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(sessionName || "");
   const isMobile = useIsMobile();
@@ -175,8 +178,14 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
           )}
 
           {onTogglePreview && (
-            <button onClick={onTogglePreview} className={`icon-btn ${showPreview ? "icon-btn-active" : ""}`} aria-label="Toggle preview" title="Preview (⌘P)">
+            <button onClick={onTogglePreview} className={`icon-btn ${showPreview ? "icon-btn-active" : ""}`} aria-label="Toggle preview" title="Preview">
               <span className="text-xs">◧</span>
+            </button>
+          )}
+
+          {onToggleTerminal && (
+            <button onClick={onToggleTerminal} className={`icon-btn ${showTerminal ? "icon-btn-active" : ""}`} aria-label="Toggle terminal" title="Terminal">
+              <Icon name="terminal" size={14} />
             </button>
           )}
 

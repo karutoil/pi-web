@@ -62,13 +62,13 @@ function injectOverlay(
   if (body) {
     body.insertAdjacentHTML(
       "beforeend",
-      `<script src="${jsPath}" data-pi-preview async></script>`,
+      `<script src="${jsPath}" data-pi-preview></script>`,
     );
   } else {
     // No body? Append to the end of the document
     root.insertAdjacentHTML(
       "beforeend",
-      `${configScript}<link rel="stylesheet" href="${cssPath}" data-pi-preview><script src="${jsPath}" data-pi-preview async></script>`,
+      `${configScript}<link rel="stylesheet" href="${cssPath}" data-pi-preview><script src="${jsPath}" data-pi-preview></script>`,
     );
   }
   return root.toString();
@@ -79,19 +79,38 @@ function injectOverlay(
  */
 function stripEmbedBlockers(headers: Headers, requestOrigin?: string): Headers {
   const cleaned = new Headers(headers);
+  // Remove content-encoding / content-length — the proxy re-encodes the body
+  // (Bun auto-compresses or sends plain). Keeping these from the upstream
+  // causes ERR_CONTENT_DECODING_FAILED when the body was decompressed
+  // during upstream.text() or re-encoded differently.
+  cleaned.delete("content-encoding");
+  cleaned.delete("Content-Encoding");
+  cleaned.delete("content-length");
+  cleaned.delete("Content-Length");
   // Remove X-Frame-Options entirely
   cleaned.delete("x-frame-options");
   cleaned.delete("X-Frame-Options");
-  // Modify Content-Security-Policy: strip frame-ancestors directive
+  // Modify Content-Security-Policy:
+  //  - Strip frame-ancestors (allows iframe embedding)
+  //  - Strip script-src / script-src-elem / script-src-attr
+  //    (allows our injected overlay <script> from the proxy origin)
+  //  - Strip style-src (allows our injected overlay <link> CSS)
+  //  - Strip connect-src (allows overlay postMessage / fetch through proxy)
+  //  - Strip img-src / font-src (allows subresources through proxy)
   const csp = cleaned.get("content-security-policy") ||
     cleaned.get("Content-Security-Policy");
   if (csp) {
     const newCsp = csp
-      .replace(/frame-ancestors\s+[^;]+;?/gi, "")
+      .replace(/(?:default-src|frame-ancestors|script-src|script-src-elem|script-src-attr|style-src|style-src-elem|style-src-attr|connect-src|img-src|font-src|object-src)\s+[^;]+;?/gi, "")
       .replace(/;;/g, ";")
       .replace(/;\s*$/, "")
       .trim();
-    cleaned.set("Content-Security-Policy", newCsp);
+    // If nothing left, remove the header entirely
+    if (newCsp) {
+      cleaned.set("Content-Security-Policy", newCsp);
+    } else {
+      cleaned.delete("Content-Security-Policy");
+    }
   }
   // Add CORS headers so the preview iframe (different origin in dev)
   // can make credentialed fetch/XHR requests through the proxy.
@@ -122,17 +141,23 @@ export async function handlePreviewRequest(
     );
   }
   // Safety: refuse to proxy to pi-web's own port (prevents infinite loops)
+  // Skip check for remote URL previews (they don't use a local port)
   const serverPort = (Bun as unknown as { server?: { port: number } })?.server?.port || parseInt(process.env.PORT || "0", 10);
-  if (preview.port === serverPort && serverPort > 0) {
+  if (!preview.remoteUrl && preview.port === serverPort && serverPort > 0) {
     console.error(`[preview-proxy] Refusing to proxy to pi-web's own port ${serverPort}`);
     return new Response(
       errorPage("Configuration error", `The preview port (${preview.port}) conflicts with pi-web's own port. Please use a different port.`),
       { status: 500, headers: { "Content-Type": "text/html; charset=utf-8" } },
     );
   }
+  // Determine target: remote URL or local dev server
+  const isRemote = !!preview.remoteUrl;
+  const targetBase = isRemote
+    ? preview.remoteUrl!
+    : `http://127.0.0.1:${preview.port}`;
   const targetUrl = new URL(
     remainingPath + (remainingPath.includes("?") ? "" : new URL(request.url).search || ""),
-    `http://127.0.0.1:${preview.port}`,
+    targetBase,
   );
   // Build forwarded request
   const forwardHeaders = new Headers(request.headers);
@@ -140,12 +165,23 @@ export async function handlePreviewRequest(
   forwardHeaders.delete("connection");
   forwardHeaders.delete("keep-alive");
   forwardHeaders.delete("transfer-encoding");
+  // Don't ask upstream for compressed responses — we may modify the body
+  // (HTML injection) and Bun's fetch auto-decompresses but headers still
+  // carry the original encoding, causing browser decode errors.
+  forwardHeaders.delete("accept-encoding");
+  forwardHeaders.set("Accept-Encoding", "identity");
+  // For remote URLs, set Origin/Referer to the remote target so the upstream
+  // server doesn't reject the request as cross-origin
+  if (isRemote) {
+    forwardHeaders.set("Origin", targetUrl.origin);
+    forwardHeaders.set("Referer", targetUrl.origin + "/");
+  }
   let body: BodyInit | null = null;
   if (request.method !== "GET" && request.method !== "HEAD") {
     body = request.body;
   }
   try {
-    console.log(`[preview-proxy] → http://127.0.0.1:${preview.port}${remainingPath}`);
+    console.log(`[preview-proxy] → ${isRemote ? targetBase : `http://127.0.0.1:${preview.port}`}${remainingPath}`);
     const upstream = await fetch(targetUrl.toString(), {
       method: request.method,
       headers: forwardHeaders,
@@ -155,12 +191,40 @@ export async function handlePreviewRequest(
     console.log(`[preview-proxy] ← ${upstream.status} ${upstream.headers.get("content-type")}`);
     const contentType = upstream.headers.get("content-type") || "";
     const requestOrigin = new URL(request.url).origin;
+
+    // Rewrite redirect Location headers to go through the proxy
+    // (so the browser follows redirects within the proxy, not directly to the remote)
+    if (upstream.status >= 300 && upstream.status < 400) {
+      const location = upstream.headers.get("location");
+      if (location) {
+        const cleanedHeaders = stripEmbedBlockers(upstream.headers, requestOrigin);
+        try {
+          const locUrl = new URL(location, targetBase);
+          // If redirect points to the same origin we're proxying, rewrite it
+          if (isRemote && locUrl.origin === new URL(targetBase).origin) {
+            const proxyPath = `/preview/${encodeURIComponent(projectId)}/${encodeURIComponent(label)}${locUrl.pathname}${locUrl.search}${locUrl.hash}`;
+            cleanedHeaders.set("Location", requestOrigin + proxyPath);
+          } else if (!isRemote && (locUrl.origin === `http://127.0.0.1:${preview.port}` || locUrl.hostname === "127.0.0.1" || locUrl.hostname === "localhost")) {
+            const proxyPath = `/preview/${encodeURIComponent(projectId)}/${encodeURIComponent(label)}${locUrl.pathname}${locUrl.search}${locUrl.hash}`;
+            cleanedHeaders.set("Location", requestOrigin + proxyPath);
+          }
+        } catch {}
+        return new Response(null, {
+          status: upstream.status,
+          headers: cleanedHeaders,
+        });
+      }
+    }
     // If HTML response, inject overlay
     if (contentType.includes("text/html") || contentType.includes("application/xhtml")) {
       let html = await upstream.text();
       const proxyOrigin = requestOrigin;
       const proxyPathPrefix = `/preview/${encodeURIComponent(projectId)}/${encodeURIComponent(label)}/`;
-      const baseTag = `<base href="http://127.0.0.1:${preview.port}/" data-pi-preview>`;
+      // <base> points to the real dev server origin (local or remote)
+      const baseHref = isRemote
+        ? targetUrl.origin + "/"
+        : `http://127.0.0.1:${preview.port}/`;
+      const baseTag = `<base href="${baseHref}" data-pi-preview>`;
       html = html.replace(/<head[^>]*>/i, (match) => match + baseTag);
       if (!/<head/i.test(html)) {
         html = `<head>${baseTag}</head>` + html;
