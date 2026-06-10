@@ -2072,6 +2072,13 @@ button, a, input, textarea, select, [role="button"] {
   text-transform: uppercase;
 }
 
+.git-stash-view-modal-files .git-stash-view-section-title {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: color-mix(in srgb, var(--workspace-panel-strong) 92%, transparent);
+}
+
 .git-stash-file-row {
   display: flex;
   align-items: center;
@@ -2135,7 +2142,8 @@ button, a, input, textarea, select, [role="button"] {
   display: flex;
   flex-direction: column;
   width: min(72rem, calc(100vw - 2rem));
-  max-height: min(84vh, 52rem);
+  height: min(84vh, 52rem);
+  max-height: none;
   overflow: hidden;
   border: 1px solid var(--workspace-seam);
   border-radius: 1rem;
@@ -2147,6 +2155,8 @@ button, a, input, textarea, select, [role="button"] {
 }
 
 .git-stash-view-modal-header {
+  flex: 0 0 3.6rem;
+  height: 3.6rem;
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -2205,11 +2215,13 @@ button, a, input, textarea, select, [role="button"] {
 .git-stash-view-modal-body {
   flex: 1 1 auto;
   min-height: 0;
+  height: calc(100% - 3.6rem);
   overflow: hidden;
 }
 
 .git-stash-view-modal-files {
   height: 100%;
+  max-height: none;
   overflow-y: auto;
 }
 
@@ -2219,7 +2231,9 @@ button, a, input, textarea, select, [role="button"] {
 }
 
 .git-stash-view-modal-diff-scroll {
+  position: relative;
   height: calc(100% - 2.4rem);
+  min-height: 0;
   overflow-y: scroll;
   overscroll-behavior: contain;
 }
@@ -2227,7 +2241,7 @@ button, a, input, textarea, select, [role="button"] {
 .git-stash-view-modal-diff-scroll .diff-renderer {
   height: auto;
   max-height: none;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .git-stash-view-modal-diff .diff-renderer {
