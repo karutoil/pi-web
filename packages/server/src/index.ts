@@ -540,7 +540,7 @@ app.post("/api/git/tag/delete", async (c) => {
 app.get("/api/git/stash", (c) => {
   const cwd = c.req.query("cwd");
   if (!cwd) return c.json({ error: "cwd required" }, 400);
-  return c.json({ stash: gitStashList(cwd) });
+  return c.json({ stashes: gitStashList(cwd) });
 });
 
 app.post("/api/git/stash/push", async (c) => {

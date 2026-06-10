@@ -70,31 +70,31 @@ function DiffViewer({ diff, path, onClose, showBlame, showComparePrev }: {
   const lines = diff.split("\n");
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-ink-800/40 bg-ink-900/30 shrink-0">
-        <button onClick={onClose} className="p-1 text-ink-400 hover:text-ink-300 hover:bg-ink-800/50 rounded transition-theme" aria-label="Back">
+    <div className="git-diff-viewer">
+      <div className="git-diff-toolbar shrink-0">
+        <button onClick={onClose} className="git-panel-icon-button" aria-label="Back">
           <Icon name="chevron-left" size={12} />
         </button>
-        <span className="text-ink-200 text-xs font-mono truncate flex-1">{path}</span>
+        <span className="git-diff-path">{path}</span>
         {showBlame && (
-          <button onClick={() => showBlame(path)} className="px-2 py-0.5 text-[0.65rem] text-ink-400 hover:text-amber-500 bg-ink-800/30 hover:bg-ink-800/60 rounded transition-theme">Blame</button>
+          <button onClick={() => showBlame(path)} className="git-panel-section-action">Blame</button>
         )}
         {showComparePrev && (
-          <button onClick={() => showComparePrev(path)} className="px-2 py-0.5 text-[0.65rem] text-ink-400 hover:text-amber-500 bg-ink-800/30 hover:bg-ink-800/60 rounded transition-theme">Compare with Prev</button>
+          <button onClick={() => showComparePrev(path)} className="git-panel-section-action">Prev</button>
         )}
-        <button onClick={onClose} className="px-2.5 py-1 text-xs text-ink-400 hover:text-ink-200 bg-ink-800/40 hover:bg-ink-800/60 rounded transition-theme">Back</button>
+        <button onClick={onClose} className="git-panel-section-action">Back</button>
       </div>
-      <div className="flex-1 overflow-y-auto overflow-x-auto custom-scrollbar font-mono text-xs leading-5 bg-ink-950/40">
+      <div className="git-diff-content custom-scrollbar">
         {lines.map((line, i) => {
-          let cls = "text-ink-400";
-          if (line.startsWith("+++ ") || line.startsWith("--- ") || line.startsWith("diff ")) cls = "text-amber-500 font-bold";
-          else if (line.startsWith("@@")) cls = "text-ink-500/60";
-          else if (line.startsWith("+")) cls = "text-teal-400";
-          else if (line.startsWith("-")) cls = "text-rose-400";
+          let kind = "plain";
+          if (line.startsWith("+++ ") || line.startsWith("--- ") || line.startsWith("diff ")) kind = "meta";
+          else if (line.startsWith("@@")) kind = "hunk";
+          else if (line.startsWith("+") && !line.startsWith("++")) kind = "add";
+          else if (line.startsWith("-") && !line.startsWith("--")) kind = "remove";
 
           return (
-            <div key={i} className={`px-3 whitespace-pre ${line.startsWith("+") && !line.startsWith("++") ? "bg-teal-500/5" : line.startsWith("-") && !line.startsWith("--") ? "bg-rose-500/5" : ""}`}>
-              <span className={cls}>{line}</span>
+            <div key={i} className="git-diff-line" data-kind={kind}>
+              <span>{line}</span>
             </div>
           );
         })}
@@ -107,12 +107,12 @@ function DiffViewer({ diff, path, onClose, showBlame, showComparePrev }: {
 
 function ConflictBanner({ path, onResolve }: { path: string; onResolve: (strategy: "ours" | "theirs" | "both") => void }) {
   return (
-    <div className="px-3 py-2 bg-rose-400/5 border-b border-rose-400/20">
-      <p className="text-rose-400 text-xs font-mono mb-1.5">Merge conflict: {path}</p>
-      <div className="flex gap-1.5">
-        <button onClick={() => onResolve("ours")} className="px-2.5 py-1.5 text-xs min-h-[36px] bg-ink-800/60 hover:bg-ink-800 text-ink-300 hover:text-ink-100 rounded transition-theme">Accept Current</button>
-        <button onClick={() => onResolve("theirs")} className="px-2.5 py-1.5 text-xs min-h-[36px] bg-ink-800/60 hover:bg-ink-800 text-ink-300 hover:text-ink-100 rounded transition-theme">Accept Incoming</button>
-        <button onClick={() => onResolve("both")} className="px-2.5 py-1.5 text-xs min-h-[36px] bg-ink-800/60 hover:bg-ink-800 text-ink-300 hover:text-ink-100 rounded transition-theme">Accept Both</button>
+    <div className="git-conflict-banner">
+      <p>Merge conflict: {path}</p>
+      <div className="flex flex-wrap gap-2">
+        <button onClick={() => onResolve("ours")}>Accept Current</button>
+        <button onClick={() => onResolve("theirs")}>Accept Incoming</button>
+        <button onClick={() => onResolve("both")}>Accept Both</button>
       </div>
     </div>
   );
@@ -360,6 +360,7 @@ export function GitPanel({ cwd, visible, onClose, embedded = false, width }: Git
           onResolveConflict={handleResolveConflict}
           onStageSelected={handleStageSelected}
           onUnstageSelected={handleUnstageSelected}
+          onClearSelected={() => setSelectedFiles(new Set())}
           onToggleSelect={toggleFileSelect}
           onRefresh={refresh}
           onClose={onClose}
@@ -372,7 +373,7 @@ export function GitPanel({ cwd, visible, onClose, embedded = false, width }: Git
   // ── Desktop: right-side panel matching PreviewPanel ──
   return (
     <div
-      className="flex flex-col shrink-0 h-full min-h-0 min-w-0 max-h-full max-w-full relative select-none border-l border-ink-800/70 bg-ink-900/35"
+      className="git-panel-shell relative select-none"
       style={{
         width: panelWidth,
         ...(isDragging ? { userSelect: "none", transition: "none" } : {}),
@@ -428,10 +429,11 @@ export function GitPanel({ cwd, visible, onClose, embedded = false, width }: Git
         onResolveConflict={handleResolveConflict}
         onStageSelected={handleStageSelected}
         onUnstageSelected={handleUnstageSelected}
-          onToggleSelect={toggleFileSelect}
-          onRefresh={refresh}
-          onClose={onClose}
-          embedded={embedded}
+        onClearSelected={() => setSelectedFiles(new Set())}
+        onToggleSelect={toggleFileSelect}
+        onRefresh={refresh}
+        onClose={onClose}
+        embedded={embedded}
         />
     </div>
   );
@@ -449,7 +451,7 @@ function GitPanelContent({
   onStage, onStageAll, onUnstage, onUnstageAll, onDiscard,
   onCommit, onPush, onPull, onFetch,
   onViewDiff, onBlame, onComparePrev, onResolveConflict,
-  onStageSelected, onUnstageSelected, onToggleSelect,
+  onStageSelected, onUnstageSelected, onClearSelected, onToggleSelect,
   onRefresh, onClose, embedded,
 }: {
   cwd: string;
@@ -490,6 +492,7 @@ function GitPanelContent({
   onResolveConflict: (path: string, strategy: "ours" | "theirs" | "both") => void;
   onStageSelected: () => void;
   onUnstageSelected: () => void;
+  onClearSelected: () => void;
   onToggleSelect: (path: string, shiftKey: boolean) => void;
   onRefresh: () => void;
   onClose: () => void;
@@ -498,53 +501,53 @@ function GitPanelContent({
   return (
     <>
       {/* ── Header bar — matches PreviewPanel header pattern ── */}
-      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-ink-800/40 shrink-0"
-           style={{ paddingLeft: "1.25rem" }}>
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          <span className="text-ink-500 font-mono text-[0.65rem] tracking-[0.15em] uppercase">
-            Source Control
-          </span>
+      <header className="git-panel-header shrink-0">
+        <div className="min-w-0">
+          <div className="git-panel-eyebrow">Source Control</div>
+          <div className="git-panel-heading">Working tree ledger</div>
           {status && (
-            <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[0.55rem] font-mono
-                           bg-amber-500/[0.08] text-amber-500 border border-amber-500/20">
-              {status.branch}
-            </span>
-          )}
-          {status && (status.ahead > 0 || status.behind > 0) && (
-            <span className="text-ink-600 font-mono text-[0.55rem]">
-              {status.ahead > 0 && `↑${status.ahead}`}
-              {status.ahead > 0 && status.behind > 0 && " "}
-              {status.behind > 0 && `↓${status.behind}`}
-            </span>
+            <div className="git-panel-branchline">
+              <span className="git-panel-branch" title={status.branch}>
+                <Icon name="git" size={10} />
+                <span className="truncate">{status.branch}</span>
+              </span>
+              {(status.ahead > 0 || status.behind > 0) && (
+                <span className="git-panel-branch" title={`${status.ahead} ahead, ${status.behind} behind`}>
+                  {status.ahead > 0 && <span>↑ {status.ahead}</span>}
+                  {status.ahead > 0 && status.behind > 0 && <span>/</span>}
+                  {status.behind > 0 && <span>↓ {status.behind}</span>}
+                </span>
+              )}
+            </div>
           )}
         </div>
 
-        {/* Sync buttons */}
-        <div className="flex items-center gap-0.5">
-          <button onClick={onFetch} className="p-1 text-ink-500 hover:text-ink-200 hover:bg-ink-800/50 rounded transition-theme" aria-label="Fetch" title="Fetch">
-            <Icon name="refresh" size={11} />
+        <div className="git-panel-sync">
+          <button onClick={onFetch} className="git-panel-icon-button" aria-label="Fetch" title="Fetch">
+            <Icon name="refresh" size={12} />
           </button>
-          <button onClick={onPull} className="p-1 text-ink-500 hover:text-teal-400 hover:bg-ink-800/50 rounded transition-theme" aria-label="Pull" title="Pull">↓</button>
-          <button onClick={onPush} className="p-1 text-ink-500 hover:text-amber-500 hover:bg-ink-800/50 rounded transition-theme" aria-label="Push" title="Push">↑</button>
-          <button onClick={onRefresh} className="p-1 text-ink-500 hover:text-amber-500 hover:bg-ink-800/50 rounded transition-theme" aria-label="Refresh" title="Refresh">
-            <Icon name="refresh" size={11} />
+          <button onClick={onPull} className="git-panel-icon-button" aria-label="Pull" title="Pull">↓</button>
+          <button onClick={onPush} className="git-panel-icon-button" aria-label="Push" title="Push">↑</button>
+          <button onClick={onRefresh} className="git-panel-icon-button" aria-label="Refresh" title="Refresh">
+            <Icon name="refresh" size={12} />
           </button>
         </div>
+      </header>
 
-        {!embedded && (
+      {!embedded && (
         <button
           onClick={onClose}
-          className="p-1.5 rounded-md text-ink-500 hover:text-ink-200 hover:bg-ink-800/50 transition-theme"
+          className="git-panel-icon-button absolute right-3 top-3"
           aria-label="Close panel"
+          title="Close"
         >
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+          <Icon name="close" size={12} />
         </button>
-        )}
-      </div>
+      )}
 
       {/* ── Branch selector ── */}
       {status && (
-        <div className="px-3 py-1.5 border-b border-ink-800/30 shrink-0">
+        <div className="git-panel-branch-selector shrink-0">
           <GitBranchSelector
             cwd={cwd}
             currentBranch={status.branch}
@@ -568,35 +571,34 @@ function GitPanelContent({
       )}
 
       {/* ── View tabs ── */}
-      <div className="flex border-b border-ink-800/40 shrink-0">
+      <nav className="git-panel-tabs shrink-0" aria-label="Git panel views">
         <button
           onClick={() => setView("changes")}
-          className={`flex-1 py-2 text-xs font-medium transition-theme border-b-2 min-h-[36px]
-            ${view === "changes" ? "text-amber-500 border-b-amber-500" : "text-ink-500 border-b-transparent hover:text-ink-300"}`}
+          className="git-panel-tab"
+          data-active={view === "changes"}
         >
-          Changes {totalChanges > 0 && <span className="text-ink-500 ml-1">({totalChanges})</span>}
+          Changes {totalChanges > 0 && <span className="opacity-70">({totalChanges})</span>}
         </button>
         <button
           onClick={() => setView("log")}
-          className={`flex-1 py-2 text-xs font-medium transition-theme border-b-2 min-h-[36px]
-            ${view === "log" ? "text-amber-500 border-b-amber-500" : "text-ink-500 border-b-transparent hover:text-ink-300"}`}
+          className="git-panel-tab"
+          data-active={view === "log"}
         >
           Log
         </button>
-      </div>
+      </nav>
 
-      {/* ── Multi-select actions bar ── */}
       {selectedFiles.size > 0 && view === "changes" && (
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/[0.06] border-b border-amber-500/10 shrink-0">
-          <span className="text-amber-500 text-[0.65rem] font-mono">{selectedFiles.size} selected</span>
-          <button onClick={onStageSelected} className="px-2 py-1 text-xs min-h-[36px] bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 rounded transition-theme">Stage</button>
-          <button onClick={onUnstageSelected} className="px-2 py-1 text-xs min-h-[36px] bg-ink-800/40 hover:bg-ink-800/60 text-ink-300 rounded transition-theme">Unstage</button>
-          <button onClick={() => selectedFiles && (() => {})} className="ml-auto text-xs min-h-[36px] text-ink-400 hover:text-ink-300 transition-theme">Clear</button>
+        <div className="git-panel-selection-bar shrink-0">
+          <span>{selectedFiles.size} selected</span>
+          <button onClick={onStageSelected}>Stage</button>
+          <button onClick={onUnstageSelected}>Unstage</button>
+          <button className="ml-auto" onClick={onClearSelected}>Clear</button>
         </div>
       )}
 
       {/* ── Content ── */}
-      <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+      <div className="git-panel-scroll">
         {blameView ? (
           <GitBlame cwd={cwd} path={blameView} onClose={() => setBlameView(null)} />
         ) : diffView ? (
@@ -635,50 +637,49 @@ function GitPanelContent({
       </div>
 
       {/* ── Stash section ── */}
-      {view === "changes" && status && status.stashCount > 0 && (
+      {view === "changes" && status && (
         <GitStash cwd={cwd} stashCount={status.stashCount} onRefresh={onRefresh} />
       )}
 
       {/* ── Commit input ── */}
       {view === "changes" && (
-        <div className="px-3 py-2.5 border-t border-ink-800/40 bg-ink-900/20 shrink-0">
-          <div className="flex items-center gap-2 mb-1.5">
-            <textarea
-              value={commitMsg}
-              onChange={e => setCommitMsg(e.target.value)}
-              placeholder={amend ? "Amend commit message" : "Commit message"}
-              rows={2}
-              className="flex-1 bg-ink-950/40 border border-ink-800/40 rounded-md px-2.5 py-1.5 text-ink-200 text-xs placeholder-ink-500 outline-none focus:border-amber-500/40 resize-none transition-theme font-mono"
-              onKeyDown={e => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onCommit(); }
-              }}
-              enterKeyHint="send"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onCommit}
-              disabled={!commitMsg.trim() || committing || (!amend && !status?.staged.length)}
-              className={`flex-1 py-1.5 min-h-[36px] rounded-md text-xs font-medium transition-theme
-                ${commitMsg.trim() && (amend || status?.staged.length) && !committing
-                  ? "bg-amber-600 hover:bg-amber-500 text-ink-950"
-                  : "bg-ink-800/40 text-ink-400 cursor-not-allowed"
-                }`}
-            >
-              {committing ? "…" : amend ? "Amend" : "Commit"}
-            </button>
-            <label className="flex items-center gap-1 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={amend}
-                onChange={e => setAmend(e.target.checked)}
-                className="checkbox-ink"
-              />
-              <span className="text-ink-500 text-[0.65rem]">Amend</span>
-            </label>
-            <span className="text-ink-500 text-[0.6rem] font-mono ml-auto hidden md:inline">⌘↵</span>
+        <div className="git-commit-dock">
+        <div className="flex items-center gap-2 mb-2">
+          <div className="flex-1 min-w-0">
+            <div className="text-ink-500 text-[0.58rem] font-mono uppercase tracking-[0.16em]">Commit</div>
+            <div className="text-ink-300 text-xs mt-0.5">Stage first, then write the change.</div>
           </div>
         </div>
+        <textarea
+          value={commitMsg}
+          onChange={e => setCommitMsg(e.target.value)}
+          placeholder={amend ? "Amend commit message" : "Commit message"}
+          className="git-commit-textarea"
+          onKeyDown={e => {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onCommit(); }
+          }}
+          enterKeyHint="send"
+        />
+        <div className="git-commit-controls">
+          <button
+            onClick={onCommit}
+            disabled={!commitMsg.trim() || committing || (!amend && !status?.staged.length)}
+            className="git-commit-primary"
+          >
+            {committing ? "…" : amend ? "Amend" : "Commit"}
+          </button>
+          <label className="git-commit-meta">
+            <input
+              type="checkbox"
+              checked={amend}
+              onChange={e => setAmend(e.target.checked)}
+              className="checkbox-ink"
+            />
+            <span>Amend</span>
+          </label>
+          <span className="git-commit-meta">⌘↵</span>
+        </div>
+      </div>
       )}
     </>
   );
@@ -709,42 +710,45 @@ function ChangesView({ cwd, status, loading, error, expandedStaged, expandedChan
 }) {
   if (loading && !status) {
     return (
-      <div className="flex items-center justify-center py-12 gap-2">
-        <div className="w-3 h-3 border-2 border-ink-700 border-t-amber-500 rounded-full animate-spin" />
-        <span className="text-ink-500 text-xs font-mono">Loading…</span>
+      <div className="git-empty-state">
+        <div>
+          <strong>Loading changes</strong>
+          <span>Reading the working tree…</span>
+        </div>
       </div>
     );
   }
 
   if (error) {
-    return <div className="py-8 text-center"><span className="text-rose-400/80 text-xs font-mono">{error}</span></div>;
+    return <div className="git-empty-state"><div><strong>Could not read Git</strong><span>{error}</span></div></div>;
   }
 
   if (!status) return null;
 
   return (
     <div>
-      {/* Staged changes */}
       {status.staged.length > 0 && (
-        <div>
+        <section className="git-panel-section">
           <button
             onClick={onToggleStaged}
-            className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-ink-300 hover:bg-ink-900/30 transition-theme relative"
+            className="git-panel-section-header"
           >
-            <Icon name={expandedStaged ? "chevron-down" : "chevron-right"} size={8} />
-            Staged Changes
-            <span className="text-ink-500 font-normal ml-auto">{status.staged.length}</span>
+            <span className="git-panel-section-title">
+              <Icon name={expandedStaged ? "chevron-down" : "chevron-right"} size={8} />
+              Staged Changes
+            </span>
+            <span className="git-panel-section-count">{status.staged.length}</span>
+            {expandedStaged && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onUnstageAll(); }}
+                className="git-panel-section-action"
+                aria-label="Unstage all"
+                title="Unstage all"
+              >
+                <Icon name="minus" size={10} />
+              </button>
+            )}
           </button>
-          {status.staged.length > 0 && (
-            <button
-              onClick={onUnstageAll}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-500 hover:text-amber-500 transition-theme p-0.5"
-              aria-label="Unstage all"
-              title="Unstage all"
-            >
-              <Icon name="minus" size={10} />
-            </button>
-          )}
           {expandedStaged && status.staged.map(f => (
             <FileRow
               key={`staged-${f.path}`}
@@ -759,30 +763,31 @@ function ChangesView({ cwd, status, loading, error, expandedStaged, expandedChan
               onToggleSelect={onToggleSelect}
             />
           ))}
-        </div>
+        </section>
       )}
 
-      {/* Unstaged changes */}
       {(status.unstaged.length > 0 || status.untracked.length > 0) && (
-        <div>
+        <section className="git-panel-section">
           <button
             onClick={onToggleChanges}
-            className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-ink-300 hover:bg-ink-900/30 transition-theme relative"
+            className="git-panel-section-header"
           >
-            <Icon name={expandedChanges ? "chevron-down" : "chevron-right"} size={8} />
-            Changes
-            <span className="text-ink-500 font-normal ml-auto">{status.unstaged.length + status.untracked.length}</span>
+            <span className="git-panel-section-title">
+              <Icon name={expandedChanges ? "chevron-down" : "chevron-right"} size={8} />
+              Working Changes
+            </span>
+            <span className="git-panel-section-count">{status.unstaged.length + status.untracked.length}</span>
+            {expandedChanges && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onStageAll(); }}
+                className="git-panel-section-action"
+                aria-label="Stage all changes"
+                title="Stage all"
+              >
+                <Icon name="plus" size={10} />
+              </button>
+            )}
           </button>
-          {status.unstaged.length + status.untracked.length > 0 && (
-            <button
-              onClick={onStageAll}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-500 hover:text-amber-500 transition-theme p-0.5"
-              aria-label="Stage all changes"
-              title="Stage all"
-            >
-              <Icon name="plus" size={10} />
-            </button>
-          )}
           {expandedChanges && (
             <>
               {status.unstaged.map(f => (
@@ -811,14 +816,15 @@ function ChangesView({ cwd, status, loading, error, expandedStaged, expandedChan
               ))}
             </>
           )}
-        </div>
+        </section>
       )}
 
-      {/* Empty state */}
       {status.staged.length === 0 && status.unstaged.length === 0 && status.untracked.length === 0 && (
-        <div className="py-12 text-center">
-          <p className="text-ink-500 text-xs font-mono">No changes detected</p>
-          <p className="text-ink-500 text-[0.65rem] font-mono mt-1">Working tree clean</p>
+        <div className="git-empty-state">
+          <div>
+            <strong>Working tree clean</strong>
+            <span>Nothing needs staging right now.</span>
+          </div>
         </div>
       )}
     </div>
@@ -844,9 +850,17 @@ function FileRow({ file, stats, staged, selected, onStage, onUnstage, onDiscard,
   const isMobile = useIsMobile();
   const showActions = hovered || isMobile;
 
+  const diffStyle = stats
+    ? {
+        background: `linear-gradient(to bottom, rgba(94, 234, 212, ${Math.min(0.55, stats.additions / 24)}) 0 ${Math.min(50, stats.additions * 2)}%, transparent ${Math.min(50, stats.additions * 2)}% ${100 - Math.min(50, stats.deletions * 2)}%, rgba(242, 99, 110, ${Math.min(0.55, stats.deletions / 24)}) ${100 - Math.min(50, stats.deletions * 2)}% 100%)`,
+      }
+    : undefined;
+
   return (
     <div
-      className={`flex items-center gap-1 px-3 py-1 hover:bg-ink-900/30 transition-theme group cursor-pointer ${selected ? "bg-amber-500/[0.06]" : ""}`}
+      className="git-file-row"
+      data-selected={selected}
+      data-touch={isMobile}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onClick={(e) => {
@@ -854,62 +868,65 @@ function FileRow({ file, stats, staged, selected, onStage, onUnstage, onDiscard,
         else onViewDiff(file.path, !!staged);
       }}
     >
-      {/* Selection checkbox */}
-      {onToggleSelect && (
+      <div
+        className="git-file-diffbar"
+        style={diffStyle}
+        aria-hidden="true"
+      />
+      {onToggleSelect ? (
         <input
           type="checkbox"
           checked={selected}
           onChange={() => onToggleSelect(file.path, false)}
           onClick={(e) => e.stopPropagation()}
           className="checkbox-ink checkbox-ink-sm"
+          aria-label={selected ? "Deselect file" : "Select file"}
         />
+      ) : (
+        <span className="sr-only" aria-hidden="true" />
       )}
 
-      {/* Status badge */}
-      <span className={`text-[0.6rem] font-mono font-bold w-3 text-center shrink-0 ${STATUS_COLORS[file.status] || "text-ink-500"}`}>
+      <span className={`git-file-status ${STATUS_COLORS[file.status] || "text-ink-500"}`}>
         {STATUS_LABELS[file.status] || file.status}
       </span>
 
-      {/* Path */}
-      <span className="text-ink-300 text-xs truncate flex-1 font-mono" title={file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}>
+      <span className="git-file-path" title={file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}>
         {file.path.split("/").map((segment, i, arr) => (
           <span key={i}>
-            {i < arr.length - 1 ? <span className="text-ink-500">{segment}/</span> : segment}
+            {i < arr.length - 1 ? <span>{segment}/</span> : segment}
           </span>
         ))}
       </span>
 
-      {/* Diff stats */}
       {stats && (stats.additions > 0 || stats.deletions > 0) && !showActions && (
-        <span className="text-[0.6rem] font-mono shrink-0">
-          <span className="text-teal-400">+{stats.additions}</span>
-          <span className="text-rose-400">-{stats.deletions}</span>
+        <span className="git-file-stats">
+          {stats.additions > 0 && <span className="text-teal-400">+{stats.additions}</span>}
+          {stats.deletions > 0 && <span className="text-rose-400">-{stats.deletions}</span>}
         </span>
       )}
 
-      {/* Action buttons on hover or mobile */}
       {showActions && (
-        <div className="flex items-center gap-0.5 shrink-0">
+        <div className="git-file-actions">
           {staged && onUnstage && (
-            <button onClick={(e) => { e.stopPropagation(); onUnstage(file.path); }} className="p-1 md:p-0.5 text-ink-500 hover:text-amber-500 transition-theme touch-target" aria-label="Unstage" title="Unstage">
+            <button onClick={(e) => { e.stopPropagation(); onUnstage(file.path); }} className="git-file-action" aria-label="Unstage" title="Unstage">
               <Icon name="minus" size={10} />
             </button>
           )}
           {!staged && onStage && (
-            <button onClick={(e) => { e.stopPropagation(); onStage(file.path); }} className="p-1 md:p-0.5 text-ink-500 hover:text-amber-500 transition-theme touch-target" aria-label="Stage" title="Stage">
+            <button onClick={(e) => { e.stopPropagation(); onStage(file.path); }} className="git-file-action" aria-label="Stage" title="Stage">
               <Icon name="plus" size={10} />
             </button>
           )}
           {!staged && onDiscard && file.status !== "?" && (
-            <button onClick={(e) => { e.stopPropagation(); onDiscard(file.path); }} className="p-1 md:p-0.5 text-ink-500 hover:text-rose-400 transition-theme touch-target" aria-label="Discard" title="Discard">
+            <button onClick={(e) => { e.stopPropagation(); onDiscard(file.path); }} className="git-file-action" data-danger="true" aria-label="Discard" title="Discard">
               <Icon name="undo" size={10} />
             </button>
           )}
           {onBlame && file.status !== "?" && !isMobile && (
-            <button onClick={(e) => { e.stopPropagation(); onBlame(file.path); }} className="p-1 md:p-0.5 text-ink-500 hover:text-ink-200 transition-theme touch-target" aria-label="Blame" title="Blame">B</button>
+            <button onClick={(e) => { e.stopPropagation(); onBlame(file.path); }} className="git-file-action" aria-label="Blame" title="Blame">B</button>
           )}
           {onComparePrev && file.status !== "?" && !isMobile && (
-            <button onClick={(e) => { e.stopPropagation(); onComparePrev(file.path); }} className="p-1 md:p-0.5 text-ink-500 hover:text-amber-400 transition-theme touch-target" aria-label="Compare with previous" title="Compare with previous">⇄</button>
+            <button onClick={(e) => { e.stopPropagation(); onComparePrev(file.path); }} className="git-file-action" aria-label="Compare with previous" title="Compare with previous">⇄</button>
           )}
         </div>
       )}

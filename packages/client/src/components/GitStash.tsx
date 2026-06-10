@@ -37,7 +37,7 @@ export function GitStash({ cwd, stashCount, onRefresh }: GitStashProps) {
       .then(r => r.json())
       .then(d => {
         if (d.error) { setError(d.error); setStashes([]); }
-        else setStashes(d.stashes || []);
+        else setStashes(d.stashes || d.stash || []);
       })
       .catch(() => setError("Failed to fetch stashes"))
       .finally(() => setLoading(false));
@@ -49,7 +49,7 @@ export function GitStash({ cwd, stashCount, onRefresh }: GitStashProps) {
     fetch(`/api/git/stash?cwd=${encodeURIComponent(cwd)}`)
       .then(r => r.json())
       .then(d => {
-        if (!d.error) setStashes(d.stashes || []);
+        if (!d.error) setStashes(d.stashes || d.stash || []);
       })
       .catch(() => {});
   }, [stashCount, expanded, cwd]);
@@ -96,38 +96,40 @@ export function GitStash({ cwd, stashCount, onRefresh }: GitStashProps) {
   }, [cwd, onRefresh]);
 
   return (
-    <div className="relative">
-      {/* ── Collapsible header ── */}
+    <div className="git-panel-section mt-3">
       <button
+        type="button"
         onClick={() => setExpanded(v => !v)}
-        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-ink-300 hover:bg-ink-900/30 transition-theme relative"
+        className="git-panel-section-header"
       >
-        <Icon name={expanded ? "chevron-down" : "chevron-right"} size={8} />
-        Stashes
+        <span>Stashes</span>
         {stashCount > 0 && (
-          <span className="text-ink-500 font-normal ml-auto">{stashCount}</span>
+          <span className="git-panel-section-count">{stashCount}</span>
+        )}
+        {stashCount > 0 && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowStashInput(v => !v);
+            }}
+            className="git-panel-section-action"
+            aria-label="New stash"
+            title="Stash"
+          >
+            <Icon name="plus" size={10} />
+          </button>
         )}
       </button>
-      {stashCount > 0 && (
-        <button
-          onClick={() => setShowStashInput(v => !v)}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-500 hover:text-amber-500 transition-theme p-0.5"
-          aria-label="New stash"
-          title="Stash"
-        >
-          <Icon name="plus" size={10} />
-        </button>
-      )}
 
-      {/* ── Stash input ── */}
       {expanded && showStashInput && (
-        <div className="px-3 py-1.5 border-b border-ink-800/20">
-          <div className="flex items-center gap-1.5">
+        <div className="px-3 py-2 border-b border-ink-800/20">
+          <div className="flex items-center gap-2">
             <input
               value={stashMsg}
               onChange={e => setStashMsg(e.target.value)}
               placeholder="Stash message (optional)"
-              className="flex-1 bg-ink-900/60 border border-ink-800/50 rounded px-2 py-1 text-ink-200 text-xs placeholder-ink-500 outline-none focus:border-amber-500/50 transition-theme font-mono"
+              className="git-stash-input flex-1"
               onKeyDown={e => {
                 if (e.key === "Enter") { e.preventDefault(); handleStash(); }
                 if (e.key === "Escape") setShowStashInput(false);
@@ -136,6 +138,7 @@ export function GitStash({ cwd, stashCount, onRefresh }: GitStashProps) {
               enterKeyHint="done"
             />
             <button
+              type="button"
               onClick={handleStash}
               disabled={stashing}
               className={`px-2 py-1 rounded text-xs font-medium transition-theme ${
@@ -150,7 +153,6 @@ export function GitStash({ cwd, stashCount, onRefresh }: GitStashProps) {
         </div>
       )}
 
-      {/* ── Stash list ── */}
       {expanded && (
         <>
           {loading && stashes.length === 0 && (
@@ -166,7 +168,7 @@ export function GitStash({ cwd, stashCount, onRefresh }: GitStashProps) {
             </div>
           )}
 
-          {!loading && !error && stashes.length === 0 && stashCount === 0 && (
+          {!loading && !error && stashes.length === 0 && (
             <div className="py-6 text-center">
               <p className="text-ink-500 text-xs font-mono">No stashes</p>
             </div>
@@ -209,16 +211,14 @@ function StashRow({
 
   return (
     <div
-      className="flex items-center gap-1.5 px-3 py-1.5 hover:bg-ink-900/30 transition-theme group cursor-default"
+      className="git-file-row git-file-row--stash group"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      {/* Index badge */}
-      <span className="text-amber-500/70 text-[0.6rem] font-mono font-bold w-3 text-center shrink-0">
-        {stash.index}
-      </span>
+      <div className="git-file-diffbar git-file-diffbar--blank" aria-hidden="true" />
+      <span className="git-file-index">{stash.index}</span>
+      <span className="sr-only" aria-hidden="true" />
 
-      {/* Message + branch */}
       <div className="flex-1 min-w-0">
         <span className="text-ink-300 text-xs font-mono truncate block" title={stash.message}>
           {stash.message}
@@ -228,29 +228,29 @@ function StashRow({
         </span>
       </div>
 
-      {/* Hover actions */}
       {showActions && (
-        <div className="flex items-center gap-0.5 shrink-0">
+        <div className="git-stash-actions">
           <button
+            type="button"
             onClick={onApply}
             disabled={acting}
-            className="px-2 py-1 md:px-1.5 md:py-0.5 text-xs md:text-[0.65rem] font-mono text-ink-400 hover:text-amber-500 hover:bg-ink-800/50 rounded transition-theme disabled:opacity-40 min-h-[44px] md:min-h-0"
             title="Apply stash"
           >
             Apply
           </button>
           <button
+            type="button"
             onClick={onPop}
             disabled={acting}
-            className="px-2 py-1 md:px-1.5 md:py-0.5 text-xs md:text-[0.65rem] font-mono text-ink-400 hover:text-amber-500 hover:bg-ink-800/50 rounded transition-theme disabled:opacity-40 min-h-[44px] md:min-h-0"
             title="Pop stash"
           >
             Pop
           </button>
           <button
+            type="button"
             onClick={onDrop}
             disabled={acting}
-            className="px-2 py-1 md:px-1.5 md:py-0.5 text-xs md:text-[0.65rem] font-mono text-ink-400 hover:text-rose-400 hover:bg-ink-800/50 rounded transition-theme disabled:opacity-40 min-h-[44px] md:min-h-0"
+            data-danger="true"
             title="Drop stash"
           >
             Drop
