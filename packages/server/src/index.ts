@@ -11,7 +11,7 @@ import { addProject, removeProject, listProjects, getProject, touchProject, getL
 import { listProjectSessions, getSessionDetail } from "./pi-sessions";
 import { getOrCreateAgent, stopAllAgents, getPoolStats, lookupAgent, detachFromAgent, deleteFromPool, rekeyAgent } from "./pi-agent";
 import { createTerminal, getTerminal, listTerminals, killTerminal } from "./pi-terminal";
-import { getGitStatus, getGitDiff, gitStage, gitUnstage, gitCommit, gitLog, gitCheckout, gitDiscard, gitBranches, gitPush, gitPull, gitFetch, gitCreateBranch, gitDeleteBranch, gitRenameBranch, gitTags, gitCreateTag, gitDeleteTag, gitStashList, gitStashPush, gitStashPop, gitStashApply, gitStashDrop, gitAmend, gitCherryPick, gitRevert, gitResolveConflict, getGitDiffStats, gitDiffWithRef, gitShowCommit, gitLogSearch, gitBlame, gitRemotes, gitUnstageAll } from "./pi-git";
+import { getGitStatus, getGitDiff, gitStage, gitUnstage, gitCommit, gitLog, gitCheckout, gitDiscard, gitBranches, gitPush, gitPull, gitFetch, gitCreateBranch, gitDeleteBranch, gitRenameBranch, gitTags, gitCreateTag, gitDeleteTag, gitStashList, gitStashShow, gitStashPush, gitStashPop, gitStashApply, gitStashDrop, gitAmend, gitCherryPick, gitRevert, gitResolveConflict, getGitDiffStats, gitDiffWithRef, gitShowCommit, gitLogSearch, gitBlame, gitRemotes, gitUnstageAll } from "./pi-git";
 import type { GitResult } from "./pi-git";
 import { getVersionInfo } from "./pi-version";
 import { startPreview, stopPreview, getPreview, listPreviews, addLogListener, stopAllPreviews, setPreviewPort, setPreviewRemoteUrl } from "./pi-preview";
@@ -541,6 +541,14 @@ app.get("/api/git/stash", (c) => {
   const cwd = c.req.query("cwd");
   if (!cwd) return c.json({ error: "cwd required" }, 400);
   return c.json({ stashes: gitStashList(cwd) });
+});
+
+app.get("/api/git/stash/show", (c) => {
+  const cwd = c.req.query("cwd");
+  const index = parseInt(c.req.query("index") || "0");
+  if (!cwd) return c.json({ error: "cwd required" }, 400);
+  const result = gitStashShow(cwd, index);
+  return c.json(result);
 });
 
 app.post("/api/git/stash/push", async (c) => {

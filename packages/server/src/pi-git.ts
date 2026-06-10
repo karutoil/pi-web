@@ -43,6 +43,17 @@ export interface GitStashEntry {
   branch: string;
 }
 
+export interface GitStashFileChange {
+  status: string;
+  path: string;
+  oldPath?: string;
+}
+
+export interface GitStashShowResult {
+  files: GitStashFileChange[];
+  diff: string;
+}
+
 export interface GitDiffStats {
   additions: number;
   deletions: number;
@@ -259,6 +270,29 @@ export function gitStashList(cwd: string): GitStashEntry[] {
       message: match?.[3] || line,
     };
   });
+}
+
+function parseStashNameStatus(raw: string): GitStashFileChange[] {
+  return raw
+    .split("\n")
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      const [status, ...parts] = line.split("\t");
+      if (parts.length === 0) return { status, path: line };
+      if (parts.length === 1) return { status, path: parts[0] };
+      return { status, oldPath: parts[0], path: parts[1] };
+    });
+}
+
+export function gitStashShow(cwd: string, index: number): GitStashShowResult {
+  const ref = `stash@{${index}}`;
+  const filesRaw = runGitStr(cwd, "stash", "show", "--name-status", ref);
+  const diff = runGitStr(cwd, "stash", "show", "--patch", ref);
+  return {
+    files: parseStashNameStatus(filesRaw),
+    diff,
+  };
 }
 
 export function gitStashPush(cwd: string, message?: string): GitResult {

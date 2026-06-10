@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Icon } from "./Icon";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { DiffRenderer } from "./DiffRenderer";
 
 // ─── Types ───
 
@@ -8,6 +9,17 @@ export interface GitStashEntry {
   index: number;
   message: string;
   branch: string;
+}
+
+export interface GitStashFileChange {
+  status: string;
+  path: string;
+  oldPath?: string;
+}
+
+interface GitStashShowResult {
+  files: GitStashFileChange[];
+  diff: string;
 }
 
 interface GitStashProps {
@@ -27,6 +39,10 @@ export function GitStash({ cwd, stashCount, onRefresh }: GitStashProps) {
   const [stashing, setStashing] = useState(false);
   const [showStashInput, setShowStashInput] = useState(false);
   const [actingIndex, setActingIndex] = useState<number | null>(null);
+  const [viewingIndex, setViewingIndex] = useState<number | null>(null);
+  const [stashView, setStashView] = useState<GitStashShowResult | null>(null);
+  const [viewLoading, setViewLoading] = useState(false);
+  const [viewError, setViewError] = useState<string | null>(null);
 
   // Fetch stashes when expanded
   useEffect(() => {
@@ -53,6 +69,20 @@ export function GitStash({ cwd, stashCount, onRefresh }: GitStashProps) {
       })
       .catch(() => {});
   }, [stashCount, expanded, cwd]);
+
+  useEffect(() => {
+    if (viewingIndex == null) return;
+    setViewLoading(true);
+    setViewError(null);
+    fetch(`/api/git/stash/show?cwd=${encodeURIComponent(cwd)}&index=${viewingIndex}`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.error) setViewError(d.error);
+        else setStashView({ files: d.files || [], diff: d.diff || "" });
+      })
+      .catch(() => setViewError("Failed to load stash"))
+      .finally(() => setViewLoading(false));
+  }, [viewingIndex, cwd]);
 
   // ── Actions ──
 
@@ -179,11 +209,23 @@ export function GitStash({ cwd, stashCount, onRefresh }: GitStashProps) {
               key={stash.index}
               stash={stash}
               acting={actingIndex === stash.index}
+              viewing={viewingIndex === stash.index}
               onApply={() => handleAction("apply", stash.index)}
               onPop={() => handleAction("pop", stash.index)}
               onDrop={() => handleAction("drop", stash.index)}
+              onView={() => setViewingIndex(viewingIndex === stash.index ? null : stash.index)}
             />
           ))}
+
+          {viewingIndex != null && (
+            <StashView
+              stash={stashes.find(s => s.index === viewingIndex)}
+              view={stashView}
+              loading={viewLoading}
+              error={viewError}
+              onClose={() => setViewingIndex(null)}
+            />
+          )}
         </>
       )}
     </div>
@@ -195,15 +237,19 @@ export function GitStash({ cwd, stashCount, onRefresh }: GitStashProps) {
 function StashRow({
   stash,
   acting,
+  viewing,
   onApply,
   onPop,
   onDrop,
+  onView,
 }: {
   stash: GitStashEntry;
   acting: boolean;
+  viewing: boolean;
   onApply: () => void;
   onPop: () => void;
   onDrop: () => void;
+  onView: () => void;
 }) {
   const [hovered, setHovered] = useState(false);
   const isMobile = useIsMobile();
@@ -232,6 +278,15 @@ function StashRow({
         <div className="git-stash-actions">
           <button
             type="button"
+            onClick={onView}
+            disabled={acting}
+            title="View stash"
+            className={viewing ? "active" : ""}
+          >
+            View
+          </button>
+          <button
+            type="button"
             onClick={onApply}
             disabled={acting}
             title="Apply stash"
@@ -256,6 +311,60 @@ function StashRow({
             Drop
           </button>
         </div>
+      )}
+    </div>
+  );
+}
+
+function StashView({ stash, view, loading, error, onClose }: {
+  stash?: GitStashEntry;
+  view: GitStashShowResult | null;
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+}) {
+  return (
+    <div className="git-stash-view">
+      <div className="git-stash-view-header">
+        <div className="git-stash-view-copy">
+          <span className="git-stash-view-kicker">Stash view</span>
+          <strong>{stash?.message || `stash@{...}`}</strong>
+          <span>{stash?.branch}</span>
+        </div>
+        <button type="button" className="git-stash-view-close" onClick={onClose} aria-label="Close stash view">
+          <Icon name="close" size={12} />
+        </button>
+      </div>
+
+      {loading && (
+        <div className="git-stash-view-loading">
+          <div className="git-stash-view-spinner" />
+          <span>Loading stash…</span>
+        </div>
+      )}
+
+      {error && <div className="git-stash-view-error">{error}</div>}
+
+      {!loading && !error && view && (
+        <>
+          <div className="git-stash-view-files">
+            <div className="git-stash-view-section-title">Files</div>
+            {view.files.length === 0 && <div className="git-stash-view-empty">No file changes</div>}
+            {view.files.map((file, i) => (
+              <div key={`${file.status}-${file.path}-${i}`} className="git-stash-file-row">
+                <span className={`git-stash-file-status git-stash-file-status--${file.status.toLowerCase()}`}>{file.status}</span>
+                <span className="git-stash-file-path" title={file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}>
+                  {file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div className="git-stash-view-diff">
+            <div className="git-stash-view-section-title">Edits</div>
+            {view.diff ? <DiffRenderer content={view.diff} collapsible={false} /> : <div className="git-stash-view-empty">No patch available</div>}
+          </div>
+        </>
       )}
     </div>
   );

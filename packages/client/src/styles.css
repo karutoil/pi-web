@@ -1888,10 +1888,191 @@ button, a, input, textarea, select, [role="button"] {
   color: var(--workspace-brass);
 }
 
+.git-stash-actions button.active {
+  border-color: color-mix(in srgb, var(--workspace-brass) 42%, transparent);
+  background: color-mix(in srgb, var(--workspace-brass) 16%, transparent);
+  color: var(--workspace-brass);
+}
+
 .git-stash-actions button[data-danger="true"]:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--workspace-rust) 30%, transparent);
   background: color-mix(in srgb, var(--workspace-rust) 14%, transparent);
   color: var(--workspace-rust);
+}
+
+.git-stash-view {
+  margin: 0.5rem 0 0.25rem;
+  overflow: hidden;
+  border: 1px solid var(--workspace-seam);
+  border-radius: 0.85rem;
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--workspace-panel-strong) 92%, transparent),
+      color-mix(in srgb, var(--workspace-panel) 96%, transparent));
+}
+
+.git-stash-view-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 3rem;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--workspace-seam);
+  background: color-mix(in srgb, var(--workspace-panel-strong) 78%, transparent);
+}
+
+.git-stash-view-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.git-stash-view-kicker {
+  display: block;
+  color: var(--workspace-brass);
+  font-family: var(--font-mono);
+  font-size: 0.56rem;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.git-stash-view-copy strong {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--color-ink-100);
+  font-family: var(--font-serif);
+  font-size: 0.95rem;
+  font-style: italic;
+  font-weight: 650;
+  line-height: 1.1;
+}
+
+.git-stash-view-copy span:last-child {
+  display: block;
+  margin-top: 0.18rem;
+  color: var(--color-ink-500);
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+}
+
+.git-stash-view-close {
+  display: inline-grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid transparent;
+  border-radius: 0.55rem;
+  background: transparent;
+  color: var(--color-ink-500);
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.git-stash-view-close:hover,
+.git-stash-view-close:focus-visible {
+  border-color: color-mix(in srgb, var(--workspace-rust) 28%, transparent);
+  background: color-mix(in srgb, var(--workspace-rust) 10%, transparent);
+  color: var(--workspace-rust);
+}
+
+.git-stash-view-loading,
+.git-stash-view-error,
+.git-stash-view-empty {
+  display: grid;
+  place-items: center;
+  min-height: 8rem;
+  padding: 1.25rem;
+  text-align: center;
+}
+
+.git-stash-view-loading {
+  gap: 0.6rem;
+  color: var(--color-ink-500);
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+}
+
+.git-stash-view-error {
+  color: var(--workspace-rust);
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+}
+
+.git-stash-view-spinner {
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 2px solid var(--workspace-seam);
+  border-top-color: var(--workspace-brass);
+  border-radius: 999px;
+  animation: spin 0.75s linear infinite;
+}
+
+.git-stash-view-files,
+.git-stash-view-diff {
+  padding: 0.65rem 0.75rem;
+}
+
+.git-stash-view-diff {
+  border-top: 1px solid color-mix(in srgb, var(--workspace-seam) 55%, transparent);
+}
+
+.git-stash-view-section-title {
+  color: var(--color-ink-500);
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  font-weight: 850;
+  letter-spacing: 0.1em;
+  padding: 0.25rem 0 0.45rem;
+  text-transform: uppercase;
+}
+
+.git-stash-file-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--workspace-seam) 45%, transparent);
+}
+
+.git-stash-file-row:last-child {
+  border-bottom: 0;
+}
+
+.git-stash-file-status {
+  width: 1.75rem;
+  flex: 0 0 1.75rem;
+  border: 1px solid color-mix(in srgb, var(--workspace-brass) 28%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--workspace-brass) 8%, transparent);
+  color: var(--workspace-brass);
+  font-family: var(--font-mono);
+  font-size: 0.54rem;
+  font-weight: 900;
+  text-align: center;
+}
+
+.git-stash-file-status--a {
+  border-color: color-mix(in srgb, var(--workspace-teal) 32%, transparent);
+  background: color-mix(in srgb, var(--workspace-teal) 8%, transparent);
+  color: var(--workspace-teal);
+}
+
+.git-stash-file-status--d,
+.git-stash-file-status--m {
+  border-color: color-mix(in srgb, var(--workspace-rust) 32%, transparent);
+  background: color-mix(in srgb, var(--workspace-rust) 8%, transparent);
+  color: var(--workspace-rust);
+}
+
+.git-stash-file-path {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-ink-300);
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ========== Scrollbar ========== */
