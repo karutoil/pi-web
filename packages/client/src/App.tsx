@@ -44,8 +44,21 @@ export default function App() {
   const [terminalActiveTabId, setTerminalActiveTabId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [channelSearch, setChannelSearch] = useState("");
-  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; title: string; message: string; onConfirm: () => void }>({ open: false, title: "", message: "", onConfirm: () => {} });
+  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; title: string; message: string; confirmLabel?: string; onConfirm: () => void }>({ open: false, title: "", message: "", onConfirm: () => {} });
   const workspaceLayout = useWorkspaceLayout();
+
+  const requestWorkspaceReset = useCallback(() => {
+    setConfirmDialog({
+      open: true,
+      title: "Reset workspace layout?",
+      message: "This restores the default layout: Conversation stays in the center, the project/session rail returns to the left, and tool panels return to the right and bottom. Custom panel sizes, split positions, and panel order will be reset.",
+      confirmLabel: "Reset layout",
+      onConfirm: () => {
+        workspaceLayout.reset();
+        setConfirmDialog(s => ({ ...s, open: false }));
+      },
+    });
+  }, [workspaceLayout.reset]);
 
   // Session detail cache with 30s TTL (capped at MAX_SESSION_CACHE entries)
   const sessionCacheRef = useRef<Map<string, { data: SessionDetail; timestamp: number }>>(new Map());
@@ -747,7 +760,7 @@ export default function App() {
           onMovePanel={workspaceLayout.movePanel}
           onResizeRegion={workspaceLayout.resizeRegion}
           onResizePanel={workspaceLayout.resizePanel}
-          onReset={workspaceLayout.reset}
+          onReset={requestWorkspaceReset}
           closedPanels={closedPanels}
           onReopenPanel={reopenPanel}
           saving={workspaceLayout.saving}
@@ -763,13 +776,14 @@ export default function App() {
         onSelectProject={handleSelectProject}
         onSelectSession={handleSelectSession}
       />
-      <ConfirmDialog
-        open={confirmDialog.open}
-        title={confirmDialog.title}
-        message={confirmDialog.message}
-        onConfirm={() => { confirmDialog.onConfirm(); setConfirmDialog(s => ({ ...s, open: false })); }}
-        onCancel={() => setConfirmDialog(s => ({ ...s, open: false }))}
-      />
+        <ConfirmDialog
+          open={confirmDialog.open}
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          confirmLabel={confirmDialog.confirmLabel}
+          onConfirm={() => { confirmDialog.onConfirm(); setConfirmDialog(s => ({ ...s, open: false })); }}
+          onCancel={() => setConfirmDialog(s => ({ ...s, open: false }))}
+        />
       {showAddProject && (
         <AddProjectExplorer
           onAdd={(path, name) => { handleAddProject(path, name); setShowAddProject(false); }}
