@@ -633,7 +633,7 @@ button, a, input, textarea, select, [role="button"] {
 
 .workspace-panel-title {
   min-width: 0;
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   overflow: hidden;
   color: var(--color-ink-200);
   font-family: var(--font-ui);
@@ -645,10 +645,18 @@ button, a, input, textarea, select, [role="button"] {
   white-space: nowrap;
 }
 
+.workspace-panel-header--has-extra .workspace-panel-title {
+  flex: 0 1 auto;
+}
+
 .workspace-panel-header-extra {
   display: flex;
   align-items: center;
   min-width: 0;
+  flex: 0 1 auto;
+}
+
+.workspace-panel-header--has-extra .workspace-panel-header-extra {
   flex: 1 1 auto;
 }
 

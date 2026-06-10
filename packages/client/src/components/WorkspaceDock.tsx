@@ -496,7 +496,7 @@ function RegionHeader({ region, regionLabel, panel, active, saving, onReset, onD
   onDragStart: (panelId: WorkspacePanelKind) => (event: DragEvent) => void;
 }) {
   return (
-    <header className="workspace-panel-header">
+    <header className={`workspace-panel-header ${panel.header ? "workspace-panel-header--has-extra" : ""}`}>
       <button draggable onDragStart={onDragStart(panel.id)} className="workspace-panel-grip" aria-label={`Move ${panel.title}`}>
         <Icon name="grip" size={10} />
       </button>
