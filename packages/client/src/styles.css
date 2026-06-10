@@ -3716,41 +3716,100 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   margin: 0.5rem 0;
   overflow: hidden;
   border: 1px solid var(--workspace-seam);
-  border-radius: 0.75rem;
-  background: color-mix(in srgb, var(--color-ink-950) 34%, transparent);
+  border-radius: 0.9rem;
+  background: var(--workspace-panel);
 }
 
 .diff-toolbar {
   display: flex;
   align-items: center;
   gap: 0.65rem;
+  min-height: 2.6rem;
   border-bottom: 1px solid var(--workspace-seam);
-  background: color-mix(in srgb, var(--color-ink-900) 72%, transparent);
-  padding: 0.45rem 0.65rem;
+  background: var(--workspace-panel-strong);
+  padding: 0.55rem 0.7rem;
   color: var(--color-ink-500);
   font-family: var(--font-mono);
   font-size: 0.68rem;
 }
 
-.diff-add-count {
-  color: var(--workspace-teal);
-  font-weight: 700;
+.diff-toolbar-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
 }
 
-.diff-remove-count {
-  color: var(--workspace-rust);
+.diff-toolbar-label {
+  display: inline-flex;
+  align-items: center;
+  height: 1.4rem;
+  border: 1px solid color-mix(in srgb, var(--workspace-brass) 35%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--workspace-brass) 9%, transparent);
+  color: var(--workspace-brass);
+  font-weight: 800;
+  padding: 0 0.45rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.diff-toolbar-path {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-ink-300);
   font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .diff-toolbar-spacer {
-  flex: 1;
+  flex: 1 1 auto;
+}
+
+.diff-stat-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 0 0 auto;
+}
+
+.diff-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  min-width: 2.8rem;
+  justify-content: center;
+  border: 1px solid var(--workspace-seam);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--workspace-panel) 80%, transparent);
+  font-weight: 800;
+}
+
+.diff-stat-sign {
+  font-weight: 950;
+}
+
+.diff-stat-add {
+  border-color: color-mix(in srgb, var(--workspace-teal) 30%, transparent);
+  color: var(--workspace-teal);
+}
+
+.diff-stat-remove {
+  border-color: color-mix(in srgb, var(--workspace-rust) 30%, transparent);
+  color: var(--workspace-rust);
+}
+
+.diff-stat-label {
+  color: var(--color-ink-500);
 }
 
 .diff-mode-toggle {
   display: inline-flex;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--color-ink-700) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-ink-700) 60%, transparent);
   border-radius: 999px;
+  background: color-mix(in srgb, var(--workspace-panel) 70%, transparent);
 }
 
 .diff-mode-toggle button {
@@ -3759,23 +3818,24 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   color: var(--color-ink-500);
   cursor: pointer;
   font-family: var(--font-mono);
-  font-size: 0.62rem;
-  padding: 0.2rem 0.45rem;
-  transition: var(--transition-theme);
+  font-size: 0.64rem;
+  font-weight: 800;
+  padding: 0.25rem 0.5rem;
+  transition: background-color 160ms ease, color 160ms ease;
 }
 
 .diff-mode-toggle button:hover,
 .diff-mode-toggle button:focus-visible {
-  color: var(--color-ink-300);
+  color: var(--color-ink-200);
 }
 
 .diff-mode-toggle button.active {
-  background: color-mix(in srgb, var(--color-ink-800) 82%, transparent);
-  color: var(--color-ink-100);
+  background: var(--workspace-brass);
+  color: var(--color-ink-950);
 }
 
 .diff-mode-toggle button + button {
-  border-left: 1px solid color-mix(in srgb, var(--color-ink-700) 70%, transparent);
+  border-left: 1px solid color-mix(in srgb, var(--color-ink-700) 60%, transparent);
 }
 
 .diff-scroll {
@@ -3783,26 +3843,57 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
 }
 
 .diff-unified-min {
-  min-width: 300px;
+  min-width: 320px;
+}
+
+.diff-meta,
+.diff-hunk,
+.diff-side-wide {
+  font-family: var(--font-mono);
 }
 
 .diff-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   border-bottom: 1px solid var(--workspace-seam);
-  background: color-mix(in srgb, var(--color-ink-900) 66%, transparent);
+  background: color-mix(in srgb, var(--workspace-panel-strong) 88%, transparent);
   color: var(--color-ink-400);
-  font-family: var(--font-mono);
   font-size: 0.68rem;
-  font-weight: 700;
-  padding: 0.35rem 0.65rem;
+  font-weight: 800;
+  padding: 0.4rem 0.7rem;
+}
+
+.diff-meta-mark,
+.diff-hunk-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  border-radius: 999px;
+  color: var(--color-ink-950);
+  font-size: 0.58rem;
+  font-weight: 950;
+}
+
+.diff-meta-mark {
+  background: var(--workspace-brass);
 }
 
 .diff-hunk {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   border-bottom: 1px solid var(--workspace-seam);
-  background: color-mix(in srgb, var(--workspace-brass) 7%, transparent);
+  background: color-mix(in srgb, var(--workspace-brass) 8%, transparent);
   color: var(--workspace-brass);
-  font-family: var(--font-mono);
   font-size: 0.68rem;
-  padding: 0.35rem 0.65rem;
+  font-weight: 850;
+  padding: 0.4rem 0.7rem;
+}
+
+.diff-hunk-mark {
+  background: var(--workspace-brass);
 }
 
 .diff-unified-row {
@@ -3813,24 +3904,40 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   line-height: 1.45;
 }
 
-.diff-unified-row.diff-add-row {
-  background: color-mix(in srgb, var(--workspace-teal) 8%, transparent);
+.diff-unified-row + .diff-unified-row {
+  border-top: 1px solid color-mix(in srgb, var(--workspace-seam) 70%, transparent);
 }
 
-.diff-unified-row.diff-remove-row {
-  background: color-mix(in srgb, var(--workspace-rust) 8%, transparent);
+.diff-context-row {
+  background: transparent;
+}
+
+.diff-add-row {
+  background: color-mix(in srgb, var(--workspace-teal) 7%, transparent);
+}
+
+.diff-remove-row {
+  background: color-mix(in srgb, var(--workspace-rust) 7%, transparent);
+}
+
+.diff-edit-row {
+  background: color-mix(in srgb, var(--workspace-brass) 5%, transparent);
 }
 
 .diff-line-num,
 .diff-line-num-cell {
-  width: 2.5rem;
-  flex: 0 0 2.5rem;
+  flex: 0 0 2.6rem;
+  width: 2.6rem;
   padding: 0.05rem 0.5rem 0.05rem 0;
   color: var(--color-ink-500);
   font-family: var(--font-mono);
   font-size: 0.65rem;
   text-align: right;
   user-select: none;
+}
+
+.diff-line-num-muted {
+  color: color-mix(in srgb, var(--color-ink-500) 45%, transparent);
 }
 
 .diff-line-num-new {
@@ -3840,7 +3947,7 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
 .diff-line-content {
   min-width: 0;
   flex: 1;
-  padding: 0.05rem 0.65rem;
+  padding: 0.05rem 0.75rem;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
@@ -3857,47 +3964,31 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   user-select: none;
 }
 
-.diff-empty-cell,
-.diff-content-cell {
-  padding: 0.05rem 0.65rem;
-  vertical-align: top;
-}
-
-.diff-content-cell {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  line-height: 1.45;
-}
-
-.diff-empty-cell {
-  color: var(--color-ink-500);
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-}
-
 .diff-side-min {
-  min-width: 600px;
+  min-width: 640px;
 }
 
 .diff-side-head {
   display: flex;
   border-bottom: 1px solid var(--workspace-seam);
-  background: color-mix(in srgb, var(--color-ink-900) 72%, transparent);
+  background: color-mix(in srgb, var(--workspace-panel-strong) 88%, transparent);
   color: var(--color-ink-400);
   font-family: var(--font-mono);
   font-size: 0.65rem;
+  font-weight: 850;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.diff-side-head-pane {
+  background: color-mix(in srgb, var(--workspace-panel-strong) 88%, transparent);
 }
 
 .diff-side-pane {
   display: flex;
   flex: 1;
   min-width: 0;
-  border-right: 2px solid color-mix(in srgb, var(--color-ink-700) 60%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--workspace-seam) 85%, transparent);
 }
 
 .diff-side-pane:last-child {
@@ -3906,10 +3997,7 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
 
 .diff-side-head-num,
 .diff-line-num-cell {
-  width: 2.5rem;
-  flex: 0 0 2.5rem;
   padding: 0.35rem 0.5rem 0.35rem 0;
-  text-align: right;
 }
 
 .diff-side-head-label {
@@ -3925,32 +4013,47 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   line-height: 1.45;
 }
 
-.diff-side-row.diff-add-row {
-  background: color-mix(in srgb, var(--workspace-teal) 7%, transparent);
+.diff-side-row + .diff-side-row {
+  border-top: 1px solid color-mix(in srgb, var(--workspace-seam) 70%, transparent);
 }
 
-.diff-side-row.diff-remove-row {
-  background: color-mix(in srgb, var(--workspace-rust) 7%, transparent);
+.diff-side-wide + .diff-side-row,
+.diff-side-row + .diff-side-wide,
+.diff-side-wide + .diff-side-wide {
+  border-top: 1px solid color-mix(in srgb, var(--workspace-seam) 70%, transparent);
+}
+
+.diff-pane-content {
+  min-width: 0;
+  flex: 1;
+  padding: 0.05rem 0.75rem;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.diff-pane-empty {
+  color: transparent;
 }
 
 .diff-collapse {
   width: 100%;
   border: 0;
   border-top: 1px solid var(--workspace-seam);
-  background: color-mix(in srgb, var(--color-ink-900) 76%, transparent);
+  background: var(--workspace-panel-strong);
   color: var(--color-ink-400);
   cursor: pointer;
   font-family: var(--font-mono);
   font-size: 0.72rem;
-  padding: 0.6rem;
+  font-weight: 800;
+  padding: 0.65rem;
   text-align: center;
-  transition: var(--transition-theme);
+  transition: background-color 160ms ease, color 160ms ease;
 }
 
 .diff-collapse:hover,
 .diff-collapse:focus-visible {
-  color: var(--color-ink-200);
-  background: color-mix(in srgb, var(--color-ink-900) 92%, transparent);
+  color: var(--workspace-brass);
+  background: color-mix(in srgb, var(--workspace-brass) 8%, transparent);
 }
 
 .conversation-skill-card {
