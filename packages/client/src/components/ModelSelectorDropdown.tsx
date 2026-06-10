@@ -31,7 +31,7 @@ export function ModelSelectorDropdown({ ws, open, onClose, anchorRef }: Props) {
       const anchor = anchorRef?.current;
       if (!anchor) return;
       const rect = anchor.getBoundingClientRect();
-      const availableHeight = Math.max(160, rect.top - gap - minTop);
+      const availableHeight = Math.max(140, (rect.top - gap - minTop) / 2);
       setPosition({
         left: rect.left,
         width: rect.width,
