@@ -2218,6 +2218,18 @@ button, a, input, textarea, select, [role="button"] {
   overflow: hidden;
 }
 
+.git-stash-view-modal-diff-scroll {
+  height: calc(100% - 2.4rem);
+  overflow-y: scroll;
+  overscroll-behavior: contain;
+}
+
+.git-stash-view-modal-diff-scroll .diff-renderer {
+  height: auto;
+  max-height: none;
+  overflow: visible;
+}
+
 .git-stash-view-modal-diff .diff-renderer {
   display: flex;
   flex-direction: column;
