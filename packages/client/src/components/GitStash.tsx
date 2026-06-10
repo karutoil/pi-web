@@ -41,6 +41,7 @@ export function GitStash({ cwd, stashCount, onRefresh }: GitStashProps) {
   const [actingIndex, setActingIndex] = useState<number | null>(null);
   const [viewingIndex, setViewingIndex] = useState<number | null>(null);
   const [modalViewingIndex, setModalViewingIndex] = useState<number | null>(null);
+  const [modalTab, setModalTab] = useState<"files" | "diff">("files");
   const [stashView, setStashView] = useState<GitStashShowResult | null>(null);
   const [viewLoading, setViewLoading] = useState(false);
   const [viewError, setViewError] = useState<string | null>(null);
@@ -92,6 +93,7 @@ export function GitStash({ cwd, stashCount, onRefresh }: GitStashProps) {
 
   useEffect(() => {
     if (modalViewingIndex == null) return;
+    setModalTab("files");
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setModalViewingIndex(null);
     };
@@ -246,13 +248,14 @@ export function GitStash({ cwd, stashCount, onRefresh }: GitStashProps) {
           {modalViewingIndex != null && (
             <div className="git-stash-view-modal-backdrop" onMouseDown={() => setModalViewingIndex(null)}>
               <div className="git-stash-view-modal" onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Stash view">
-                <StashView
+                <StashViewModal
                   stash={stashes.find(s => s.index === modalViewingIndex)}
                   view={stashView}
                   loading={viewLoading}
                   error={viewError}
+                  tab={modalTab}
+                  onTabChange={setModalTab}
                   onClose={() => setModalViewingIndex(null)}
-                  modal
                 />
               </div>
             </div>
@@ -344,6 +347,67 @@ function StashRow({
         </div>
       )}
     </div>
+  );
+}
+
+function StashViewModal({ stash, view, loading, error, tab, onTabChange, onClose }: {
+  stash?: GitStashEntry;
+  view: GitStashShowResult | null;
+  loading: boolean;
+  error: string | null;
+  tab: "files" | "diff";
+  onTabChange: (tab: "files" | "diff") => void;
+  onClose: () => void;
+}) {
+  return (
+    <>
+      <div className="git-stash-view-modal-header">
+        <div className="git-stash-view-modal-copy">
+          <span className="git-stash-view-kicker">Rebase View</span>
+          <strong>{stash?.message || `stash@{...}`}</strong>
+        </div>
+        <div className="git-stash-view-modal-tabs" role="tablist" aria-label="Stash view tabs">
+          <button type="button" className={tab === "files" ? "active" : ""} onClick={() => onTabChange("files")}>Files</button>
+          <button type="button" className={tab === "diff" ? "active" : ""} onClick={() => onTabChange("diff")}>Diff</button>
+        </div>
+        <button type="button" className="git-stash-view-close" onClick={onClose} aria-label="Close stash view">
+          <Icon name="close" size={12} />
+        </button>
+      </div>
+
+      <div className="git-stash-view-modal-body">
+        {loading && (
+          <div className="git-stash-view-loading">
+            <div className="git-stash-view-spinner" />
+            <span>Loading stash…</span>
+          </div>
+        )}
+
+        {error && <div className="git-stash-view-error">{error}</div>}
+
+        {!loading && !error && view && tab === "files" && (
+          <div className="git-stash-view-files git-stash-view-modal-files">
+            <div className="git-stash-view-section-title">Files</div>
+            {view.files.length === 0 && <div className="git-stash-view-empty">No file changes</div>}
+            {view.files.map((file, i) => (
+              <div key={`${file.status}-${file.path}-${i}`} className="git-stash-file-row">
+                <span className={`git-stash-file-status git-stash-file-status--${file.status.toLowerCase()}`}>{file.status}</span>
+                <span className="git-stash-file-path" title={file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}>
+                  {file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!loading && !error && view && tab === "diff" && (
+          <div className="git-stash-view-diff git-stash-view-modal-diff">
+            <div className="git-stash-view-section-title">Edits</div>
+            {view.diff ? <DiffRenderer content={view.diff} collapsible={false} /> : <div className="git-stash-view-empty">No patch available</div>}
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 

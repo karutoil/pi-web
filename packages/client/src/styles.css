@@ -2146,57 +2146,92 @@ button, a, input, textarea, select, [role="button"] {
   box-shadow: 0 24px 80px -36px rgba(0, 0, 0, 0.95);
 }
 
-.git-stash-view-modal .git-stash-view {
+.git-stash-view-modal-header {
   display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 3.4rem;
+  padding: 0.65rem 0.75rem;
+  border-bottom: 1px solid var(--workspace-seam);
+  background: color-mix(in srgb, var(--workspace-panel-strong) 82%, transparent);
+}
+
+.git-stash-view-modal-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.git-stash-view-modal-copy strong {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--color-ink-100);
+  font-family: var(--font-serif);
+  font-size: 1rem;
+  font-style: italic;
+  font-weight: 650;
+  line-height: 1.1;
+}
+
+.git-stash-view-modal-tabs {
+  display: inline-flex;
+  overflow: hidden;
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--color-ink-700) 60%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--workspace-panel) 70%, transparent);
+}
+
+.git-stash-view-modal-tabs button {
+  border: 0;
+  background: transparent;
+  color: var(--color-ink-500);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  font-weight: 850;
+  padding: 0.35rem 0.65rem;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.git-stash-view-modal-tabs button.active {
+  background: var(--workspace-brass);
+  color: var(--color-ink-950);
+}
+
+.git-stash-view-modal-tabs button + button {
+  border-left: 1px solid color-mix(in srgb, var(--color-ink-700) 60%, transparent);
+}
+
+.git-stash-view-modal-body {
   flex: 1 1 auto;
   min-height: 0;
-  max-height: none;
   overflow: hidden;
-  margin: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
 }
 
-.git-stash-view-modal .git-stash-view-header {
-  flex: 0 0 auto;
-  flex-direction: row;
-  align-items: center;
-}
-
-.git-stash-view-modal .git-stash-view-copy {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  min-width: 0;
-}
-
-.git-stash-view-modal .git-stash-view-copy strong,
-.git-stash-view-modal .git-stash-view-copy span:last-child {
-  margin: 0;
-}
-
-.git-stash-view-modal .git-stash-view-files {
-  flex: 0 0 12rem;
-  max-height: 12rem;
+.git-stash-view-modal-files {
+  height: 100%;
   overflow-y: auto;
 }
 
-.git-stash-view-modal .git-stash-view-diff {
-  flex: 1 1 auto;
-  min-height: 0;
+.git-stash-view-modal-diff {
+  height: 100%;
   overflow: hidden;
-  border-top: 1px solid color-mix(in srgb, var(--workspace-seam) 55%, transparent);
 }
 
-.git-stash-view-modal .git-stash-view-diff .diff-renderer {
+.git-stash-view-modal-diff .diff-renderer {
   display: flex;
   flex-direction: column;
   height: 100%;
   max-height: none;
+  margin: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
+}
+
+.git-stash-view-modal-diff .diff-scroll {
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* ========== Scrollbar ========== */
