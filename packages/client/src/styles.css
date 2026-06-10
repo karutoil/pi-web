@@ -2177,6 +2177,12 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   line-height: 1;
 }
 
+.explorer-name-row .modal-field {
+  min-height: 2.25rem;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
 .explorer-breadcrumb-path {
   color: var(--color-ink-500);
   font-family: var(--font-mono);
