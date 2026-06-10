@@ -2022,7 +2022,15 @@ button, a, input, textarea, select, [role="button"] {
 }
 
 .git-stash-view-diff .diff-renderer {
+  display: flex;
+  flex-direction: column;
+  height: 24rem;
   max-height: 24rem;
+}
+
+.git-stash-view-diff .diff-scroll {
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .git-stash-view-diff {
