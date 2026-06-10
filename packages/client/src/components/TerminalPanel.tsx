@@ -1,11 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Icon } from "./Icon";
 import { useIsMobile } from "../hooks/useIsMobile";
-import { uuidV4 } from "../lib/uuid";
 
 // ─── Types ───
 
-interface TerminalTab {
+export interface TerminalTab {
   id: string;
   name: string;
   projectId: string;
@@ -223,16 +222,15 @@ function TerminalInstance({ tab }: { tab: TerminalTab }) {
 // ─── Terminal Panel (bottom) ───
 
 interface TerminalPanelProps {
-  projectId: string | null;
-  projectPath: string | null;
   visible: boolean;
   onClose: () => void;
   embedded?: boolean;
+  tabs: TerminalTab[];
+  activeTabId: string | null;
+  onAddTerminal: () => void;
 }
 
-export function TerminalPanel({ projectId, projectPath, visible, onClose, embedded = false }: TerminalPanelProps) {
-  const [tabs, setTabs] = useState<TerminalTab[]>([]);
-  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+export function TerminalPanel({ visible, onClose, embedded = false, tabs, activeTabId, onAddTerminal }: TerminalPanelProps) {
   const [height, setHeight] = useState(240);
   const [isResizing, setIsResizing] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -268,53 +266,7 @@ export function TerminalPanel({ projectId, projectPath, visible, onClose, embedd
     mobileDragStart.current = null;
   }, [mobileSnap]);
 
-  // Load existing terminals for this project
-  useEffect(() => {
-    if (!projectId || !visible) return;
-    fetch(`/api/terminals?projectId=${encodeURIComponent(projectId)}`)
-      .then(r => r.json())
-      .then(d => {
-        const existing: TerminalTab[] = d.terminals || [];
-        if (existing.length > 0) {
-          setTabs(existing);
-          setActiveTabId(existing[0].id);
-        }
-      })
-      .catch(() => {});
-  }, [projectId, visible]);
-
-  const addTerminal = useCallback(async () => {
-    if (!projectId || !projectPath) return;
-    const id = uuidV4();
-    const name = `Terminal ${tabs.length + 1}`;
-    try {
-      const r = await fetch("/api/terminals", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, projectId, cwd: projectPath, name }),
-      });
-      if (r.ok) {
-        const tab: TerminalTab = { id, name, projectId, cwd: projectPath };
-        setTabs(prev => [...prev, tab]);
-        setActiveTabId(id);
-      }
-    } catch {}
-  }, [projectId, projectPath, tabs.length]);
-
-  const removeTab = useCallback(async (tabId: string) => {
-    try { await fetch(`/api/terminals/${tabId}`, { method: "DELETE" }); } catch {}
-    setTabs(prev => {
-      const next = prev.filter(t => t.id !== tabId);
-      if (activeTabId === tabId) {
-        setActiveTabId(next.length > 0 ? next[0].id : null);
-      }
-      return next;
-    });
-  }, [activeTabId]);
-
-  const renameTab = useCallback((tabId: string, name: string) => {
-    setTabs(prev => prev.map(t => t.id === tabId ? { ...t, name } : t));
-  }, []);
+  // Terminal tabs are owned by App so they can live in the shared panel header.
 
   // Resize drag handler
   const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
@@ -403,41 +355,6 @@ export function TerminalPanel({ projectId, projectPath, visible, onClose, embedd
       )
       ) : null}
 
-      {/* ── Tab bar ── */}
-      <div className="terminal-tabs">
-        <div className="terminal-tab-scroller custom-scrollbar-x">
-          {tabs.map(tab => (
-            <TabButton
-              key={tab.id}
-              tab={tab}
-              isActive={tab.id === activeTabId}
-              onSelect={() => setActiveTabId(tab.id)}
-              onClose={() => removeTab(tab.id)}
-              onRename={(name) => renameTab(tab.id, name)}
-            />
-          ))}
-        </div>
-
-        <div className="terminal-actions">
-          <button
-            onClick={addTerminal}
-            className="terminal-icon-button"
-            title="New terminal"
-            aria-label="New terminal"
-          >
-            <Icon name="plus" size={12} />
-          </button>
-          <button
-            onClick={onClose}
-            className="terminal-icon-button"
-            title="Close panel"
-            aria-label="Close terminal panel"
-          >
-            <Icon name="close" size={12} />
-          </button>
-        </div>
-      </div>
-
       {/* ── Terminal content ── */}
       <div className="terminal-content">
         {activeTab && (
@@ -448,13 +365,60 @@ export function TerminalPanel({ projectId, projectPath, visible, onClose, embedd
             <div>
               <strong>No terminals open</strong>
               <span>Open a shell to run project commands.</span>
-              <button className="modal-button modal-button--primary" onClick={addTerminal}>Open Terminal</button>
+              <button className="modal-button modal-button--primary" onClick={onAddTerminal}>Open Terminal</button>
             </div>
           </div>
         )}
       </div>
     </div>
     </>
+  );
+}
+
+// ─── Header: tabs live in WorkspaceDock panel header ───
+
+export function TerminalPanelHeader({
+  tabs,
+  activeTabId,
+  onSelectTab,
+  onAddTerminal,
+  onRemoveTab,
+  onRenameTab,
+}: {
+  tabs: TerminalTab[];
+  activeTabId: string | null;
+  onSelectTab: (id: string) => void;
+  onAddTerminal: () => void;
+  onRemoveTab: (id: string) => void;
+  onRenameTab: (id: string, name: string) => void;
+}) {
+  return (
+    <div className="terminal-tabs" aria-label="Terminal tabs">
+      <div className="terminal-tab-scroller custom-scrollbar-x">
+        {tabs.map(tab => (
+          <TabButton
+            key={tab.id}
+            tab={tab}
+            isActive={tab.id === activeTabId}
+            onSelect={() => onSelectTab(tab.id)}
+            onClose={() => onRemoveTab(tab.id)}
+            onRename={(name) => onRenameTab(tab.id, name)}
+          />
+        ))}
+      </div>
+
+      <div className="terminal-actions">
+        <button
+          type="button"
+          onClick={onAddTerminal}
+          className="terminal-icon-button"
+          title="New terminal"
+          aria-label="New terminal"
+        >
+          <Icon name="plus" size={12} />
+        </button>
+      </div>
+    </div>
   );
 }
 

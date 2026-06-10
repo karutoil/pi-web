@@ -633,7 +633,7 @@ button, a, input, textarea, select, [role="button"] {
 
 .workspace-panel-title {
   min-width: 0;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   overflow: hidden;
   color: var(--color-ink-200);
   font-family: var(--font-ui);
@@ -643,6 +643,13 @@ button, a, input, textarea, select, [role="button"] {
   line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.workspace-panel-header-extra {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .workspace-panel-region {
@@ -1854,6 +1861,40 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   height: 0.25rem;
   border-radius: 999px;
   background: color-mix(in srgb, var(--workspace-seam) 80%, transparent);
+}
+
+.workspace-panel-header .terminal-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 1.6rem;
+  padding: 0;
+  border-bottom: 0;
+  background: transparent;
+}
+
+.workspace-panel-header .terminal-tab-scroller {
+  gap: 0.2rem;
+}
+
+.workspace-panel-header .terminal-tab {
+  min-height: 1.55rem;
+  max-width: 10rem;
+  padding: 0.2rem 0.35rem;
+  border-radius: 0.45rem;
+  font-size: 0.58rem;
+}
+
+.workspace-panel-header .terminal-actions {
+  padding-left: 0;
+}
+
+.workspace-panel-header .terminal-icon-button {
+  min-width: 1.35rem;
+  min-height: 1.35rem;
+  border-radius: 0.4rem;
 }
 
 .terminal-tabs {
@@ -4441,6 +4482,11 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
     linear-gradient(180deg, color-mix(in srgb, var(--workspace-panel-strong) 88%, transparent), transparent);
 }
 
+.preview-panel-header--compact {
+  min-height: 2.375rem;
+  padding: 0.45rem 0.75rem;
+}
+
 .preview-panel-header-copy {
   min-width: 0;
   flex: 1 1 auto;
@@ -4454,6 +4500,22 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   letter-spacing: 0.18em;
   line-height: 1;
   text-transform: uppercase;
+}
+
+.preview-panel-header--compact .preview-panel-heading {
+  margin-top: 0;
+  font-size: 0.82rem;
+}
+
+.preview-panel-header--compact .preview-panel-badges {
+  margin-top: 0;
+  margin-left: 0.45rem;
+}
+
+.preview-panel-header--compact .preview-status-badge {
+  min-height: 1.15rem;
+  padding: 0.18rem 0.35rem;
+  font-size: 0.5rem;
 }
 
 .preview-panel-heading {

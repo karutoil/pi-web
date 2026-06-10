@@ -8,6 +8,7 @@ interface WorkspacePanelConfig {
   title: string;
   icon: ReactNode;
   children: ReactNode;
+  header?: ReactNode;
   minRegionSize?: number;
   onClose?: () => void;
 }
@@ -385,6 +386,7 @@ function RegionDock({ region, panels, mode, regionLabel, regionShortLabel, panel
           onReset={onReset}
           onDragStart={onDragStart}
         />
+        {config.header}
         <div className="flex-1 min-h-0 min-w-0 overflow-hidden">{config.children}</div>
         {mode === "split" && index < count - 1 && (
           <div
@@ -500,6 +502,7 @@ function RegionHeader({ region, regionLabel, panel, active, saving, onReset, onD
       </button>
       <span className="workspace-panel-icon">{panel.icon}</span>
       <span className="workspace-panel-title">{panel.title}</span>
+      {panel.header && <div className="workspace-panel-header-extra">{panel.header}</div>}
       <span className="workspace-panel-region" title={regionLabel}>{REGION_SHORT_LABELS[region]}</span>
       {region === "center" && active && (
         <button onClick={onReset} disabled={saving} className="workspace-panel-action">Reset</button>

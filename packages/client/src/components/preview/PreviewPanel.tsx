@@ -73,6 +73,7 @@ interface PreviewPanelProps {
   onElementSelected?: (token: string, context: string) => void;
   onRefresh?: () => void;
   embedded?: boolean;
+  compactHeader?: boolean;
   width?: number;
 }
 
@@ -84,6 +85,7 @@ export function PreviewPanel({
   preview,
   onRefresh,
   embedded = false,
+  compactHeader = false,
   width,
 }: PreviewPanelProps) {
   const isOpen = usePreviewStore((s) => s.isOpen);
@@ -235,9 +237,11 @@ export function PreviewPanel({
       )}
 
       {/* ── Header bar — matches Git/terminal panel styling ── */}
-      <div className="preview-panel-header shrink-0">
+      <div className={`preview-panel-header ${compactHeader ? "preview-panel-header--compact" : ""}`}>
         <div className="preview-panel-header-copy">
+          {!compactHeader && (
           <div className="preview-panel-eyebrow">Preview</div>
+          )}
           <div className="preview-panel-heading" title={projectName}>
             {projectName}
           </div>

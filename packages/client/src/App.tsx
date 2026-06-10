@@ -13,7 +13,7 @@ import { PWABanner } from "./components/PWABanner";
 import { PreviewPanel } from "./components/preview/PreviewPanel";
 import { ProjectSessionSidebar } from "./components/ProjectSessionSidebar";
 import { GitPanel } from "./components/GitPanel";
-import { TerminalPanel } from "./components/TerminalPanel";
+import { TerminalPanel, TerminalPanelHeader, type TerminalTab } from "./components/TerminalPanel";
 import { usePreviewStore } from "./hooks/usePreviewStore";
 import { useRightPanelStore } from "./hooks/useRightPanelStore";
 import { useWorkspaceLayout } from "./hooks/useWorkspaceLayout";
@@ -40,6 +40,8 @@ export default function App() {
   const [newSessionId, setNewSessionId] = useState<string | null>(null);
   const [isAddingProject, setIsAddingProject] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
+  const [terminalTabs, setTerminalTabs] = useState<TerminalTab[]>([]);
+  const [terminalActiveTabId, setTerminalActiveTabId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [channelSearch, setChannelSearch] = useState("");
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; title: string; message: string; onConfirm: () => void }>({ open: false, title: "", message: "", onConfirm: () => {} });
@@ -76,6 +78,57 @@ export default function App() {
         newSessionId,
       )
     : null;
+
+  const loadTerminals = useCallback(async () => {
+    if (!selectedProject?.id || !terminalOpen) return;
+    try {
+      const res = await fetch(`/api/terminals?projectId=${encodeURIComponent(selectedProject.id)}`);
+      const data = await res.json();
+      const existing = data.terminals || [];
+      if (existing.length > 0) {
+        setTerminalTabs(existing);
+        setTerminalActiveTabId(prev => prev && existing.some((t: TerminalTab) => t.id === prev) ? prev : existing[0].id);
+      } else {
+        setTerminalTabs([]);
+        setTerminalActiveTabId(null);
+      }
+    } catch {}
+  }, [selectedProject?.id, terminalOpen]);
+
+  useEffect(() => {
+    loadTerminals();
+  }, [loadTerminals]);
+
+  const addTerminal = useCallback(async () => {
+    if (!selectedProject) return;
+    const id = uuidV4();
+    const name = `Terminal ${terminalTabs.length + 1}`;
+    try {
+      const res = await fetch("/api/terminals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, projectId: selectedProject.id, cwd: selectedProject.path, name }),
+      });
+      if (res.ok) {
+        const tab: TerminalTab = { id, name, projectId: selectedProject.id, cwd: selectedProject.path };
+        setTerminalTabs(prev => [...prev, tab]);
+        setTerminalActiveTabId(id);
+      }
+    } catch {}
+  }, [selectedProject, terminalTabs.length]);
+
+  const removeTerminal = useCallback(async (tabId: string) => {
+    try { await fetch(`/api/terminals/${tabId}`, { method: "DELETE" }); } catch {}
+    setTerminalTabs(prev => {
+      const next = prev.filter(t => t.id !== tabId);
+      setTerminalActiveTabId(current => current === tabId ? (next[0]?.id || null) : current);
+      return next;
+    });
+  }, []);
+
+  const renameTerminal = useCallback((tabId: string, name: string) => {
+    setTerminalTabs(prev => prev.map(t => t.id === tabId ? { ...t, name } : t));
+  }, []);
 
   // Compute which sessions are actively streaming from the pool
   // Must be inline (not useMemo) — pool is a ref Map, its identity never changes,
@@ -645,6 +698,7 @@ export default function App() {
                   onElementSelected={handleElementSelected}
                   onRefresh={fetchPreviews}
                   embedded
+                  compactHeader
                 />
               ),
               onClose: () => rightPanel.close("preview"),
@@ -667,13 +721,24 @@ export default function App() {
               id: "terminal" as const,
               title: "Terminal",
               icon: <Icon name="terminal" size={12} />,
+              header: (
+                <TerminalPanelHeader
+                  tabs={terminalTabs}
+                  activeTabId={terminalActiveTabId}
+                  onSelectTab={setTerminalActiveTabId}
+                  onAddTerminal={addTerminal}
+                  onRemoveTab={removeTerminal}
+                  onRenameTab={renameTerminal}
+                />
+              ),
               children: (
                 <TerminalPanel
-                  projectId={selectedProject?.id || null}
-                  projectPath={selectedProject?.path || null}
                   visible={true}
                   onClose={() => setTerminalOpen(false)}
                   embedded
+                  tabs={terminalTabs}
+                  activeTabId={terminalActiveTabId}
+                  onAddTerminal={addTerminal}
                 />
               ),
               onClose: () => setTerminalOpen(false),
