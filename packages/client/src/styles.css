@@ -3897,6 +3897,7 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
 }
 
 .diff-unified-row {
+  position: relative;
   display: flex;
   align-items: flex-start;
   font-family: var(--font-mono);
@@ -3913,15 +3914,41 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
 }
 
 .diff-add-row {
-  background: color-mix(in srgb, var(--workspace-teal) 7%, transparent);
+  position: relative;
+  background: color-mix(in srgb, var(--workspace-teal) 10%, transparent);
 }
 
 .diff-remove-row {
-  background: color-mix(in srgb, var(--workspace-rust) 7%, transparent);
+  position: relative;
+  background: color-mix(in srgb, var(--workspace-rust) 9%, transparent);
 }
 
 .diff-edit-row {
-  background: color-mix(in srgb, var(--workspace-brass) 5%, transparent);
+  position: relative;
+  background: color-mix(in srgb, var(--workspace-brass) 7%, transparent);
+}
+
+.diff-add-row::before,
+.diff-remove-row::before,
+.diff-edit-row::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+}
+
+.diff-add-row::before {
+  background: var(--workspace-teal);
+}
+
+.diff-remove-row::before {
+  background: var(--workspace-rust);
+}
+
+.diff-edit-row::before {
+  background: var(--workspace-brass);
 }
 
 .diff-line-num,
@@ -4007,6 +4034,7 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
 }
 
 .diff-side-row {
+  position: relative;
   display: flex;
   font-family: var(--font-mono);
   font-size: 0.72rem;
