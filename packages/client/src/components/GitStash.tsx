@@ -40,6 +40,7 @@ export function GitStash({ cwd, stashCount, onRefresh }: GitStashProps) {
   const [showStashInput, setShowStashInput] = useState(false);
   const [actingIndex, setActingIndex] = useState<number | null>(null);
   const [viewingIndex, setViewingIndex] = useState<number | null>(null);
+  const [modalViewingIndex, setModalViewingIndex] = useState<number | null>(null);
   const [stashView, setStashView] = useState<GitStashShowResult | null>(null);
   const [viewLoading, setViewLoading] = useState(false);
   const [viewError, setViewError] = useState<string | null>(null);
@@ -83,6 +84,20 @@ export function GitStash({ cwd, stashCount, onRefresh }: GitStashProps) {
       .catch(() => setViewError("Failed to load stash"))
       .finally(() => setViewLoading(false));
   }, [viewingIndex, cwd]);
+
+  useEffect(() => {
+    if (modalViewingIndex == null || modalViewingIndex === viewingIndex) return;
+    setViewingIndex(modalViewingIndex);
+  }, [modalViewingIndex, viewingIndex]);
+
+  useEffect(() => {
+    if (modalViewingIndex == null) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setModalViewingIndex(null);
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [modalViewingIndex]);
 
   // ── Actions ──
 
@@ -224,7 +239,23 @@ export function GitStash({ cwd, stashCount, onRefresh }: GitStashProps) {
               loading={viewLoading}
               error={viewError}
               onClose={() => setViewingIndex(null)}
+              onOpenModal={() => setModalViewingIndex(viewingIndex)}
             />
+          )}
+
+          {modalViewingIndex != null && (
+            <div className="git-stash-view-modal-backdrop" onMouseDown={() => setModalViewingIndex(null)}>
+              <div className="git-stash-view-modal" onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Stash view">
+                <StashView
+                  stash={stashes.find(s => s.index === modalViewingIndex)}
+                  view={stashView}
+                  loading={viewLoading}
+                  error={viewError}
+                  onClose={() => setModalViewingIndex(null)}
+                  modal
+                />
+              </div>
+            </div>
           )}
         </>
       )}
@@ -316,12 +347,14 @@ function StashRow({
   );
 }
 
-function StashView({ stash, view, loading, error, onClose }: {
+function StashView({ stash, view, loading, error, onClose, onOpenModal, modal }: {
   stash?: GitStashEntry;
   view: GitStashShowResult | null;
   loading: boolean;
   error: string | null;
   onClose: () => void;
+  onOpenModal?: () => void;
+  modal?: boolean;
 }) {
   return (
     <div className="git-stash-view">
@@ -331,6 +364,9 @@ function StashView({ stash, view, loading, error, onClose }: {
           <strong>{stash?.message || `stash@{...}`}</strong>
           <span>{stash?.branch}</span>
         </div>
+        <button type="button" className="git-stash-view-popout" onClick={onOpenModal} aria-label="Open stash view in modal" disabled={modal}>
+          <Icon name="plus" size={12} />
+        </button>
         <button type="button" className="git-stash-view-close" onClick={onClose} aria-label="Close stash view">
           <Icon name="close" size={12} />
         </button>
