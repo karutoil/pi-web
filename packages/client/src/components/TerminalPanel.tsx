@@ -215,8 +215,7 @@ function TerminalInstance({ tab }: { tab: TerminalTab }) {
   return (
     <div
       ref={containerRef}
-      className="w-full h-full"
-      style={{ padding: "4px 4px 0" }}
+      className="terminal-instance"
     />
   );
 }
@@ -372,40 +371,41 @@ export function TerminalPanel({ projectId, projectPath, visible, onClose, embedd
     <>
     {/* Mobile: backdrop behind bottom sheet */}
     {isMobile && !embedded && (
-      <div className="fixed inset-0 z-39 bg-ink-950/40" onClick={onClose} />
+      <div className="terminal-backdrop" onClick={onClose} />
     )}
     <div
       ref={panelRef}
-      className={`flex flex-col bg-ink-900/35 border-t border-ink-800/70 select-none h-full min-h-0 min-w-0 max-h-full max-w-full ${
-        isMobile && !embedded ? "fixed bottom-0 left-0 right-0 z-40 border-t-0 rounded-t-xl mobile-safe-bottom" : ""
+      className={`terminal-shell select-none ${
+        isMobile && !embedded ? "terminal-shell--mobile mobile-safe-bottom" : ""
       }`}
       style={{ touchAction: "manipulation", ...(embedded ? {} : isMobile ? { height: `${mobileSnap * 100}vh` } : { height: `${height}px` }) }}
     >
       {/* ── Resize handle ── */}
       {!embedded ? (
         !isMobile ? (
-      <div
-        className="h-1.5 cursor-ns-resize flex items-center justify-center group hover:bg-amber-500/10 transition-theme"
-        onMouseDown={handleResizeMouseDown}
-        onTouchStart={handleResizeTouchStart}
-      >
-        <div className={`w-8 h-0.5 rounded-full transition-theme ${isResizing ? "bg-amber-500" : "bg-ink-700 group-hover:bg-ink-500"}`} />
-      </div>
+          <div
+            className="terminal-resize-handle"
+            data-resizing={isResizing}
+            onMouseDown={handleResizeMouseDown}
+            onTouchStart={handleResizeTouchStart}
+          >
+            <div className="terminal-resize-grip" />
+          </div>
       ) : (
       <div
-        className="h-8 flex items-center justify-center cursor-grab active:cursor-grabbing touch-none"
+        className="terminal-mobile-handle"
         onTouchStart={handleMobileTouchStart}
         onTouchMove={handleMobileTouchMove}
         onTouchEnd={handleMobileTouchEnd}
       >
-        <div className="w-10 h-1 rounded-full bg-ink-600" />
+        <div className="terminal-mobile-grip" />
       </div>
       )
       ) : null}
 
       {/* ── Tab bar ── */}
-      <div className="flex items-center gap-0 px-1 border-b border-ink-800/40 min-h-0">
-        <div className="flex items-center flex-1 overflow-x-auto custom-scrollbar-x">
+      <div className="terminal-tabs">
+        <div className="terminal-tab-scroller custom-scrollbar-x">
           {tabs.map(tab => (
             <TabButton
               key={tab.id}
@@ -418,10 +418,10 @@ export function TerminalPanel({ projectId, projectPath, visible, onClose, embedd
           ))}
         </div>
 
-        <div className="flex items-center gap-0.5 shrink-0 pl-1">
+        <div className="terminal-actions">
           <button
             onClick={addTerminal}
-            className="p-1.5 text-ink-400 hover:text-amber-500 transition-theme rounded hover:bg-ink-800/50"
+            className="terminal-icon-button"
             title="New terminal"
             aria-label="New terminal"
           >
@@ -429,7 +429,7 @@ export function TerminalPanel({ projectId, projectPath, visible, onClose, embedd
           </button>
           <button
             onClick={onClose}
-            className="p-1.5 text-ink-400 hover:text-ink-300 transition-theme rounded hover:bg-ink-800/50"
+            className="terminal-icon-button"
             title="Close panel"
             aria-label="Close terminal panel"
           >
@@ -439,20 +439,16 @@ export function TerminalPanel({ projectId, projectPath, visible, onClose, embedd
       </div>
 
       {/* ── Terminal content ── */}
-      <div className="flex-1 min-h-0 min-w-0 max-h-full max-w-full overflow-hidden">
+      <div className="terminal-content">
         {activeTab && (
           <TerminalInstance key={activeTab.id} tab={activeTab} />
         )}
         {!activeTab && (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <p className="text-ink-500 text-xs font-mono mb-3">No terminals open</p>
-              <button
-                onClick={addTerminal}
-                className="px-4 py-2 bg-amber-500/[0.08] border border-amber-500/25 text-amber-500 text-xs font-medium rounded-lg hover:bg-amber-500/[0.14] hover:border-amber-400/45 transition-all"
-              >
-                Open Terminal
-              </button>
+          <div className="terminal-empty">
+            <div>
+              <strong>No terminals open</strong>
+              <span>Open a shell to run project commands.</span>
+              <button className="modal-button modal-button--primary" onClick={addTerminal}>Open Terminal</button>
             </div>
           </div>
         )}
@@ -487,15 +483,12 @@ function TabButton({ tab, isActive, onSelect, onClose, onRename }: {
 
   return (
     <div
-      className={`flex items-center gap-1.5 px-2.5 py-1 text-xs cursor-pointer group transition-theme border-b-2 ${
-        isActive
-          ? "text-amber-500 bg-ink-900/40 border-b-amber-500"
-          : "text-ink-500 hover:text-ink-300 border-b-transparent hover:bg-ink-900/20"
-      }`}
+      className="terminal-tab"
+      data-active={isActive}
       onClick={onSelect}
       onDoubleClick={() => setIsRenaming(true)}
     >
-      <Icon name="terminal" size={10} className={isActive ? "text-amber-500" : "text-ink-500"} />
+      <Icon name="terminal" size={10} className="terminal-tab-icon" />
       {isRenaming ? (
         <input
           ref={inputRef}
@@ -507,14 +500,14 @@ function TabButton({ tab, isActive, onSelect, onClose, onRename }: {
             if (e.key === "Escape") { setRenameValue(tab.name); setIsRenaming(false); }
           }}
           onClick={e => e.stopPropagation()}
-          className="bg-ink-950/40 border border-ink-800/40 rounded px-1 py-0 text-xs text-ink-200 outline-none focus:border-amber-500/40 w-20 transition-theme"
+          className="terminal-tab-input"
         />
       ) : (
-        <span className="truncate max-w-[100px]">{tab.name}</span>
+        <span className="terminal-tab-label">{tab.name}</span>
       )}
       <button
         onClick={(e) => { e.stopPropagation(); onClose(); }}
-        className="opacity-100 md:opacity-0 md:group-hover:opacity-100 text-ink-500 hover:text-rose-400 transition-all ml-0.5 p-1 touch-target-sm"
+        className="terminal-tab-close"
         aria-label={`Close ${tab.name}`}
       >
         <Icon name="close" size={8} />
