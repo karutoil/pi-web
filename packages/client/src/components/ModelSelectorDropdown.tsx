@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, type RefObject } from "react";
 import type { ModelInfo } from "@pi-web/shared";
 import type { WSBridge } from "../lib/types";
 
@@ -6,12 +6,14 @@ interface Props {
   ws: WSBridge;
   open: boolean;
   onClose: () => void;
+  anchorRef?: RefObject<HTMLElement | null>;
 }
 
-export function ModelSelectorDropdown({ ws, open, onClose }: Props) {
+export function ModelSelectorDropdown({ ws, open, onClose, anchorRef }: Props) {
   const [search, setSearch] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ left: 0, width: 0, bottom: 0, maxHeight: 0 });
 
   useEffect(() => {
     if (open) {
@@ -19,6 +21,32 @@ export function ModelSelectorDropdown({ ws, open, onClose }: Props) {
       setTimeout(() => inputRef.current?.focus(), 50);
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const gap = 8;
+    const minTop = 12;
+    const updatePosition = () => {
+      const anchor = anchorRef?.current;
+      if (!anchor) return;
+      const rect = anchor.getBoundingClientRect();
+      const availableHeight = Math.max(160, rect.top - gap - minTop);
+      setPosition({
+        left: rect.left,
+        width: rect.width,
+        bottom: window.innerHeight - rect.top + gap,
+        maxHeight: availableHeight,
+      });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open, anchorRef]);
 
   const filtered = useMemo(() => {
     if (!search) return ws.models;
@@ -58,6 +86,12 @@ export function ModelSelectorDropdown({ ws, open, onClose }: Props) {
     <div
       ref={panelRef}
       className="conversation-model-dropdown animate-slide-down"
+      style={{
+        left: position.left,
+        width: position.width,
+        bottom: position.bottom,
+        maxHeight: position.maxHeight,
+      }}
       onClick={e => e.stopPropagation()}
     >
       <div className="conversation-model-dropdown-search">

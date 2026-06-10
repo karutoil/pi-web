@@ -39,6 +39,7 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [modelOpen, setModelOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const inputWrapRef = useRef<HTMLDivElement>(null);
   const textRef = useRef(text);
   useEffect(() => { textRef.current = text; }, [text]);
   const pendingImagesRef = useRef(pendingImages);
@@ -195,7 +196,7 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
 
   return (
     <div className="conversation-input-dock shrink-0">
-      <div className="conversation-input-wrap min-w-0">
+      <div ref={inputWrapRef} className="conversation-input-wrap min-w-0">
         {pendingImages.length > 0 && (
           <div className="conversation-image-list">
             {pendingImages.map((img, i) => (
@@ -221,7 +222,7 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
           {showCommands && <CommandCompleter commands={commands} filter={commandFilter} onSelect={handleSelectCommand} onClose={() => setShowCommands(false)} />}
           {showFileMentions && atMatch && <FileMentionCompleter projectPath={projectPath} filter={fileMentionFilter} onSelect={handleSelectFile} onClose={() => setShowFileMentions(false)} />}
 
-          <ModelSelectorDropdown ws={ws} open={modelOpen} onClose={() => setModelOpen(false)} />
+          <ModelSelectorDropdown ws={ws} open={modelOpen} onClose={() => setModelOpen(false)} anchorRef={inputWrapRef} />
 
           <div className="conversation-editor-shell">
             {hasStatusRow && (

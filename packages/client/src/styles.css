@@ -4151,13 +4151,11 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
 
 .conversation-model-dropdown {
   position: fixed;
-  left: 50%;
-  bottom: calc(4.75rem + env(safe-area-inset-bottom));
+  left: 0;
+  bottom: 0;
   z-index: 50;
-  width: min(34rem, calc(100vw - 2rem));
-  max-height: min(70vh, 38rem);
+  box-sizing: border-box;
   overflow-y: auto;
-  transform: translateX(-50%);
   border: 1px solid var(--workspace-seam);
   border-radius: 1rem;
   background: var(--color-ink-900);
