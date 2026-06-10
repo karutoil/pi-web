@@ -21,7 +21,6 @@ export function FileMentionCompleter({ projectPath, filter, onSelect, onClose }:
   const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Fetch files when filter changes (debounced)
   useEffect(() => {
     if (!projectPath) { setFiles([]); return; }
 
@@ -53,10 +52,8 @@ export function FileMentionCompleter({ projectPath, filter, onSelect, onClose }:
     };
   }, [projectPath, filter]);
 
-  // Reset active index when files change
   useEffect(() => { setActiveIdx(0); }, [files]);
 
-  // Keyboard navigation
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "ArrowDown") { e.preventDefault(); setActiveIdx(i => Math.min(i + 1, Math.max(files.length - 1, 0))); }
@@ -71,50 +68,36 @@ export function FileMentionCompleter({ projectPath, filter, onSelect, onClose }:
 
   if (!projectPath) return null;
 
-  // File icon based on extension
-  const fileIcon = (name: string, isDir: boolean): string => {
-    if (isDir) return "📁";
-    const ext = name.split(".").pop()?.toLowerCase() || "";
-    const icons: Record<string, string> = {
-      ts: "🔷", tsx: "🔷", js: "🟨", jsx: "🟨", mjs: "🟨",
-      py: "🐍", rs: "🦀", go: "🔵", java: "☕", rb: "💎",
-      html: "🌐", css: "🎨", scss: "🎨", json: "📋", yaml: "📋", yml: "📋",
-      md: "📝", txt: "📄", sh: "⚙️", bash: "⚙️",
-      png: "🖼️", jpg: "🖼️", jpeg: "🖼️", gif: "🖼️", svg: "🖼️", webp: "🖼️",
-      sql: "🗃️", graphql: "🔶", gql: "🔶",
-      toml: "📋", ini: "📋", env: "🔒",
-    };
-    return icons[ext] || "📄";
-  };
+  const fileIcon = (_name: string, isDir: boolean): string => isDir ? "DIR" : "FILE";
 
   return (
-    <div className="absolute bottom-full left-0 mb-2 bg-ink-900 border border-ink-700 rounded-lg shadow-lg py-1 z-50 w-[calc(100vw-2rem)] md:w-96 max-h-64 overflow-y-auto custom-scrollbar">
-      <div className="px-3 py-1.5 text-ink-500 text-[0.65rem] font-mono uppercase tracking-wider border-b border-ink-800 flex items-center justify-between">
+    <div className="conversation-completer conversation-completer--wide">
+      <div className="conversation-completer-header">
         <span>Files & dirs {filter ? `matching "${filter}"` : ""}</span>
-        {loading && <span className="text-amber-500 normal-case tracking-normal">Searching...</span>}
+        {loading && <span className="conversation-completer-hint">Searching…</span>}
       </div>
       {files.length === 0 && !loading && (
-        <div className="px-3 py-3 text-ink-500 text-xs font-mono">
+        <div className="conversation-completer-empty">
           {filter ? "No matches" : "Type to search files"}
         </div>
       )}
       {files.map((f, i) => (
         <button
+          type="button"
           key={f.path + (f.isDirectory ? "/" : "")}
           onClick={() => onSelect(f.relativePath, f.isDirectory)}
-          className={`w-full text-left px-3 py-2 hover:bg-ink-850 transition-theme flex items-center gap-2 min-h-[40px] ${
-            i === activeIdx ? "bg-ink-850" : ""
-          }`}
+          className="conversation-completer-item"
+          data-active={i === activeIdx}
         >
-          <span className="text-xs shrink-0">{fileIcon(f.name, f.isDirectory)}</span>
+          <span className="conversation-completer-icon">{fileIcon(f.name, f.isDirectory)}</span>
           <div className="min-w-0 flex-1">
-            <div className="text-ink-200 text-xs font-mono font-medium truncate">
+            <div className="conversation-completer-title">
               {f.name}{f.isDirectory ? "/" : ""}
             </div>
-            <div className="text-ink-500 text-[0.6rem] truncate">{f.relativePath}{f.isDirectory ? "/" : ""}</div>
+            <div className="conversation-completer-meta">{f.relativePath}{f.isDirectory ? "/" : ""}</div>
           </div>
           {f.isDirectory && (
-            <span className="text-ink-600 text-[0.55rem] shrink-0">TAB</span>
+            <span className="conversation-completer-hint">TAB</span>
           )}
         </button>
       ))}

@@ -10,7 +10,6 @@ interface SessionActionsProps {
 }
 
 export function SessionActions({ onCompact, onExportHtml, onClone, onSetAutoCompaction, onClose }: SessionActionsProps) {
-  // Escape key to close
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -29,20 +28,23 @@ export function SessionActions({ onCompact, onExportHtml, onClone, onSetAutoComp
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh] bg-black/60" onClick={onClose}>
-      <div className="w-full max-w-xs bg-ink-900 border border-ink-700 rounded-xl shadow-2xl overflow-hidden mobile-safe-top max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <div className="px-4 py-3 border-b border-ink-800 text-ink-200 text-sm font-medium">Session Actions</div>
-        <div className="py-1">
+    <div className="session-actions-backdrop" onClick={onClose}>
+      <div className="session-actions-card" onClick={e => e.stopPropagation()}>
+        <div className="session-actions-title">Session Actions</div>
+        <div>
           {actions.map(a => (
-            <button key={a.label}
+            <button
+              type="button"
+              key={a.label}
               onClick={() => { a.action(); onClose(); }}
-              className="w-full text-left px-4 py-2.5 text-sm text-ink-300 hover:bg-ink-800 hover:text-ink-100 flex items-center gap-3 transition-theme">
-              <Icon name={a.icon} size={14} className="text-ink-500 shrink-0" />
+              className="session-actions-row"
+            >
+              <Icon name={a.icon} size={14} className="shrink-0" />
               <span>{a.label}</span>
             </button>
           ))}
         </div>
-        <div className="px-4 py-2 border-t border-ink-800 text-xs text-ink-500 hidden sm:block">Esc to close</div>
+        <div className="session-actions-hint">Esc to close</div>
       </div>
     </div>
   );

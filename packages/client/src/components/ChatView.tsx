@@ -18,19 +18,15 @@ import { turnToMarkdown, copyToClipboard } from "../lib/markdownExport";
 function SessionLoadingOverlay() {
   return (
     <div
-      className="absolute inset-0 z-[45] flex flex-col items-center justify-center bg-ink-950/70 backdrop-blur-md pointer-events-auto"
+      className="conversation-session-loading"
       aria-busy="true"
       aria-label="Starting PI"
     >
-      <div className="flex flex-col items-center gap-4 animate-fade-in-up">
-        {/* Spinner ring */}
-        <div className="relative w-12 h-12">
-          <div className="absolute inset-0 rounded-full border-2 border-ink-700" />
-          <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-amber-500 animate-spin" />
-        </div>
-        <div className="text-center">
-          <p className="text-ink-200 text-sm font-medium tracking-wide">Starting PI…</p>
-          <p className="text-ink-500 text-xs font-mono mt-1">Loading session</p>
+      <div className="conversation-loading-card animate-fade-in-up">
+        <div className="conversation-loading-spinner" />
+        <div className="conversation-loading-copy">
+          <p>Starting PI…</p>
+          <p>Loading session</p>
         </div>
       </div>
     </div>
@@ -371,12 +367,11 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
   }, []);
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden relative">
+    <div className="conversation-shell">
       <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} onToggleSidebar={onToggleSidebar} showSidebar={showSidebar} onSessionActions={() => setShowSessionActions(true)} />
 
       <div aria-live="polite" className="sr-only">{srAnnouncement}</div>
 
-      {/* Main content row: chat area + right-side panels */}
       <div className="flex-1 flex min-h-0 min-w-0 overflow-hidden relative">
         {/* Loading overlay — blurs + blocks interaction until connected + state received */}
         {isLoading && <SessionLoadingOverlay />}
@@ -386,7 +381,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
           <div
             ref={scrollRef}
             onScroll={handleScroll}
-            className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar px-3 md:px-5 pt-6 pb-4 relative"
+            className="conversation-scroll"
           >
         {/* Notification toast — absolute overlay pinned to top of scroll area */}
         {ws.pendingNotification && (
@@ -395,12 +390,12 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
             onRespond={ws.dismissNotification}
           />
         )}
-        <div ref={contentRef} className="max-w-3xl mx-auto space-y-4 md:space-y-5">
+        <div ref={contentRef} className="conversation-message-stack">
           {/* Load earlier messages */}
           {hasMoreHistory && (
             <button
               onClick={() => setRenderLimit(n => n + 200)}
-              className="w-full text-center py-2 text-xs text-ink-500 hover:text-ink-300 font-mono transition-theme"
+              className="conversation-load-more"
             >
               ↑ Load {Math.min(200, allHistorical.length - renderLimit)} earlier messages
             </button>
@@ -461,16 +456,15 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
         </div>
 
         {ws.messages.length === 0 && !liveMsg && !hasHistoricalMessages && (
-          <div className="flex flex-col items-center justify-center py-16 md:py-20 text-center animate-fade-in-up">
-            <Icon name="pi-logo" size={48} className="mb-6 opacity-40" />
-            <h3 className="text-ink-300 text-lg font-medium mb-2">Start a conversation</h3>
-            <p className="text-ink-500 text-sm max-w-sm italic">
+          <div className="conversation-empty">
+            <Icon name="pi-logo" size={48} className="conversation-empty-icon" />
+            <h3 className="conversation-empty-title">Start a conversation</h3>
+            <p className="conversation-empty-copy">
               Ask PI to read, write, edit, or run commands. Streaming responses appear in real time.
             </p>
-            <div className="flex flex-wrap justify-center gap-2 mt-6">
+            <div className="conversation-prompt-list">
               {["List files in this project", "Explain the codebase structure", "Find all TODO comments"].map(s => (
-                <button key={s} onClick={() => handleSend(s)}
-                  className="px-3 py-2 text-xs text-ink-400 bg-ink-900 border border-ink-800 rounded-full hover:border-ink-600 hover:text-ink-200 transition-theme min-h-[36px]">
+                <button key={s} type="button" onClick={() => handleSend(s)} className="conversation-prompt-button">
                   {s}
                 </button>
               ))}
@@ -480,7 +474,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
 
         {/* Compaction indicator */}
         {ws.compactionResult && (
-          <div className="max-w-3xl mx-auto pb-2">
+          <div className="conversation-action-row">
             <CompactionIndicator
               compactionResult={ws.compactionResult}
               isCompacting={!!ws.state?.isCompacting}
@@ -491,22 +485,24 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
         )}
         {/* Compact & Session actions button */}
         {ws.messages.length > 0 && !ws.isStreaming && !ws.compactionResult && (
-          <div className="max-w-3xl mx-auto flex justify-center gap-3 pb-2">
+          <div className="conversation-action-row">
             <button
+              type="button"
               onClick={() => ws.compact()}
-              className="text-xs font-mono text-ink-500 hover:text-amber-500 transition-theme"
+              className="conversation-action-link"
               title="Compact conversation context"
               aria-label="Compact conversation context"
             >
               Compact context
             </button>
             <button
+              type="button"
               onClick={() => setShowSessionActions(true)}
-              className="text-xs font-mono text-ink-500 hover:text-amber-500 transition-theme"
+              className="conversation-action-link"
               title="More session actions"
               aria-label="Session actions"
             >
-              ⋯ More
+              More
             </button>
           </div>
         )}
@@ -517,18 +513,16 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
             bottom). Clicking scrolls to the bottom and re-enables auto-
             scroll. */}
         {!autoScroll && (
-          <div className="sticky bottom-3 inset-x-0 flex justify-center pointer-events-none z-10 -mt-10">
+          <div className="conversation-jump-wrap">
             <button
+              type="button"
               onClick={handleJumpToBottom}
               aria-label="Jump to latest message"
               title="Jump to latest"
-              className="pointer-events-auto group flex items-center gap-1.5 px-2.5 py-1 min-h-[28px] rounded-full bg-ink-900/40 hover:bg-ink-900/70 backdrop-blur-sm border border-ink-700/40 hover:border-amber-500/40 text-ink-400 hover:text-amber-500 text-[0.65rem] font-mono transition-theme"
+              className="conversation-jump-button"
             >
               {ws.isStreaming && (
-                <span className="relative flex w-1.5 h-1.5 shrink-0">
-                  <span className="absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-75 animate-ping" />
-                  <span className="relative inline-flex w-1.5 h-1.5 rounded-full bg-amber-500" />
-                </span>
+                <span className="conversation-live-dot" />
               )}
               <Icon name="chevron-down" size={10} />
               <span>Jump to latest</span>
@@ -537,7 +531,6 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
         )}
       </div>
 
-      {/* Extension error toasts — inline above input */}
       <ExtensionErrorToast
         errors={extensionErrorList}
         onDismiss={(idx) => setExtensionErrorList(prev => prev.filter((_, i) => i !== idx))}
@@ -563,8 +556,8 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
 
       {/* Branch / worktree selector below input */}
       {gitStatus && (
-        <div className="max-w-3xl w-full mx-auto flex items-center justify-between px-4 md:px-5 pb-2 md:pb-3 shrink-0 flex-wrap gap-y-1">
-          <span className="text-ink-500 text-xs font-mono flex items-center gap-1.5">
+        <div className="conversation-worktree-row">
+          <span className="conversation-worktree-label">
             <Icon name="folder" size={12} />
             Worktree
           </span>
@@ -604,7 +597,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
       )}
 
       {sessionActionStatus && (
-        <div className="fixed left-1/2 bottom-4 -translate-x-1/2 z-[70] max-w-[min(90vw,32rem)] px-3 py-2 rounded-lg bg-ink-950/95 border border-ink-700 text-ink-100 text-xs font-mono shadow-2xl mobile-safe-bottom">
+        <div className="conversation-status-toast">
           {sessionActionStatus}
         </div>
       )}

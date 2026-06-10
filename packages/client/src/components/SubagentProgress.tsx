@@ -75,66 +75,46 @@ function formatTokenCount(tokens: number): string {
   return `${(tokens / 1_000_000).toFixed(1)}M`;
 }
 
-// ─── Progress badge for a single running agent ───
-
 function AgentProgressView({ progress, now }: { progress: AgentProgress; now: number }) {
   const isRunning = progress.status === "running";
   const isDone = progress.status === "completed";
   const isFailed = progress.status === "failed";
-  // durationMs from server is cumulative duration; elapsed for running = now - startedAt
-  // Since server sends durationMs as cumulative, for running agents we add time since last update
   const elapsed = isRunning ? progress.durationMs + (now - (progress.currentToolStartedAt || progress.durationMs)) : progress.durationMs;
 
   return (
-    <div className="space-y-1.5">
-      {/* Agent header */}
-      <div className="flex items-center gap-2 text-xs font-mono">
-        <span className={`font-medium ${isRunning ? "text-amber-400" : isDone ? "text-teal-400" : isFailed ? "text-rose-400" : "text-ink-400"}`}>
+    <div className="conversation-subagent-agent">
+      <div className="conversation-subagent-agent-head">
+        <span className={`conversation-subagent-agent-name ${isRunning ? "conversation-status-running" : isDone ? "conversation-status-done" : isFailed ? "conversation-status-failed" : ""}`}>
           {progress.agent}
         </span>
-        {isRunning && <span className="animate-pulse text-amber-400">●</span>}
-        {isDone && <span className="text-teal-400">✓</span>}
-        {isFailed && <span className="text-rose-400">✗</span>}
-        {isRunning && (
-          <span className="text-ink-500">{formatDuration(elapsed)}</span>
-        )}
-        {progress.toolCount > 0 && (
-          <span className="text-ink-500">{progress.toolCount} tools</span>
-        )}
-        {progress.tokens > 0 && (
-          <span className="text-ink-500">{formatTokenCount(progress.tokens)} tok</span>
-        )}
+        {isRunning && <span className="conversation-subagent-dot conversation-status-running animate-pulse" />}
+        {isDone && <span className="conversation-subagent-dot conversation-status-done">✓</span>}
+        {isFailed && <span className="conversation-subagent-dot conversation-status-failed">✗</span>}
+        {isRunning && <span className="conversation-subagent-meta">{formatDuration(elapsed)}</span>}
+        {progress.toolCount > 0 && <span className="conversation-subagent-meta">{progress.toolCount} tools</span>}
+        {progress.tokens > 0 && <span className="conversation-subagent-meta">{formatTokenCount(progress.tokens)} tok</span>}
       </div>
 
-      {/* Current tool indicator */}
       {isRunning && progress.currentTool && (
-        <div className="flex items-center gap-1.5 text-xs font-mono pl-2">
-          <Icon name="chevron-right-sm" size={8} className="text-amber-400" />
-          <span className="text-ink-300">{progress.currentTool}</span>
-          {progress.currentToolArgs && (
-            <span className="text-ink-500 truncate max-w-[200px]">{progress.currentToolArgs.slice(0, 60)}</span>
-          )}
+        <div className="conversation-subagent-tool">
+          <Icon name="chevron-right-sm" size={8} className="conversation-status-running" />
+          <span>{progress.currentTool}</span>
+          {progress.currentToolArgs && <span>{progress.currentToolArgs.slice(0, 60)}</span>}
         </div>
       )}
 
-      {/* Recent output tail */}
       {progress.recentOutput.length > 0 && (
-        <div className="pl-2 text-xs font-mono text-ink-500 max-h-16 overflow-hidden">
+        <div className="conversation-subagent-output">
           {progress.recentOutput.slice(-3).map((line, i) => (
-            <div key={i} className="truncate">{line}</div>
+            <div key={i}>{line}</div>
           ))}
         </div>
       )}
 
-      {/* Error */}
-      {progress.error && (
-        <div className="pl-2 text-xs font-mono text-rose-400 truncate">{progress.error}</div>
-      )}
+      {progress.error && <div className="conversation-subagent-error">{progress.error}</div>}
     </div>
   );
 }
-
-// ─── Chain step indicator ───
 
 function ChainStepIndicator({
   chainAgents,
@@ -149,25 +129,23 @@ function ChainStepIndicator({
   const current = currentStepIndex ?? -1;
 
   return (
-    <div className="flex items-center gap-1 text-xs font-mono mb-2">
+    <div className="conversation-subagent-chain" aria-label={`${current + 1} of ${totalSteps ?? chainAgents.length} steps`}>
       {chainAgents.map((agent, i) => (
-        <span key={i} className="flex items-center gap-1">
-          {i > 0 && <Icon name="chevron-right-sm" size={8} className="text-ink-500" />}
+        <span key={i} className="conversation-subagent-chain-step">
+          {i > 0 && <Icon name="chevron-right-sm" size={8} />}
           <span className={
-            i < current ? "text-teal-400" :
-            i === current ? "text-amber-400 font-medium" :
-            "text-ink-500"
+            i < current ? "conversation-status-done" :
+            i === current ? "conversation-status-running font-semibold" :
+            ""
           }>
             {agent}
           </span>
-          {i === current && <span className="animate-pulse text-amber-400">●</span>}
+          {i === current && <span className="conversation-subagent-dot conversation-status-running animate-pulse" />}
         </span>
       ))}
     </div>
   );
 }
-
-// ─── Main subagent progress renderer ───
 
 export function SubagentProgressView({ details, isRunning }: { details: ToolDetails; isRunning: boolean }) {
   if (!isSubagentDetails(details)) return null;
@@ -176,28 +154,18 @@ export function SubagentProgressView({ details, isRunning }: { details: ToolDeta
   const progressList = sub.progress || [];
   const now = Date.now();
 
-  // Running state — show progress for each agent
   if (isRunning && progressList.length > 0) {
     return (
-      <div className="space-y-2">
-        {/* Mode badge */}
-        <div className="flex items-center gap-2">
-          <span className="text-[0.65rem] font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/20">
-            {sub.mode}
-          </span>
-          {sub.context && (
-            <span className="text-[0.65rem] font-mono text-ink-500">{sub.context}</span>
-          )}
+      <div className="conversation-subagent-progress">
+        <div className="conversation-subagent-progress-head">
+          <span className="conversation-subagent-mode">{sub.mode}</span>
+          {sub.context && <span className="conversation-subagent-context">{sub.context}</span>}
         </div>
-
-        {/* Chain step indicator */}
         <ChainStepIndicator
           chainAgents={sub.chainAgents}
           totalSteps={sub.totalSteps}
           currentStepIndex={sub.currentStepIndex}
         />
-
-        {/* Agent progress cards */}
         {progressList.map((p) => (
           <AgentProgressView key={p.index} progress={p} now={now} />
         ))}
@@ -205,39 +173,32 @@ export function SubagentProgressView({ details, isRunning }: { details: ToolDeta
     );
   }
 
-  // Completed state — show summary
   const results = sub.results || [];
   if (results.length > 0) {
     return (
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <span className="text-[0.65rem] font-mono px-1.5 py-0.5 rounded bg-ink-800 text-ink-400 border border-ink-700">
-            {sub.mode}
-          </span>
-          {sub.context && (
-            <span className="text-[0.65rem] font-mono text-ink-500">{sub.context}</span>
-          )}
+      <div className="conversation-subagent-progress">
+        <div className="conversation-subagent-progress-head">
+          <span className="conversation-subagent-mode muted">{sub.mode}</span>
+          {sub.context && <span className="conversation-subagent-context">{sub.context}</span>}
         </div>
         {results.map((r, i) => {
           const hasError = r.exitCode !== 0 || r.error;
           return (
-            <div key={i} className="space-y-0.5">
-              <div className="flex items-center gap-2 text-xs font-mono">
-                <span className={hasError ? "text-rose-400" : "text-teal-400"}>
+            <div key={i} className="conversation-subagent-result">
+              <div className="conversation-subagent-result-head">
+                <span className={hasError ? "conversation-status-failed" : "conversation-status-done"}>
                   {hasError ? "✗" : "✓"}
                 </span>
-                <span className="font-medium text-ink-300">{r.agent}</span>
-                {r.progressSummary ? (
+                <span className="conversation-subagent-agent-name">{r.agent}</span>
+                {r.progressSummary && (
                   <>
-                    <span className="text-ink-500">{r.progressSummary.toolCount} tools</span>
-                    <span className="text-ink-500">{formatTokenCount(r.progressSummary.tokens)} tok</span>
-                    <span className="text-ink-500">{formatDuration(r.progressSummary.durationMs)}</span>
+                    <span>{r.progressSummary.toolCount} tools</span>
+                    <span>{formatTokenCount(r.progressSummary.tokens)} tok</span>
+                    <span>{formatDuration(r.progressSummary.durationMs)}</span>
                   </>
-                ) : null}
+                )}
               </div>
-              {r.error && (
-                <div className="pl-4 text-xs font-mono text-rose-400 truncate">{r.error}</div>
-              )}
+              {r.error && <div className="conversation-subagent-error">{r.error}</div>}
             </div>
           );
         })}

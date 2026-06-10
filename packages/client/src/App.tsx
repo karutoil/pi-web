@@ -721,78 +721,53 @@ function SessionWelcome({ project, sessions, onSelectSession }: {
   onSelectSession: (s: SessionSummary) => void;
 }) {
   return (
-    <div className="flex-1 flex flex-col items-center justify-center p-6 md:p-10 mobile-safe-top relative overflow-hidden max-h-full max-w-full min-h-0 h-full">
-      {/* Decorative paper-grain background tint — subtle manuscript page feel */}
-      <div
-        className="absolute inset-0 pointer-events-none opacity-[0.025]"
-        style={{
-          backgroundImage:
-            "radial-gradient(circle at 30% 20%, var(--color-amber-500) 0%, transparent 40%), radial-gradient(circle at 75% 70%, var(--color-amber-500) 0%, transparent 45%)",
-        }}
-        aria-hidden
-      />
-
-      <div className="max-w-xl w-full max-h-full overflow-y-auto custom-scrollbar text-center animate-fade-in-up relative">
-        {/* Editorial header: rule + label + rule */}
-        <div className="flex items-center gap-3 mb-6 max-w-md mx-auto">
-          <div className="flex-1 h-px bg-gradient-to-r from-transparent via-ink-700/50 to-transparent" />
-          <span className="text-ink-500 text-[0.6rem] font-mono uppercase tracking-[0.25em]">
+    <div className="conversation-session-welcome mobile-safe-top">
+      <div className="conversation-session-welcome-card max-h-full overflow-y-auto custom-scrollbar">
+        <div className="conversation-session-welcome-rule">
+          <span className="conversation-session-welcome-label">
             {project ? "Project" : "Welcome"}
           </span>
-          <div className="flex-1 h-px bg-gradient-to-r from-transparent via-ink-700/50 to-transparent" />
         </div>
 
-        <h1
-          className="text-3xl md:text-5xl font-semibold text-ink-100 mb-3 tracking-tight leading-tight"
-          style={{ fontFamily: "var(--font-serif)", fontStyle: "italic" }}
-        >
+        <h1 className="conversation-session-welcome-title">
           {project?.name || "PI"}
         </h1>
 
-        <p className="text-ink-400 text-base md:text-lg italic mb-2 leading-relaxed" style={{ fontFamily: "var(--font-serif)" }}>
+        <p className="conversation-session-welcome-path">
           {project?.path}
         </p>
 
-        <p className="text-ink-500 text-sm font-mono mb-10">
+        <p className="conversation-session-welcome-count">
           {sessions.length === 0
-            ? "No sessions yet \u2014 start a new one"
+            ? "No sessions yet — start a new one"
             : `${sessions.length} session${sessions.length === 1 ? "" : "s"} in this project`}
         </p>
 
         {sessions.length > 0 && (
-          <div className="space-y-2 text-left">
-            <div className="flex items-center gap-2 mb-3 px-1">
-              <span className="text-ink-500 text-[0.58rem] font-mono uppercase tracking-[0.2em]">Recent</span>
-              <div className="flex-1 h-px bg-ink-700/40" />
-            </div>
+          <div className="conversation-session-welcome-section">
+            <div className="conversation-session-welcome-section-title">Recent</div>
             {sessions.slice(0, 8).map((s, i) => (
               <button
+                type="button"
                 key={s.id}
                 onClick={() => onSelectSession(s)}
-                className="w-full text-left p-3.5 rounded-lg bg-ink-900/40 hover:bg-ink-900 border border-ink-800/70 hover:border-amber-600/30 hover:shadow-[0_4px_16px_-4px_rgba(212,160,32,0.12)] transition-theme group animate-fade-in-up"
+                className="conversation-session-welcome-item"
                 style={{ animationDelay: `${80 + i * 40}ms` }}
               >
-                <div className="flex items-start gap-3">
-                  <div className="shrink-0 w-7 h-7 rounded-md bg-ink-850/80 border border-ink-700/60 flex items-center justify-center text-ink-500 group-hover:text-amber-500 group-hover:border-amber-500/40 transition-theme">
-                    <span className="text-sm leading-none" aria-hidden>#</span>
+                <div className="conversation-session-welcome-index" aria-hidden>#</div>
+                <div className="conversation-session-welcome-copy">
+                  <div className="conversation-session-welcome-item-title">
+                    {s.name || s.lastMessage || s.firstMessage || "Untitled session"}
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <div
-                      className="text-ink-200 font-medium text-sm truncate leading-snug"
-                      style={{ fontFamily: "var(--font-serif)" }}
-                    >
-                      {s.name || s.lastMessage || s.firstMessage || "Untitled session"}
-                    </div>
-                    <div className="text-ink-500 text-[0.65rem] mt-1 font-mono">
-                      {s.messageCount > 0 && <span>{s.messageCount} messages</span>}
-                      {s.messageCount > 0 && s.model && <span className="text-ink-700 mx-1">·</span>}
-                      {s.model && <span>{s.model}</span>}
-                      {s.messageCount === 0 && !s.model && <span>New session</span>}
-                    </div>
+                  <div className="conversation-session-welcome-meta">
+                    {s.messageCount > 0 && <span>{s.messageCount} messages</span>}
+                    {s.messageCount > 0 && s.model && <span className="conversation-session-welcome-separator">·</span>}
+                    {s.model && <span>{s.model}</span>}
+                    {s.messageCount === 0 && !s.model && <span>New session</span>}
                   </div>
-                  <div className="text-ink-500 text-[0.65rem] font-mono shrink-0 mt-0.5">
-                    {formatTimeAgo(s.lastActiveAt || s.timestamp)}
-                  </div>
+                </div>
+                <div className="conversation-session-welcome-time">
+                  {formatTimeAgo(s.lastActiveAt || s.timestamp)}
                 </div>
               </button>
             ))}
@@ -800,8 +775,8 @@ function SessionWelcome({ project, sessions, onSelectSession }: {
         )}
 
         {sessions.length === 0 && (
-          <div className="text-ink-500 text-sm font-mono mt-2">
-            Press <kbd className="px-1.5 py-0.5 rounded bg-ink-800/60 text-ink-300 font-mono text-[0.7rem] border border-ink-700/50">⌘N</kbd> to start a conversation
+          <div className="conversation-session-welcome-count conversation-session-welcome-shortcut">
+            Press <kbd className="conversation-kbd">⌘N</kbd> to start a conversation
           </div>
         )}
       </div>

@@ -93,7 +93,6 @@ export function ContextMenuPortal({
     };
   }, [onClose, activeIdx]);
 
-  // Pre-calculate safe position — estimate menu size to avoid off-screen placement
   const vw = typeof window !== "undefined" ? window.innerWidth : 800;
   const vh = typeof window !== "undefined" ? window.innerHeight : 600;
 
@@ -112,7 +111,7 @@ export function ContextMenuPortal({
     <div
       ref={menuRef}
       style={{ position: "fixed", left: pos.x, top: pos.y, zIndex: 50 }}
-      className="bg-ink-900 border border-ink-700 rounded-lg shadow-2xl py-1 min-w-[160px] animate-fade-in-up touch-none"
+      className="conversation-context-menu animate-fade-in-up touch-none"
       role="menu"
     >
       {children}
@@ -136,21 +135,18 @@ export function ContextMenuItem({
 }) {
   return (
     <button
+      type="button"
       onClick={e => { e.stopPropagation(); onClick(); }}
-      className={`w-full text-left px-3 py-2.5 min-h-[44px] text-xs flex items-center gap-2.5 transition-theme ${
-        danger
-          ? "text-rose-400 hover:bg-rose-600/10 hover:text-rose-300"
-          : "text-ink-300 hover:bg-ink-800 hover:text-ink-100"
-      }`}
+      className={`conversation-context-menu-item ${danger ? "conversation-context-menu-danger" : ""}`}
       role="menuitem"
     >
-      {icon && <span className="shrink-0 w-3 flex justify-center">{icon}</span>}
-      <span className="flex-1">{label}</span>
-      {shortcut && <span className="text-ink-500 text-[0.65rem] font-mono ml-2 hidden sm:block">{shortcut}</span>}
+      {icon && <span className="conversation-context-menu-icon">{icon}</span>}
+      <span className="conversation-context-menu-label">{label}</span>
+      {shortcut && <span className="conversation-context-menu-shortcut">{shortcut}</span>}
     </button>
   );
 }
 
 export function ContextMenuDivider() {
-  return <div className="border-t border-ink-800 my-0.5" />;
+  return <div className="conversation-context-menu-divider" />;
 }

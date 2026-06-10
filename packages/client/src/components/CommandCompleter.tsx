@@ -19,10 +19,8 @@ export function CommandCompleter({ commands, filter, onSelect, onClose }: Props)
       .slice(0, 12);
   }, [commands, filter]);
 
-  // Reset active index when filter changes
   useEffect(() => { setActiveIdx(0); }, [filter]);
 
-  // Keyboard navigation
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "ArrowDown") { e.preventDefault(); setActiveIdx(i => Math.min(i + 1, Math.max(filtered.length - 1, 0))); }
@@ -36,37 +34,40 @@ export function CommandCompleter({ commands, filter, onSelect, onClose }: Props)
 
   if (filtered.length === 0) {
     return (
-      <div className="absolute bottom-full left-0 mb-2 bg-ink-900 border border-ink-700 rounded-lg shadow-lg py-2 px-3 z-50 w-[calc(100vw-2rem)] md:w-80">
-        <p className="text-ink-500 text-xs font-mono">No matching commands</p>
-        <button onClick={onClose} className="text-ink-400 text-xs mt-1 hover:text-ink-400">Dismiss</button>
+      <div className="conversation-completer">
+        <div className="conversation-completer-header">
+          <span>Commands</span>
+          <button type="button" onClick={onClose} className="conversation-completer-dismiss">Dismiss</button>
+        </div>
+        <div className="conversation-completer-empty">No matching commands</div>
       </div>
     );
   }
 
   const sourceIcons: Record<string, string> = {
-    skill: "⚡",
-    prompt: "📄", 
-    extension: "🔌",
+    skill: "SK",
+    prompt: "PR",
+    extension: "EX",
   };
 
   return (
-    <div className="absolute bottom-full left-0 mb-2 bg-ink-900 border border-ink-700 rounded-lg shadow-lg py-1 z-50 w-[calc(100vw-2rem)] md:w-80 max-h-64 overflow-y-auto custom-scrollbar">
-      <div className="px-3 py-1.5 text-ink-500 text-[0.65rem] font-mono uppercase tracking-wider border-b border-ink-800">
-        Commands {filter ? `matching "${filter}"` : ""}
+    <div className="conversation-completer">
+      <div className="conversation-completer-header">
+        <span>Commands {filter ? `matching "${filter}"` : ""}</span>
       </div>
       {filtered.map((c, i) => (
         <button
+          type="button"
           key={c.name}
           onClick={() => onSelect(c.name)}
-          className={`w-full text-left px-3 py-2 hover:bg-ink-850 transition-theme flex items-start gap-2 min-h-[44px] ${
-            i === activeIdx ? "bg-ink-850" : ""
-          }`}
+          className="conversation-completer-item"
+          data-active={i === activeIdx}
         >
-          <span className="text-xs shrink-0 mt-0.5">{sourceIcons[c.source] || "•"}</span>
-          <div className="min-w-0">
-            <div className="text-ink-200 text-xs font-mono font-medium">/{c.name}</div>
+          <span className="conversation-completer-icon">{sourceIcons[c.source] || "•"}</span>
+          <div className="min-w-0 flex-1">
+            <div className="conversation-completer-title">/{c.name}</div>
             {c.description && (
-              <div className="text-ink-500 text-[0.65rem] truncate">{c.description}</div>
+              <div className="conversation-completer-meta">{c.description}</div>
             )}
           </div>
         </button>

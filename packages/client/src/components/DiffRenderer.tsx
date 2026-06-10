@@ -18,21 +18,15 @@ interface Props {
   collapsible?: boolean;
 }
 
-// ─── Module-scope sub-components (avoid remounts on every render) ───
-
 function FileMeta({ line }: { line: DiffLine }) {
   return (
-    <div className="px-3 py-1 bg-ink-900 text-ink-400 font-semibold text-xs font-mono border-b border-ink-800">
-      {line.content}
-    </div>
+    <div className="diff-meta">{line.content}</div>
   );
 }
 
 function HunkHeader({ line }: { line: DiffLine }) {
   return (
-    <div className="px-3 py-1 bg-amber-500/5 text-amber-400 text-xs font-mono border-b border-ink-800">
-      {line.content}
-    </div>
+    <div className="diff-hunk">{line.content}</div>
   );
 }
 
@@ -41,7 +35,6 @@ export function DiffRenderer({ content, collapsible = true }: Props) {
   const isMobile = useIsMobile();
   const [viewMode, setViewMode] = useState<"side" | "unified">("unified");
 
-  // Sync viewMode when viewport changes
   useEffect(() => {
     if (isMobile) setViewMode("unified");
   }, [isMobile]);
@@ -80,7 +73,6 @@ export function DiffRenderer({ content, collapsible = true }: Props) {
       }
     }
 
-    // Build side-by-side rows: pair adjacent deletes + adds, show context on both sides
     const rows: SideBySideRow[] = [];
     let i = 0;
     while (i < parsed.length) {
@@ -92,7 +84,6 @@ export function DiffRenderer({ content, collapsible = true }: Props) {
         rows.push({ type: "hunk", leftLine: line, rightLine: line });
         i++;
       } else if (line.type === "remove" && i + 1 < parsed.length && parsed[i + 1].type === "add") {
-        // Pair: old on left, new on right
         rows.push({ type: "context", leftLine: line, rightLine: parsed[i + 1] });
         i += 2;
       } else if (line.type === "add") {
@@ -120,55 +111,48 @@ export function DiffRenderer({ content, collapsible = true }: Props) {
   const displayRows = needsCollapse && !expanded ? sideBySide.slice(0, previewLimit) : sideBySide;
 
   const lineNumCell = (num?: number) => (
-    <td className="w-10 text-right pr-2 select-none text-ink-500 text-[0.65rem] align-top py-px">
-      {num != null ? num : ""}
-    </td>
+    <td className="diff-line-num-cell">{num != null ? num : ""}</td>
   );
 
   const contentCell = (line: DiffLine | undefined, side: "left" | "right") => {
     if (!line || (side === "left" && line.type === "add") || (side === "right" && line.type === "remove")) {
-      return <td className="pl-2 py-px align-top text-ink-500">&nbsp;</td>;
+      return <td className="diff-empty-cell">&nbsp;</td>;
     }
     const isAdd = side === "right" && line.type === "add";
     const isRemove = side === "left" && line.type === "remove";
     return (
-      <td className={`pl-2 py-px whitespace-pre-wrap break-all font-mono text-[0.72rem] ${
-        isAdd ? "text-teal-400" : isRemove ? "text-rose-400" : "text-ink-400"
-      }`}>
+      <td className={`diff-content-cell ${isAdd ? "diff-add-text" : isRemove ? "diff-remove-text" : ""}`}>
         {line.content.slice(1)}
       </td>
     );
   };
 
   const rowBg = (row: SideBySideRow) => {
-    if (row.type === "add") return "bg-teal-500/10";
-    if (row.type === "remove") return "bg-rose-500/10";
+    if (row.type === "add") return "diff-add-row";
+    if (row.type === "remove") return "diff-remove-row";
     return "";
   };
 
   return (
-    <div className="my-2 rounded-lg border border-ink-800 overflow-hidden bg-ink-900/30">
-      {/* Stats + toggle header */}
-      <div className="flex items-center gap-3 px-3 py-1.5 border-b border-ink-800 bg-ink-900 text-xs">
-        <span className="text-teal-400 font-medium font-mono">+{stats.added}</span>
-        <span className="text-rose-400 font-medium font-mono">-{stats.removed}</span>
-        <span className="text-ink-500 font-mono">{stats.total} changes</span>
-        <div className="flex-1" />
+    <div className="diff-renderer">
+      <div className="diff-toolbar">
+        <span className="diff-add-count">+{stats.added}</span>
+        <span className="diff-remove-count">-{stats.removed}</span>
+        <span>{stats.total} changes</span>
+        <div className="diff-toolbar-spacer" />
         {!isMobile && (
-        <div className="flex rounded border border-ink-700 overflow-hidden diff-side-toggle">
+        <div className="diff-mode-toggle">
           <button
+            type="button"
             onClick={() => setViewMode("side")}
-            className={`px-2 py-0.5 text-[0.65rem] font-mono transition-theme ${
-              viewMode === "side" ? "bg-ink-800 text-ink-200" : "text-ink-500 hover:text-ink-400"
-            }`}
+            className={viewMode === "side" ? "active" : ""}
           >
             Side-by-side
           </button>
           <button
+            type="button"
             onClick={() => setViewMode("unified")}
-            className={`px-2 py-0.5 text-[0.65rem] font-mono transition-theme border-l border-ink-700 ${
-              viewMode === "unified" ? "bg-ink-800 text-ink-200" : "text-ink-500 hover:text-ink-400"
-            }`}
+            className={viewMode === "unified" ? "active" : ""}
           >
             Unified
           </button>
@@ -176,10 +160,9 @@ export function DiffRenderer({ content, collapsible = true }: Props) {
         )}
       </div>
 
-      {/* Unified view */}
       {viewMode === "unified" && (
-        <div className="overflow-x-auto">
-          <div className="md:min-w-[300px]">
+        <div className="diff-scroll">
+          <div className="diff-unified-min">
             {displayRows.map((row, i) => {
               const line = row.leftLine || row.rightLine;
               if (!line) return null;
@@ -188,24 +171,20 @@ export function DiffRenderer({ content, collapsible = true }: Props) {
               return (
                 <div
                   key={i}
-                  className={`flex items-start font-mono text-[0.72rem] leading-relaxed ${
-                    line.type === "add" ? "bg-teal-500/10" : line.type === "remove" ? "bg-rose-500/10" : ""
-                  }`}
+                  className={`diff-unified-row ${line.type === "add" ? "diff-add-row" : line.type === "remove" ? "diff-remove-row" : ""}`}
                 >
-                  {/* Old line number — hidden on mobile to save space */}
                   {!isMobile && (
-                  <div className="w-10 text-right pr-2 select-none text-ink-500 text-[0.65rem] py-px shrink-0">
+                  <div className="diff-line-num">
                     {line.type !== "add" && line.lineNum?.old != null ? line.lineNum.old : ""}
                   </div>
                   )}
-                  {/* New line number */}
-                  <div className="w-10 text-right pr-2 select-none text-ink-500 text-[0.65rem] py-px shrink-0 border-r border-ink-800">
+                  <div className="diff-line-num diff-line-num-new">
                     {line.type !== "remove" && line.lineNum?.new != null ? line.lineNum.new : ""}
                   </div>
-                  <div className={`pl-2 py-px whitespace-pre-wrap break-all min-w-0 flex-1 ${
-                    line.type === "add" ? "text-teal-400" : line.type === "remove" ? "text-rose-400" : "text-ink-400"
+                  <div className={`diff-line-content ${
+                    line.type === "add" ? "diff-add-text" : line.type === "remove" ? "diff-remove-text" : ""
                   }`}>
-                    <span className="select-none">{line.type === "add" ? "+" : line.type === "remove" ? "-" : " "}</span>
+                    <span className="diff-prefix">{line.type === "add" ? "+" : line.type === "remove" ? "-" : " "}</span>
                     {line.content.slice(1)}
                   </div>
                 </div>
@@ -215,19 +194,17 @@ export function DiffRenderer({ content, collapsible = true }: Props) {
         </div>
       )}
 
-      {/* Side-by-side view */}
       {viewMode === "side" && (
-        <div className="overflow-x-auto">
-          <div className="min-w-[600px]">
-            {/* Column headers */}
-            <div className="flex border-b border-ink-800 bg-ink-900 text-ink-400 text-[0.65rem] font-mono uppercase tracking-wider">
-              <div className="flex-1 flex">
-                <div className="w-10 shrink-0 px-1 border-r border-ink-800 py-1">old</div>
-                <div className="flex-1 px-2 py-1 border-r-2 border-ink-700">Original</div>
+        <div className="diff-scroll">
+          <div className="diff-side-min">
+            <div className="diff-side-head">
+              <div className="diff-side-pane">
+                <div className="diff-side-head-num">old</div>
+                <div className="diff-side-head-label">Original</div>
               </div>
-              <div className="flex-1 flex">
-                <div className="w-10 shrink-0 px-1 border-r border-ink-800 py-1">new</div>
-                <div className="flex-1 px-2 py-1">Changed</div>
+              <div className="diff-side-pane">
+                <div className="diff-side-head-num">new</div>
+                <div className="diff-side-head-label">Changed</div>
               </div>
             </div>
 
@@ -236,14 +213,12 @@ export function DiffRenderer({ content, collapsible = true }: Props) {
               if (row.type === "hunk") return <HunkHeader key={i} line={row.leftLine!} />;
 
               return (
-                <div key={i} className={`flex text-[0.72rem] leading-relaxed ${rowBg(row)}`}>
-                  {/* Left side (old) */}
-                  <div className="flex-1 flex border-r-2 border-ink-700 min-w-0">
+                <div key={i} className={`diff-side-row ${rowBg(row)}`}>
+                  <div className="diff-side-pane">
                     {lineNumCell(row.leftLine?.type !== "add" ? row.leftLine?.lineNum?.old : undefined)}
                     {contentCell(row.leftLine, "left")}
                   </div>
-                  {/* Right side (new) */}
-                  <div className="flex-1 flex min-w-0">
+                  <div className="diff-side-pane">
                     {lineNumCell(row.rightLine?.type !== "remove" ? row.rightLine?.lineNum?.new : undefined)}
                     {contentCell(row.rightLine, "right")}
                   </div>
@@ -254,11 +229,11 @@ export function DiffRenderer({ content, collapsible = true }: Props) {
         </div>
       )}
 
-      {/* Expand/collapse */}
       {needsCollapse && (
         <button
+          type="button"
           onClick={() => setExpanded(e => !e)}
-          className="w-full text-center py-1.5 text-xs text-ink-400 hover:text-ink-300 bg-ink-900 border-t border-ink-800 transition-theme font-mono"
+          className="diff-collapse"
         >
           {expanded
             ? "▲ Collapse"
@@ -269,7 +244,6 @@ export function DiffRenderer({ content, collapsible = true }: Props) {
   );
 }
 
-/** Detect if text content looks like a unified diff */
 export function isDiffContent(text: string): boolean {
   const lines = text.split("\n").filter(l => l.trim());
   if (lines.length < 3) return false;

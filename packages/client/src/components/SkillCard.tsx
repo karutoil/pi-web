@@ -161,31 +161,31 @@ export function SkillCard({ name, location, content, defaultExpanded }: SkillCar
 
   return (
     <div
-      className="rounded-lg border overflow-hidden border-tool-skill-bdr bg-tool-skill-bg/60"
+      className="conversation-skill-card"
       data-skill-name={name}
     >
       <button
         type="button"
         onClick={() => setExpanded((e) => !e)}
-        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs font-mono text-tool-skill hover:brightness-110 transition-theme text-left"
+        className="conversation-skill-card-button"
         aria-expanded={expanded}
         aria-label={`Toggle skill ${name}`}
       >
         <Icon
           name="chevron-right-sm"
           size={10}
-          className={`shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`}
+          className={`conversation-skill-card-chevron ${expanded ? "rotate-90" : ""}`}
         />
-        <Icon name="spark" size={11} className="shrink-0" />
-        <span className="font-medium truncate">{name}</span>
+        <Icon name="spark" size={11} className="conversation-skill-card-icon" />
+        <span>{name}</span>
         {location && (
-          <span className="ml-auto truncate text-ink-500 text-[0.6rem] pl-2 max-w-[55%]">
+          <span className="conversation-skill-card-location">
             {location}
           </span>
         )}
       </button>
       {expanded && content && (
-        <div className="border-t border-tool-skill-bdr/60 px-3 py-2 text-ink-300 text-[0.72rem] leading-relaxed whitespace-pre-wrap font-mono max-h-72 overflow-y-auto">
+        <div className="conversation-skill-card-body">
           {content}
         </div>
       )}

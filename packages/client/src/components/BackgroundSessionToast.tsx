@@ -12,7 +12,7 @@ interface BackgroundSessionToastProps {
 }
 
 interface Toast {
-  id: string; // unique key (sessionId + finishedAt)
+  id: string;
   project: Project;
   session: SessionSummary;
   finishedAt: number;
@@ -21,16 +21,6 @@ interface Toast {
 const TOAST_DURATION_MS = 5000;
 const POLL_INTERVAL_MS = 500;
 
-/**
- * Background session toast — fires when an agent_end arrives for a session
- * that the user is not currently viewing. Click to navigate to it.
- *
- * Note: receives wsPool as a prop instead of calling useWebSocketPool()
- * directly, because each call to that hook creates a fresh pool Map. Sharing
- * the App's pool ensures we see the same connections the App sees.
- * TODO: pool API extension — once useWebSocketPool exposes a shared
- * pool/context, the prop can be removed.
- */
 export function BackgroundSessionToast({
   wsPool,
   projects,
@@ -40,11 +30,8 @@ export function BackgroundSessionToast({
   onSelectSession,
 }: BackgroundSessionToastProps) {
   const [toasts, setToasts] = useState<Toast[]>([]);
-  // Track per-conn previous isActive to detect true → false transitions
   const prevIsActiveRef = useRef<Map<string, boolean>>(new Map());
 
-  // Diff pool state on every render. The App's pool triggers a re-render on
-  // every conn state change, so this effect re-runs naturally.
   useEffect(() => {
     const seen = new Set<string>();
     for (const [key, conn] of wsPool.pool.entries()) {
@@ -52,7 +39,6 @@ export function BackgroundSessionToast({
       const wasActive = prevIsActiveRef.current.get(key) ?? false;
       const isActive = conn.isActive;
       if (wasActive && !isActive) {
-        // Agent just finished — emit toast if not the active session
         const sessionId = conn.state?.sessionId;
         const projectId = key.split(":")[0];
         if (
@@ -95,13 +81,11 @@ export function BackgroundSessionToast({
       }
       prevIsActiveRef.current.set(key, isActive);
     }
-    // Drop tracking entries for conns that have left the pool
     for (const k of Array.from(prevIsActiveRef.current.keys())) {
       if (!seen.has(k)) prevIsActiveRef.current.delete(k);
     }
   });
 
-  // Auto-dismiss expired toasts
   useEffect(() => {
     if (toasts.length === 0) return;
     const interval = setInterval(() => {
@@ -121,24 +105,25 @@ export function BackgroundSessionToast({
 
   return (
     <div
-      className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-none"
+      className="conversation-session-toast-stack"
       role="status"
       aria-live="polite"
     >
       {toasts.map(t => (
         <button
+          type="button"
           key={t.id}
           onClick={() => handleClick(t)}
-          className="pointer-events-auto text-left px-3 py-2 rounded-lg bg-ink-900/95 border border-teal-500/25 hover:border-teal-500/50 hover:bg-ink-900 transition-all animate-fade-in-up shadow-lg shadow-ink-950/50"
+          className="conversation-session-toast"
           title="Click to view this session"
         >
           <div className="flex items-start gap-2">
-            <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-teal-400 mt-1.5" />
+            <span className="conversation-session-toast-dot" />
             <div className="min-w-0 flex-1">
-              <div className="text-ink-200 text-xs font-medium truncate">
+              <div className="conversation-session-toast-title">
                 {t.session.name || "Session finished"}
               </div>
-              <div className="text-ink-500 text-[10px] font-mono truncate">
+              <div className="conversation-session-toast-meta">
                 in {t.project.name}
               </div>
             </div>

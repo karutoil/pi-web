@@ -14,8 +14,8 @@ export function CompactionIndicator({ compactionResult, isCompacting, onCompact,
 
   if (isCompacting) {
     return (
-      <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-900/40 border border-blue-700/30 rounded-lg text-blue-300 text-xs">
-        <span className="animate-spin-slow">⏳</span>
+      <div className="conversation-compaction-card" data-loading="true">
+        <span className="conversation-loading-spinner conversation-loading-spinner--small" />
         <span>Compacting context...</span>
       </div>
     );
@@ -25,13 +25,13 @@ export function CompactionIndicator({ compactionResult, isCompacting, onCompact,
     const tokensBefore = compactionResult.result?.tokensBefore;
     const summary = compactionResult.result?.summary;
     return (
-      <div className="flex items-start gap-2 px-3 py-2 bg-green-900/30 border border-green-700/30 rounded-lg text-green-300 text-xs">
+      <div className="conversation-compaction-card" data-success="true">
         <span>✓</span>
-        <div className="flex-1 min-w-0">
+        <div className="conversation-compaction-copy">
           <div>Compacted ({compactionResult.reason})</div>
-          {tokensBefore != null && <div className="text-green-400/60">Tokens before: {tokensBefore.toLocaleString()}</div>}
-          {compactionResult.willRetry && <div className="text-amber-400">Will retry prompt...</div>}
-          {summary && <div className="text-green-400/60 mt-1 truncate" title={summary}>{summary.slice(0, 80)}</div>}
+          {tokensBefore != null && <div className="conversation-muted">Tokens before: {tokensBefore.toLocaleString()}</div>}
+          {compactionResult.willRetry && <div className="conversation-warning">Will retry prompt...</div>}
+          {summary && <div className="conversation-muted conversation-truncate" title={summary}>{summary.slice(0, 80)}</div>}
         </div>
       </div>
     );
@@ -39,33 +39,42 @@ export function CompactionIndicator({ compactionResult, isCompacting, onCompact,
 
   if (compactionResult?.aborted) {
     return (
-      <div className="flex items-center gap-2 px-3 py-1.5 bg-ink-800 border border-ink-700 rounded-lg text-ink-400 text-xs">
+      <div className="conversation-compaction-card" data-error="true">
         <span>⊘</span>
-        <span>Compaction aborted</span>
+        <div className="conversation-compaction-copy">
+          <span>Compaction aborted</span>
+        </div>
       </div>
     );
   }
 
-  // No compaction in progress — show manual trigger
   if (showCustomCompact) {
     return (
-      <div className="flex flex-col gap-2 px-3 py-2 bg-ink-800 border border-ink-700 rounded-lg text-xs">
-        <textarea
-          value={customInstructions}
-          onChange={e => setCustomInstructions(e.target.value)}
-          placeholder="Custom compaction instructions (optional)..."
-          className="w-full bg-ink-900 text-ink-200 px-2 py-1.5 rounded border border-ink-700 focus:border-accent-500 focus:outline-none text-xs resize-none"
-          rows={2}
-        />
-        <div className="flex items-center gap-2">
-          <button onClick={() => { onCompact(customInstructions || undefined); setShowCustomCompact(false); setCustomInstructions(""); }}
-            className="px-3 py-1 bg-accent-600 hover:bg-accent-500 text-white rounded transition-colors">
-            Compact
-          </button>
-          <button onClick={() => setShowCustomCompact(false)}
-            className="px-3 py-1 text-ink-400 hover:text-ink-200 transition-colors">
-            Cancel
-          </button>
+      <div className="conversation-compaction-card" data-loading="true">
+        <div className="conversation-compaction-copy">
+          <textarea
+            value={customInstructions}
+            onChange={e => setCustomInstructions(e.target.value)}
+            placeholder="Custom compaction instructions (optional)..."
+            className="conversation-compaction-textarea"
+            rows={2}
+          />
+          <div className="conversation-compaction-actions">
+            <button
+              type="button"
+              onClick={() => { onCompact(customInstructions || undefined); setShowCustomCompact(false); setCustomInstructions(""); }}
+              className="conversation-small-button conversation-small-button--primary"
+            >
+              Compact
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowCustomCompact(false)}
+              className="conversation-small-button"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       </div>
     );

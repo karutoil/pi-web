@@ -48,7 +48,7 @@ function TextWithSkills({ text, isStreaming }: { text: string; isStreaming?: boo
     }
     return (
       <div
-        className={`prose prose-invert max-w-none text-ink-100 text-sm leading-relaxed markdown-content ${
+            className={`conversation-markdown prose prose-invert max-w-none text-ink-100 text-sm leading-relaxed markdown-content ${
           isStreaming ? "cursor-blink" : ""
         }`}
       >
@@ -91,7 +91,7 @@ function TextWithSkills({ text, isStreaming }: { text: string; isStreaming?: boo
         return (
           <div
             key={`t${i}`}
-            className={`prose prose-invert max-w-none text-ink-100 text-sm leading-relaxed markdown-content ${
+        className={`conversation-markdown prose prose-invert max-w-none text-ink-100 text-sm leading-relaxed markdown-content ${
               isStreaming ? "cursor-blink" : ""
             }`}
           >
@@ -162,14 +162,14 @@ export function MessageBubble({ message, showThinking, toolResultsMap, inlineToo
   }
 
   return (
-    <div onContextMenu={handleContextMenu} {...longPress} className={`animate-fade-in-up min-w-0 ${isUser ? "flex justify-end" : "flex gap-2 md:gap-3"}`}>
+    <div onContextMenu={handleContextMenu} {...longPress} className={`conversation-message-row min-w-0 ${isUser ? "justify-end" : ""}`} data-user={isUser}>
       {!isUser && (
-        <div className="shrink-0 w-6 h-6 md:w-7 md:h-7 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center mt-1">
+        <div className="conversation-avatar">
           <Icon name="pi-avatar" size={12} />
         </div>
       )}
       
-      <div className={`max-w-[90%] md:max-w-[80%] overflow-hidden ${isUser ? "" : "min-w-0 flex-1"}`}>
+      <div className={`conversation-bubble ${isUser ? "" : "conversation-assistant-bubble"}`}>
         {/* Tool execution */}
         {isTool && (
           <ToolResultBubble message={message} />
@@ -200,18 +200,18 @@ export function MessageBubble({ message, showThinking, toolResultsMap, inlineToo
 
         {/* Timestamp / metadata */}
         {!isStreaming && (
-          <div className={`text-ink-500 text-[0.65rem] font-mono mt-1 ${isUser ? "text-right" : ""}`}>
+          <div className="conversation-metadata" data-user={isUser}>
             {message.model && <span>{message.model}</span>}
             {message.usage && (
-              <span className="ml-2">
+              <span className="conversation-metadata-tokens">
                 {formatTokens(message.usage.input + (message.usage.output || 0))} tokens
               </span>
             )}
             {message.stopReason === "aborted" && (
-              <span className="text-rose-500 ml-2">aborted</span>
+              <span className="conversation-metadata-error">aborted</span>
             )}
             {message.stopReason === "error" && (
-              <span className="text-rose-500 ml-2">error</span>
+              <span className="conversation-metadata-error">error</span>
             )}
           </div>
         )}
@@ -252,14 +252,14 @@ function UserBubble({ message, entryId, onFork }: { message: ChatMessage; entryI
   const segments = text ? parseSkillBlocks(text) : [];
 
   return (
-    <div className="group relative bg-amber-500/12 border border-amber-500/20 rounded-2xl rounded-br-md px-3 md:px-4 py-2.5">
+    <div className="conversation-user-bubble group relative">
       {text && (
         segments.length === 1 && segments[0].type === "text" ? (
-          <p className="text-ink-100 text-sm leading-relaxed whitespace-pre-wrap break-words">
+          <p className="conversation-user-text">
             {segments[0].content}
           </p>
         ) : (
-          <div className="space-y-2">
+          <div className="conversation-user-text-stack">
             {segments.map((seg, i) =>
               seg.type === "skill" ? (
                 <SkillCard
@@ -269,7 +269,7 @@ function UserBubble({ message, entryId, onFork }: { message: ChatMessage; entryI
                   content={seg.content}
                 />
               ) : seg.content.trim() ? (
-                <p key={i} className="text-ink-100 text-sm leading-relaxed whitespace-pre-wrap break-words">
+                <p key={i} className="conversation-user-text">
                   {seg.content}
                 </p>
               ) : null
@@ -278,13 +278,13 @@ function UserBubble({ message, entryId, onFork }: { message: ChatMessage; entryI
         )
       )}
       {imageBlocks.length > 0 && (
-        <div className={`flex gap-2 flex-wrap ${text ? 'mt-2' : ''}`}>
+        <div className={`conversation-user-images ${text ? "mt-2" : ""}`}>
           {imageBlocks.map((img, i) => (
             <img
               key={i}
               src={`data:${img.mimeType};base64,${img.data}`}
               alt={`Attachment ${i + 1}`}
-              className="max-h-32 md:max-h-48 rounded-lg border border-amber-500/20 object-contain"
+              className="conversation-user-image"
             />
           ))}
         </div>
@@ -292,7 +292,7 @@ function UserBubble({ message, entryId, onFork }: { message: ChatMessage; entryI
       {entryId && onFork && (
         <button
           onClick={() => onFork(entryId)}
-          className="hidden md:block absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-ink-500 hover:text-amber-500 transition-all p-1"
+          className="conversation-fork-button"
           title="Fork from here"
           aria-label="Fork from here"
         >
@@ -347,7 +347,7 @@ function AssistantBubble({
 
       {/* Streaming thinking indicator */}
       {isStreaming && thinkingBlocks.length === 0 && textBlocks.length === 0 && (
-        <div className="text-ink-500 text-sm italic animate-pulse">Thinking...</div>
+        <div className="conversation-streaming-thought">Thinking...</div>
       )}
 
       {/* Text content */}
@@ -379,18 +379,18 @@ function ThinkingBlock({ thinking }: { thinking: string }) {
   const clean = thinking.replace(/\x1b\[[0-9;]*m/g, "");
   
   return (
-    <div className="border border-amber-500/20 rounded-lg overflow-hidden bg-amber-500/5">
+    <div className="conversation-thinking-block">
       <button
         onClick={() => setCollapsed(c => !c)}
-        className="w-full flex items-center gap-2 px-3 py-1.5 text-amber-500 hover:text-amber-400 text-xs font-mono transition-theme"
+        className="conversation-reasoning-toggle"
         aria-label="Toggle thinking"
       >
-        <Icon name="chevron-right-sm" size={10} className={`transition-transform ${collapsed ? "" : "rotate-90"}`} />
+        <Icon name="chevron-right-sm" size={10} className={`conversation-chevron ${collapsed ? "" : "rotate-90"}`} />
         Reasoning
-        {collapsed && <span className="text-ink-500 ml-1">({clean.split("\n").length} lines)</span>}
+        {collapsed && <span className="conversation-reasoning-lines">({clean.split("\n").length} lines)</span>}
       </button>
       {!collapsed && (
-        <div className="px-3 pb-2 text-ink-500 text-xs leading-relaxed whitespace-pre-wrap border-t border-amber-500/10 pt-2 max-h-64 overflow-y-auto">
+        <div className="conversation-reasoning-body">
           {clean}
         </div>
       )}
@@ -420,31 +420,7 @@ function CombinedToolBubble({
   const isDone = !!toolResult || (runningTool && runningTool.status === "done");
   const isError = toolResult?.isError || (runningTool && runningTool.status === "error");
 
-  // Color by tool — adaptive tokens (light/dark aware)
-  const colors: Record<string, string> = {
-    read: "text-tool-read border-tool-read-bdr bg-tool-read-bg",
-    bash: "text-tool-bash border-tool-bash-bdr bg-tool-bash-bg",
-    edit: "text-tool-edit border-tool-edit-bdr bg-tool-edit-bg",
-    write: "text-tool-write border-tool-write-bdr bg-tool-write-bg",
-    grep: "text-tool-grep border-tool-grep-bdr bg-tool-grep-bg",
-    find: "text-tool-find border-tool-find-bdr bg-tool-find-bg",
-    ls: "text-tool-ls border-tool-ls-bdr bg-tool-ls-bg",
-    subagent: "text-amber-400 border-amber-500/20 bg-amber-500/5",
-  };
-
-  const headerColor = colors[name] || "text-tool-default";
-
-  // Determine border color for the whole bubble
-  const borderColor = isError
-    ? "border-rose-500/30"
-    : isRunning
-    ? "border-amber-500/30"
-    : "border-ink-800";
-  const bgColor = isError
-    ? "bg-rose-500/5"
-    : "bg-ink-900/30";
-
-  // Build result content for inline rendering
+  // Determine result content for inline rendering
   const resultContent = useMemo(() => {
     if (!toolResult) return null;
     return extractTextContent(toolResult.content);
@@ -479,19 +455,19 @@ function CombinedToolBubble({
   const isDiffResult = !!(detailsDiff || (resultContent && !isError && isDiffContent(resultContent)));
 
   return (
-    <div className={`rounded-lg border overflow-hidden ${borderColor} ${bgColor}`}>
+    <div className={`conversation-tool-bubble ${isError ? "conversation-tool-bubble-error" : ""} ${isRunning ? "conversation-tool-bubble-running" : ""}`}>
       {/* Header: tool call info */}
       <button
         onClick={onToggle}
-        className={`flex items-center gap-2 px-3 py-1.5 text-xs font-mono transition-theme w-full text-left ${headerColor}`}
+        className="conversation-tool-header"
         aria-label="Toggle tool details"
       >
         <Icon name="chevron-right-sm" size={10} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
-        <span className="font-medium">{name}</span>
-        <span className="opacity-60 truncate">{argsPreview}</span>
-        {isRunning && <span className="text-amber-400 animate-pulse ml-1">●</span>}
-        {isDone && !isError && <span className="text-teal-400 ml-1">✓</span>}
-        {isError && <span className="text-rose-400 ml-1">(error)</span>}
+        <span className="conversation-tool-name">{name}</span>
+        <span className="conversation-tool-args">{argsPreview}</span>
+        {isRunning && <span className="conversation-tool-status conversation-tool-status-running">●</span>}
+        {isDone && !isError && <span className="conversation-tool-status conversation-tool-status-done">✓</span>}
+        {isError && <span className="conversation-tool-status conversation-tool-status-error">(error)</span>}
       </button>
 
       {/* Expanded body: result content */}
@@ -499,7 +475,7 @@ function CombinedToolBubble({
         <>
           {/* Diff result */}
           {isDiffResult && (
-            <div className="border-t border-ink-800">
+            <div className="conversation-tool-body conversation-diff-panel">
               {detailsDiff ? (
                 <DiffRenderer content={detailsDiff} collapsible={false} />
               ) : resultContent ? (
@@ -510,17 +486,17 @@ function CombinedToolBubble({
 
           {/* Subagent progress — rich rendering for subagent/extension tools */}
           {isRunning && !isDiffResult && runningTool.partialResult?.details && isSubagentDetails(runningTool.partialResult.details) && (
-            <div className="border-t border-ink-800 px-3 py-2">
+            <div className="conversation-tool-body conversation-subagent-panel">
               <SubagentProgressView details={runningTool.partialResult.details} isRunning={true} />
             </div>
           )}
 
           {/* Generic running indicator — for non-subagent tools */}
           {isRunning && !isDiffResult && !(runningTool.partialResult?.details && isSubagentDetails(runningTool.partialResult.details)) && (
-            <div className="border-t border-ink-800 px-3 py-2 text-ink-500 text-xs font-mono">
-              <span className="animate-pulse">Running…</span>
+            <div className="conversation-tool-body conversation-running-panel">
+              <span className="conversation-running-label">Running…</span>
               {runningTool.partialResult?.content && (
-                <pre className="mt-1 text-ink-400 whitespace-pre-wrap max-h-20 overflow-hidden">
+                <pre className="conversation-result-pre">
                   {extractTextContent(runningTool.partialResult.content as ContentBlock[] | string)}
                 </pre>
               )}
@@ -529,15 +505,15 @@ function CombinedToolBubble({
 
           {/* Completed subagent result — show structured summary */}
           {!isDiffResult && !isRunning && (toolResult?.details || runningTool?.result?.details) && isSubagentDetails(toolResult?.details || runningTool?.result?.details) && (
-            <div className="border-t border-ink-800 px-3 py-2">
+            <div className="conversation-tool-body conversation-subagent-panel">
               <SubagentProgressView details={(toolResult?.details || runningTool?.result?.details)!} isRunning={false} />
             </div>
           )}
 
           {/* Text result (non-diff, non-subagent) */}
           {!isDiffResult && !isRunning && resultContent && !(toolResult?.details && isSubagentDetails(toolResult.details)) && !isSubagentDetails(runningTool?.result?.details) && (
-            <div className="border-t border-ink-800">
-              <pre className="px-3 pb-2 text-ink-400 text-xs leading-relaxed whitespace-pre-wrap pt-2 max-h-64 overflow-y-auto font-mono">
+            <div className="conversation-tool-body conversation-result-panel">
+              <pre className="conversation-result-pre">
                 {resultContent}
               </pre>
             </div>
@@ -583,11 +559,11 @@ function ToolResultBubble({ message }: { message: ChatMessage }) {
   // Use diff renderer when PI's native diff is available in details
   if (detailsDiff) {
     return (
-      <div className="border border-ink-800 rounded-lg overflow-hidden bg-ink-900/30">
-        <div className="flex items-center gap-2 px-3 py-1.5 text-xs font-mono border-b border-ink-800">
-          <Icon name="chevron-right-sm-amber" size={10} className="text-amber-500" />
-          <span className="text-ink-400">{message.toolName || "tool"} result</span>
-          <span className="text-amber-500">(diff)</span>
+      <div className="conversation-tool-bubble conversation-diff-panel">
+        <div className="conversation-tool-header conversation-diff-header">
+          <Icon name="chevron-right-sm-amber" size={10} className="conversation-tool-diff-icon" />
+          <span className="conversation-tool-name">{message.toolName || "tool"} result</span>
+          <span className="conversation-tool-status">(diff)</span>
         </div>
         <DiffRenderer content={detailsDiff} collapsible={false} />
       </div>
@@ -597,12 +573,12 @@ function ToolResultBubble({ message }: { message: ChatMessage }) {
   // Use diff renderer for edit/patch/refactor text-based diffs
   if (!isError && isDiffContent(content)) {
     return (
-      <div className="border border-ink-800 rounded-lg overflow-hidden bg-ink-900/30">
-        <div className="flex items-center gap-2 px-3 py-1.5 text-xs font-mono border-b border-ink-800">
-          <Icon name="chevron-right-sm-amber" size={10} className="text-amber-500" />
-          <span className="text-ink-400">{message.toolName || "tool"} result</span>
+      <div className="conversation-tool-bubble conversation-diff-panel">
+        <div className="conversation-tool-header conversation-diff-header">
+          <Icon name="chevron-right-sm-amber" size={10} className="conversation-tool-diff-icon" />
+          <span className="conversation-tool-name">{message.toolName || "tool"} result</span>
           {message.toolName && ["edit", "patch", "refactor", "write"].includes(message.toolName) && (
-            <span className="text-amber-500">(diff)</span>
+            <span className="conversation-tool-status">(diff)</span>
           )}
         </div>
         <DiffRenderer content={content} collapsible={false} />
@@ -611,30 +587,26 @@ function ToolResultBubble({ message }: { message: ChatMessage }) {
   }
 
   return (
-    <div className={`border rounded-lg overflow-hidden ${
-      isError ? "border-rose-500/30 bg-rose-500/5" : "border-ink-800 bg-ink-900/30"
-    }`}>
+    <div className={`conversation-tool-bubble ${isError ? "conversation-tool-bubble-error" : ""}`}>
       <button
         onClick={() => setExpanded(e => !e)}
-        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs font-mono transition-theme"
+        className="conversation-tool-header"
         aria-label="Toggle result"
       >
-        <Icon name="chevron-right-sm" size={10} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
-        <span className={isError ? "text-rose-400" : "text-ink-400"}>
+        <Icon name="chevron-right-sm" size={10} className={`conversation-chevron ${expanded ? "rotate-90" : ""}`} />
+        <span className={isError ? "conversation-tool-error" : "conversation-tool-name"}>
           {message.toolName || "tool"} result
         </span>
-        {isError && <span className="text-rose-500">(error)</span>}
-        {needsExpansion && <span className="text-ink-500 ml-1">({lines.length} lines)</span>}
+        {isError && <span className="conversation-tool-status conversation-tool-status-error">(error)</span>}
+        {needsExpansion && <span className="conversation-tool-status">{lines.length} lines</span>}
       </button>
-      {/* Always show preview */}
       {!expanded && (
-        <pre className="px-3 pb-2 text-ink-400 text-xs leading-relaxed whitespace-pre-wrap border-t border-ink-800 pt-2 max-h-20 overflow-hidden font-mono">
+        <pre className="conversation-result-pre conversation-result-preview">
           {preview}
         </pre>
       )}
-      {/* Full output on expand */}
       {expanded && (
-        <pre className="px-3 pb-2 text-ink-400 text-xs leading-relaxed whitespace-pre-wrap border-t border-ink-800 pt-2 max-h-64 overflow-y-auto font-mono">
+        <pre className="conversation-result-pre">
           {content}
         </pre>
       )}
@@ -654,25 +626,23 @@ function BashResultBubble({ message }: { message: ChatMessage }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className={`border rounded-lg overflow-hidden ${
-      isError ? "border-rose-500/30 bg-rose-500/5" : "border-teal-500/20 bg-teal-500/5"
-    }`}>
+    <div className={`conversation-tool-bubble ${isError ? "conversation-tool-bubble-error" : "conversation-tool-bubble-bash"}`}>
       <button
         onClick={() => setExpanded(e => !e)}
-        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs font-mono"
+        className="conversation-tool-header conversation-bash-header"
         aria-label="Toggle output"
       >
-        <Icon name="chevron-right-sm" size={10} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
-        <span className="text-teal-400 font-medium truncate">$ {message.command}</span>
+        <Icon name="chevron-right-sm" size={10} className={`conversation-chevron ${expanded ? "rotate-90" : ""}`} />
+        <span className="conversation-bash-command">$ {message.command}</span>
         {exitCode !== undefined && (
-          <span className={isError ? "text-rose-500" : "text-ink-500"}>
+          <span className={`conversation-exit-code ${isError ? "conversation-exit-code-error" : ""}`}>
             [{exitCode}]
           </span>
         )}
-        {needsExpansion && <span className="text-ink-500 ml-1">({lines.length} lines)</span>}
+        {needsExpansion && <span className="conversation-tool-status">{lines.length} lines</span>}
       </button>
       {output && (
-        <pre className="px-3 pb-2 text-ink-400 text-xs leading-relaxed whitespace-pre-wrap border-t border-ink-800 pt-2 max-h-20 overflow-hidden font-mono">
+        <pre className="conversation-result-pre">
           {expanded ? output : preview}
         </pre>
       )}
@@ -682,11 +652,11 @@ function BashResultBubble({ message }: { message: ChatMessage }) {
 
 function SystemBubble({ message }: { message: ChatMessage }) {
   return (
-    <div className="flex justify-center">
-      <div className="bg-ink-900 border border-ink-800 rounded-full px-4 py-1.5 text-ink-400 text-xs font-mono">
-        {message.role === "compactionSummary" ? "Context compacted" : "Branch summary"}
-        {message.tokensBefore && ` · ${formatTokens(message.tokensBefore)} tokens`}
-      </div>
+    <div className="conversation-system-pill-wrap">
+    <div className="conversation-system-pill">
+      {message.role === "compactionSummary" ? "Context compacted" : "Branch summary"}
+      {message.tokensBefore && ` · ${formatTokens(message.tokensBefore)} tokens`}
+    </div>
     </div>
   );
 }
@@ -742,7 +712,7 @@ function CodeBlock({ children, className, ...props }: CodeBlockProps) {
       <div className="relative group">
         <button
           onClick={handleCopy}
-          className="absolute top-2 right-2 z-10 opacity-60 md:opacity-0 md:group-hover:opacity-100 transition-opacity px-2 py-1.5 rounded bg-ink-800 hover:bg-ink-700 text-ink-400 text-xs font-mono min-h-[32px]"
+          className="conversation-copy-button"
           aria-label="Copy code"
         >
           {copied ? "Copied!" : "Copy"}
@@ -756,7 +726,7 @@ function CodeBlock({ children, className, ...props }: CodeBlockProps) {
     <div className="relative group">
       <button
         onClick={handleCopy}
-        className="absolute top-2 right-2 opacity-60 md:opacity-0 md:group-hover:opacity-100 transition-opacity px-2 py-1.5 rounded bg-ink-800 hover:bg-ink-700 text-ink-400 text-xs font-mono min-h-[32px]"
+        className="conversation-copy-button"
         aria-label="Copy code"
       >
         {copied ? "Copied!" : "Copy"}
