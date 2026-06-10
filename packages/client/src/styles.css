@@ -2160,6 +2160,20 @@ button, a, input, textarea, select, [role="button"] {
 
 .git-stash-view-modal .git-stash-view-header {
   flex: 0 0 auto;
+  flex-direction: row;
+  align-items: center;
+}
+
+.git-stash-view-modal .git-stash-view-copy {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.git-stash-view-modal .git-stash-view-copy strong,
+.git-stash-view-modal .git-stash-view-copy span:last-child {
+  margin: 0;
 }
 
 .git-stash-view-modal .git-stash-view-files {
