@@ -65,6 +65,7 @@
   --color-tool-skill-bg:   var(--t-skill-bg);
   --color-tool-skill-bdr:  var(--t-skill-border);
   --color-tool-default:  var(--t-default);
+  --color-tool-default-bg:  var(--t-default-bg);
 
   --font-serif: "Newsreader", Georgia, serif;
   --font-ui: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -2372,11 +2373,6 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   color: var(--color-ink-500);
 }
 
-.conversation-tool-bubble-error {
-  border-color: color-mix(in srgb, var(--workspace-rust) 30%, transparent);
-  background: color-mix(in srgb, var(--workspace-rust) 5%, transparent);
-}
-
 .conversation-tool-bubble-running {
   border-color: color-mix(in srgb, var(--workspace-brass) 28%, transparent);
 }
@@ -2558,6 +2554,7 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
 .conversation-thinking-block,
 .conversation-diff-panel,
 .conversation-system-pill {
+  position: relative;
   overflow: hidden;
   border: 1px solid var(--workspace-seam);
   border-radius: 0.85rem;
@@ -2565,7 +2562,58 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
 }
 
 .conversation-tool-bubble {
+  --tool-accent: var(--color-ink-600);
+  --tool-accent-bg: transparent;
   margin-top: 0.5rem;
+}
+
+.conversation-tool-bubble::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.65rem;
+  bottom: 0.65rem;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--tool-accent);
+  opacity: 0.85;
+}
+
+.conversation-tool-bubble--read {
+  --tool-accent: var(--color-tool-read);
+  --tool-accent-bg: var(--color-tool-read-bg);
+}
+
+.conversation-tool-bubble--edit {
+  --tool-accent: var(--color-tool-edit);
+  --tool-accent-bg: var(--color-tool-edit-bg);
+}
+
+.conversation-tool-bubble--bash {
+  --tool-accent: var(--workspace-brass);
+}
+
+.conversation-tool-bubble--skill {
+  --tool-accent: var(--color-tool-skill);
+  --tool-accent-bg: var(--color-tool-skill-bg);
+}
+
+.conversation-tool-bubble--agent {
+  --tool-accent: var(--color-tool-default);
+  --tool-accent-bg: var(--color-tool-default-bg);
+}
+
+.conversation-tool-bubble--read .conversation-tool-name,
+.conversation-tool-bubble--edit .conversation-tool-name,
+.conversation-tool-bubble--skill .conversation-tool-name,
+.conversation-tool-bubble--agent .conversation-tool-name {
+  color: var(--tool-accent);
+}
+
+.conversation-tool-bubble-error {
+  --tool-accent: var(--workspace-rust);
+  border-color: color-mix(in srgb, var(--workspace-rust) 30%, transparent);
+  background: color-mix(in srgb, var(--workspace-rust) 5%, transparent);
 }
 
 .conversation-tool-header,

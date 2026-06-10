@@ -30,6 +30,16 @@ interface MessageBubbleProps {
   onCopyTurn?: () => void;
 }
 
+function toolAccentKind(name?: string): string {
+  const normalized = (name || "").toLowerCase();
+  if (["bash", "shell", "exec", "run"].some(kind => normalized.includes(kind))) return "bash";
+  if (["edit", "write", "patch", "refactor", "format"].some(kind => normalized.includes(kind))) return "edit";
+  if (["read", "ls", "list", "find", "grep", "search", "glob", "stat"].some(kind => normalized.includes(kind))) return "read";
+  if (["skill"].some(kind => normalized.includes(kind))) return "skill";
+  if (["subagent", "agent", "task"].some(kind => normalized.includes(kind))) return "agent";
+  return "default";
+}
+
 // ─── TextWithSkills ────────────────────────────────────────
 
 /**
@@ -419,6 +429,7 @@ function CombinedToolBubble({
   const isRunning = runningTool && runningTool.status === "running";
   const isDone = !!toolResult || (runningTool && runningTool.status === "done");
   const isError = toolResult?.isError || (runningTool && runningTool.status === "error");
+  const accentKind = toolAccentKind(name);
 
   // Determine result content for inline rendering
   const resultContent = useMemo(() => {
@@ -455,7 +466,7 @@ function CombinedToolBubble({
   const isDiffResult = !!(detailsDiff || (resultContent && !isError && isDiffContent(resultContent)));
 
   return (
-    <div className={`conversation-tool-bubble ${isError ? "conversation-tool-bubble-error" : ""} ${isRunning ? "conversation-tool-bubble-running" : ""}`}>
+    <div className={`conversation-tool-bubble conversation-tool-bubble--${accentKind} ${isError ? "conversation-tool-bubble-error" : ""} ${isRunning ? "conversation-tool-bubble-running" : ""}`}>
       {/* Header: tool call info */}
       <button
         onClick={onToggle}
@@ -528,6 +539,7 @@ function ToolResultBubble({ message }: { message: ChatMessage }) {
   const content = extractTextContent(message.content);
   const [expanded, setExpanded] = useState(false);
   const isError = message.isError;
+  const accentKind = toolAccentKind(message.toolName);
   
   const lines = content.split("\n");
   const previewLines = 3;
@@ -559,7 +571,7 @@ function ToolResultBubble({ message }: { message: ChatMessage }) {
   // Use diff renderer when PI's native diff is available in details
   if (detailsDiff) {
     return (
-      <div className="conversation-tool-bubble conversation-diff-panel">
+      <div className={`conversation-tool-bubble conversation-tool-bubble--${accentKind} conversation-diff-panel`}>
         <div className="conversation-tool-header conversation-diff-header">
           <Icon name="chevron-right-sm-amber" size={10} className="conversation-tool-diff-icon" />
           <span className="conversation-tool-name">{message.toolName || "tool"} result</span>
@@ -573,7 +585,7 @@ function ToolResultBubble({ message }: { message: ChatMessage }) {
   // Use diff renderer for edit/patch/refactor text-based diffs
   if (!isError && isDiffContent(content)) {
     return (
-      <div className="conversation-tool-bubble conversation-diff-panel">
+      <div className={`conversation-tool-bubble conversation-tool-bubble--${accentKind} conversation-diff-panel`}>
         <div className="conversation-tool-header conversation-diff-header">
           <Icon name="chevron-right-sm-amber" size={10} className="conversation-tool-diff-icon" />
           <span className="conversation-tool-name">{message.toolName || "tool"} result</span>
@@ -587,7 +599,7 @@ function ToolResultBubble({ message }: { message: ChatMessage }) {
   }
 
   return (
-    <div className={`conversation-tool-bubble ${isError ? "conversation-tool-bubble-error" : ""}`}>
+    <div className={`conversation-tool-bubble conversation-tool-bubble--${accentKind} ${isError ? "conversation-tool-bubble-error" : ""}`}>
       <button
         onClick={() => setExpanded(e => !e)}
         className="conversation-tool-header"
@@ -626,7 +638,7 @@ function BashResultBubble({ message }: { message: ChatMessage }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className={`conversation-tool-bubble ${isError ? "conversation-tool-bubble-error" : "conversation-tool-bubble-bash"}`}>
+    <div className={`conversation-tool-bubble conversation-tool-bubble--bash ${isError ? "conversation-tool-bubble-error" : "conversation-tool-bubble-bash"}`}>
       <button
         onClick={() => setExpanded(e => !e)}
         className="conversation-tool-header conversation-bash-header"
