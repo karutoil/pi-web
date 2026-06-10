@@ -1901,6 +1901,8 @@ button, a, input, textarea, select, [role="button"] {
 }
 
 .git-stash-view {
+  max-height: min(60vh, 36rem);
+  overflow-y: auto;
   margin: 0.5rem 0 0.25rem;
   overflow: hidden;
   border: 1px solid var(--workspace-seam);
