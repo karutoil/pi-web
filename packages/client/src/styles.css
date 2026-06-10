@@ -1201,6 +1201,7 @@ button, a, input, textarea, select, [role="button"] {
 }
 
 .git-branch-selector-list {
+  max-height: 18rem;
   overflow-y: auto;
 }
 
