@@ -435,7 +435,8 @@ function StashView({ stash, view, loading, error, onClose, onOpenModal, modal }:
           <span>{stash?.branch}</span>
         </div>
         <button type="button" className="git-stash-view-popout" onClick={onOpenModal} aria-label="Open stash view in modal" disabled={modal}>
-          <Icon name="plus" size={12} />
+          <Icon name="copy-offset" size={12} />
+          <span>Pop out</span>
         </button>
         <button type="button" className="git-stash-view-close" onClick={onClose} aria-label="Close stash view">
           <Icon name="close" size={12} />
