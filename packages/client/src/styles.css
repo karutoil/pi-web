@@ -1592,6 +1592,8 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   align-items: stretch;
   flex: 0 0 auto;
   width: 4.5rem;
+  box-sizing: border-box;
+  padding: 0.5rem 0;
   overflow-x: hidden;
   overflow-y: auto;
   border-right: 1px solid var(--workspace-seam);
@@ -1601,6 +1603,7 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
 .project-session-rail[data-orientation="horizontal"] {
   width: auto;
   flex-direction: row;
+  padding: 0 0.5rem;
   overflow-x: auto;
   overflow-y: hidden;
   border-right: 0;
