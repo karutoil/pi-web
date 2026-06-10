@@ -92,16 +92,8 @@ function ProjectStamp({
       style={{ animationDelay: `${index * 28}ms` }}
       data-rail-stamp
     >
-      {/* Active rail-marker — Discord-style rounded bar on the rail's left edge.
-          Anchored to the stamp's container (which spans the full rail width),
-          NOT the button — otherwise the -left offset pushes the marker outside
-          the 72px rail and triggers a horizontal scrollbar. */}
       <span
-        className={[
-          "absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full",
-          "transition-all duration-200 ease-out pointer-events-none",
-          active ? "h-7 bg-amber-500 opacity-100" : "h-2 bg-ink-500 opacity-0 group-hover/stamp:opacity-60",
-        ].join(" ")}
+        className="project-session-stamp-marker"
         aria-hidden
       />
       <button
@@ -111,74 +103,29 @@ function ProjectStamp({
         title={collapsed ? displayName : undefined}
         aria-label={`Open project ${displayName}`}
         aria-current={active ? "true" : undefined}
-        className={[
-          "relative flex items-center justify-center w-12 h-12 mx-auto rounded-[14px]",
-          "transition-all duration-200 ease-out outline-none",
-          // Default state — paper-tile
-          "bg-ink-850/60 border border-ink-700/70",
-          "text-ink-200 hover:text-ink-100",
-          "hover:bg-ink-800 hover:border-ink-600",
-          "hover:-translate-y-[1px] hover:shadow-[0_4px_10px_-2px_rgba(0,0,0,0.35)]",
-          "active:translate-y-0",
-          // Active: amber-tinted, comes forward
-          active && "bg-ink-900 border-amber-500/55 text-amber-500",
-          active && "shadow-[0_6px_14px_-3px_rgba(212,160,32,0.25),inset_0_0_0_1px_rgba(212,160,32,0.18)]",
-          active && "-translate-y-[1px]",
-          // Focus ring
-          "focus-visible:ring-2 focus-visible:ring-amber-500/45 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-900",
-        ].filter(Boolean).join(" ")}
-        style={{ fontFamily: "var(--font-serif)" }}
+        className="project-session-stamp"
+        data-active={active}
       >
-        {/* Initials */}
-        <span className="text-[0.95rem] font-semibold tracking-tight leading-none select-none">
+        <span className="select-none">
           {projectInitials(displayName)}
         </span>
 
-        {/* Unread / streaming dot — top right corner */}
         {streaming && (
           <span
-            className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-amber-500 ring-2 ring-ink-900 animate-pulse-subtle"
+            className="project-session-stamp-dot"
             title="PI is running here"
             aria-label="PI is running in this project"
           />
         )}
 
-        {/* Subtle inner ink-bleed for the warm-editorial feel */}
         <span
           className="pointer-events-none absolute inset-0 rounded-[14px]"
           style={{
-            background: "radial-gradient(circle at 30% 25%, rgba(255,255,255,0.04) 0%, transparent 55%)",
+            background: "linear-gradient(180deg, rgba(255,255,255,0.035), transparent 60%)",
           }}
           aria-hidden
         />
       </button>
-
-      {/* Tooltip — only on collapsed rail (otherwise label is part of expanded list) */}
-      {collapsed && (
-        <div
-          className={[
-            "pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 z-50",
-            "px-2.5 py-1.5 rounded-md whitespace-nowrap",
-            "bg-ink-950 border border-ink-700 shadow-lg shadow-ink-950/60",
-            "text-ink-100 text-xs font-medium",
-            "opacity-0 -translate-x-1 group-hover/stamp:opacity-100 group-hover/stamp:translate-x-0",
-            "transition-all duration-150 ease-out",
-          ].join(" ")}
-          role="tooltip"
-        >
-          <div className="leading-none" style={{ fontFamily: "var(--font-serif)" }}>
-            {displayName}
-          </div>
-          <div className="text-ink-500 text-[0.6rem] font-mono mt-0.5 leading-none">
-            {pathShort}
-          </div>
-          {/* Pointer */}
-          <span
-            className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 rotate-45 bg-ink-950 border-l border-b border-ink-700"
-            aria-hidden
-          />
-        </div>
-      )}
 
       {ctxMenu && (
         <ContextMenuPortal
@@ -223,12 +170,9 @@ function HomeStamp({
   onClick: () => void;
 }) {
   return (
-    <div className="relative group/home overflow-x-hidden" data-rail-stamp>
+    <div className="project-session-stamp-wrap group/home overflow-x-hidden" data-rail-stamp data-active={active}>
       <span
-        className={[
-          "absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full transition-all duration-200 pointer-events-none",
-          active ? "h-7 bg-amber-500 opacity-100" : "h-2 bg-ink-500 opacity-0 group-hover/home:opacity-60",
-        ].join(" ")}
+        className="project-session-stamp-marker"
         aria-hidden
       />
       <button
@@ -236,27 +180,11 @@ function HomeStamp({
         title={collapsed ? "All projects" : undefined}
         aria-label="All projects"
         aria-current={active ? "true" : undefined}
-        className={[
-          "relative flex items-center justify-center w-12 h-12 mx-auto rounded-[14px]",
-          "transition-all duration-200 ease-out outline-none",
-          "border",
-          active
-            ? "bg-ink-900 border-amber-500/55 text-amber-500 shadow-[0_6px_14px_-3px_rgba(212,160,32,0.25),inset_0_0_0_1px_rgba(212,160,32,0.18)] -translate-y-[1px]"
-            : "bg-ink-850/60 border-ink-700/70 text-ink-300 hover:text-ink-100 hover:bg-ink-800 hover:border-ink-600 hover:-translate-y-[1px] hover:shadow-[0_4px_10px_-2px_rgba(0,0,0,0.35)]",
-          "focus-visible:ring-2 focus-visible:ring-amber-500/45 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-900",
-        ].join(" ")}
+        className="project-session-stamp-home"
+        data-active={active}
       >
         <Icon name="home" size={20} />
       </button>
-      {collapsed && (
-        <div
-          className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 z-50 px-2.5 py-1.5 rounded-md whitespace-nowrap bg-ink-950 border border-ink-700 shadow-lg shadow-ink-950/60 text-ink-100 text-xs font-medium opacity-0 -translate-x-1 group-hover/home:opacity-100 group-hover/home:translate-x-0 transition-all duration-150 ease-out"
-          role="tooltip"
-        >
-          <div className="leading-none" style={{ fontFamily: "var(--font-serif)" }}>All projects</div>
-          <span className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 rotate-45 bg-ink-950 border-l border-b border-ink-700" aria-hidden />
-        </div>
-      )}
     </div>
   );
 }
@@ -273,20 +201,13 @@ function AddStamp({
   loading: boolean;
 }) {
   return (
-    <div className="relative group/add" data-rail-stamp>
+    <div className="project-session-stamp-wrap group/add" data-rail-stamp>
       <button
         onClick={onClick}
         disabled={loading}
         title={collapsed ? "Add project" : undefined}
         aria-label="Add project"
-        className={[
-          "relative flex items-center justify-center w-12 h-12 mx-auto rounded-[14px]",
-          "transition-all duration-200 ease-out outline-none",
-          "border border-dashed border-ink-600/60",
-          "text-ink-500 hover:text-amber-500 hover:border-amber-500/55 hover:bg-amber-500/[0.04]",
-          "focus-visible:ring-2 focus-visible:ring-amber-500/45 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-900",
-          "disabled:opacity-50 disabled:cursor-wait",
-        ].join(" ")}
+        className="project-session-stamp-add"
       >
         {loading ? (
           <div className="w-3.5 h-3.5 rounded-full border-2 border-ink-600 border-t-amber-500 animate-spin" />
@@ -294,15 +215,6 @@ function AddStamp({
           <Icon name="plus" size={20} />
         )}
       </button>
-      {collapsed && (
-        <div
-          className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 z-50 px-2.5 py-1.5 rounded-md whitespace-nowrap bg-ink-950 border border-ink-700 shadow-lg shadow-ink-950/60 text-ink-100 text-xs font-medium opacity-0 -translate-x-1 group-hover/add:opacity-100 group-hover/add:translate-x-0 transition-all duration-150 ease-out"
-          role="tooltip"
-        >
-          Add project
-          <span className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 rotate-45 bg-ink-950 border-l border-b border-ink-700" aria-hidden />
-        </div>
-      )}
     </div>
   );
 }
@@ -364,14 +276,9 @@ export function ServerRail({
   return (
     <aside
       ref={railRef}
-      className={[
-        "shrink-0 flex items-stretch bg-ink-950/55",
-        orientation === "horizontal"
-          ? "flex-row border-b border-ink-800/70 overflow-x-auto overflow-y-hidden px-2.5 py-2 gap-1.5"
-          : "flex-col border-r border-ink-800/70 overflow-x-hidden overflow-y-auto py-2.5 gap-0.5",
-        "transition-[width] duration-200",
-      ].join(" ")}
-      style={{ width: RAIL_WIDTH }}
+      className="project-session-rail"
+      data-orientation={orientation}
+      style={{ width: orientation === "horizontal" ? undefined : RAIL_WIDTH }}
       aria-label="Project rail"
       onKeyDown={handleKeyDown}
     >
@@ -411,15 +318,11 @@ export function ServerRail({
         ))}
 
         {projects.length === 0 && (
-          <div className="px-2 py-4 text-center">
-            <p
-              className="text-ink-500 text-[0.6rem] font-mono leading-relaxed"
-              style={{ fontFamily: "var(--font-serif)", fontStyle: "italic" }}
-            >
-              No
-              <br />
-              projects
-            </p>
+          <div className="project-session-empty">
+            <div>
+              <strong>No projects</strong>
+              <span>Add a project to start collecting sessions.</span>
+            </div>
           </div>
         )}
       </div>

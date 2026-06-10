@@ -109,33 +109,30 @@ function ProjectHeader({
   }, [menu]);
 
   return (
-    <div className="shrink-0 px-3 pt-3 pb-2.5">
-      <div className="flex items-start gap-2">
-        <div className="flex-1 min-w-0">
-          <h2
-            className="text-ink-100 text-[0.95rem] font-semibold leading-tight truncate"
-            style={{ fontFamily: "var(--font-serif)" }}
-            title={project.name}
-          >
-            {project.name}
-          </h2>
-          <div className="text-ink-500 text-[0.6rem] font-mono truncate mt-0.5 leading-none" title={project.path}>
-            {project.path}
-          </div>
-        </div>
-        <button
-          ref={menuBtnRef}
-          onClick={(e) => {
-            const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-            setMenu(prev => prev ? null : { x: rect.right - 192, y: rect.bottom + 6 });
-          }}
-          className="shrink-0 p-1.5 -m-1.5 rounded-md text-ink-500 hover:text-ink-200 hover:bg-ink-800/40 transition-theme"
-          aria-label="Project actions"
-          title="Project actions"
+    <div className="project-session-header">
+      <div className="project-session-header-copy">
+        <h2
+          className="project-session-title"
+          title={project.name}
         >
-          <Icon name="kebab" size={14} />
-        </button>
+          {project.name}
+        </h2>
+        <div className="project-session-path" title={project.path}>
+          {project.path}
+        </div>
       </div>
+      <button
+        ref={menuBtnRef}
+        onClick={(e) => {
+          const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+          setMenu(prev => prev ? null : { x: rect.right - 192, y: rect.bottom + 6 });
+        }}
+        className="project-session-action"
+        aria-label="Project actions"
+        title="Project actions"
+      >
+        <Icon name="kebab" size={14} />
+      </button>
       {menu && (
         <ContextMenuPortal
           x={menu.x}
@@ -179,23 +176,22 @@ function SearchBox({
   placeholder?: string;
 }) {
   return (
-    <div className="relative shrink-0 mx-2.5 mb-2">
+    <div className="project-session-search">
       <Icon
         name="search"
         size={11}
-        className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-500 pointer-events-none"
+        className="project-session-search-icon"
       />
       <input
         type="text"
         placeholder={placeholder}
         value={value}
         onChange={e => onChange(e.target.value)}
-        className="w-full bg-ink-950/40 border border-transparent rounded-md pl-7 pr-7 py-1.5 text-ink-200 text-[0.72rem] font-mono placeholder-ink-500 hover:bg-ink-950/60 focus:bg-ink-950/70 focus:border-amber-600/40 focus:outline-none transition-theme"
       />
       {value && (
         <button
           onClick={() => onChange("")}
-          className="absolute right-2 top-1/2 -translate-y-1/2 text-ink-500 hover:text-ink-200 p-0.5 rounded transition-theme"
+          className="project-session-clear-search"
           aria-label="Clear search"
         >
           <Icon name="close-thick" size={8} />
@@ -215,13 +211,9 @@ function SectionLabel({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="shrink-0 flex items-center justify-between px-3.5 pt-3 pb-1">
-      <span
-        className="text-ink-500 text-[0.58rem] font-mono uppercase tracking-[0.2em]"
-      >
-        {children}
-      </span>
-      {action}
+    <div className="project-session-section-label">
+      <span>{children}</span>
+      {action && <div className="project-session-section-actions">{action}</div>}
     </div>
   );
 }
@@ -239,10 +231,11 @@ function IconButton({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       title={title}
       aria-label={ariaLabel}
-      className="text-ink-500 hover:text-ink-200 hover:bg-ink-800/50 transition-theme p-1 rounded inline-flex items-center justify-center"
+      className="project-session-action"
     >
       {children}
     </button>
@@ -316,16 +309,12 @@ function ChannelItem({
     <div
       onContextMenu={handleContextMenu}
       {...longPress}
-      className={[
-        "relative mx-2 px-2.5 py-1.5 rounded-md transition-theme group/ch",
-        isActive
-          ? "bg-ink-850/70 text-ink-100 shadow-[inset_2px_0_0_0_var(--color-amber-500)]"
-          : "text-ink-300 hover:bg-ink-850/35 hover:text-ink-100",
-      ].join(" ")}
+      className="project-session-item"
+      data-active={isActive}
     >
       <button
         onClick={() => onSelect(s)}
-        className="w-full text-left flex items-center gap-1.5 min-w-0"
+        className="project-session-item-button"
         title={s.firstMessage || s.lastMessage || undefined}
       >
         {isRenaming ? (
@@ -340,35 +329,30 @@ function ChannelItem({
             }}
             onBlur={handleRenameSubmit}
             onClick={e => e.stopPropagation()}
-            className="flex-1 min-w-0 bg-ink-950/60 border border-amber-600/40 rounded px-1.5 py-0.5 text-ink-100 text-[0.8rem] focus:outline-none"
-            style={{ fontFamily: "var(--font-serif)" }}
+            className="project-session-rename-input"
           />
         ) : (
           <>
             <span
-              className={[
-                "shrink-0 text-[0.95rem] leading-none w-3 text-center transition-colors",
-                isActive ? "text-amber-500" : "text-ink-500 group-hover/ch:text-ink-400",
-              ].join(" ")}
+              className="project-session-item-hash"
               aria-hidden
             >
               #
             </span>
             <span
-              className="flex-1 min-w-0 text-[0.82rem] truncate leading-snug"
-              style={{ fontFamily: "var(--font-serif)" }}
+              className="project-session-item-title"
             >
               {displayName}
             </span>
             {isStreaming && (
               <span
-                className="shrink-0 w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse"
+                className="project-session-streaming-dot"
                 title="PI is running"
                 aria-label="PI is streaming"
               />
             )}
             {!isStreaming && (
-              <span className="shrink-0 text-ink-500 text-[0.6rem] font-mono leading-none ml-1">
+              <span className="project-session-item-meta">
                 {formatTimeAgo(s.lastActiveAt || s.timestamp)}
               </span>
             )}
@@ -432,14 +416,15 @@ function UserPanel({
   onToggleTheme: () => void;
 }) {
   return (
-    <div className="shrink-0 px-2.5 py-2 border-t border-ink-800/70 bg-ink-950/40">
-      <div className="flex items-center gap-2">
-        <div className="flex-1 min-w-0">
+    <div className="project-session-footer">
+      <div className="project-session-footer-inner">
+        <div>
           <VersionChecker compact />
         </div>
         <button
+          type="button"
           onClick={onToggleTheme}
-          className="shrink-0 p-1.5 rounded-md text-ink-500 hover:text-ink-200 hover:bg-ink-800/50 transition-theme"
+          className="project-session-action"
           title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
           aria-label="Toggle theme"
         >
@@ -523,8 +508,8 @@ export function ChannelList({
 
   return (
     <aside
-      className="shrink-0 flex flex-col min-w-0 min-h-0 bg-ink-900/35 border-r border-ink-800/70 overflow-x-hidden max-h-full max-w-full"
-      style={fill ? { flex: "1 1 0", height: "100%" } : { width: width ? `${width}vw` : 240 }}
+      className="project-session-panel"
+      style={fill ? undefined : { width: width ? `${width}vw` : 240 }}
       aria-label="Session list"
       onKeyDown={handleKeyDown}
     >
@@ -535,7 +520,7 @@ export function ChannelList({
         onDeleteProject={onDeleteProject}
       />
 
-      <div className="sidebar-hairline mx-3" />
+      <div className="project-session-hairline mx-3" />
 
       <SearchBox value={search} onChange={onSearch} placeholder="Filter sessions…" />
 
@@ -547,15 +532,15 @@ export function ChannelList({
         {/* Continue latest — subtle amber action card */}
         {sessions.length > 0 && !search && (
           <button
+            type="button"
             onClick={onContinueLatest}
-            className="mx-2 mt-1 mb-1.5 w-[calc(100%-1rem)] text-left pl-2.5 pr-2.5 py-1.5 rounded-md bg-amber-500/[0.06] hover:bg-amber-500/[0.12] text-amber-500 hover:text-amber-400 text-[0.72rem] transition-theme flex items-center gap-2 group"
-            style={{ fontFamily: "var(--font-mono)" }}
+            className="project-session-continue group"
           >
-            <span className="shrink-0 w-1 h-1 rounded-full bg-amber-500 group-hover:scale-125 transition-theme" />
-            <span className="uppercase tracking-[0.16em] text-[0.6rem] font-medium flex-1">
+            <span className="project-session-continue-dot" />
+            <span>
               Continue latest
             </span>
-            <Icon name="chevron-right" size={10} className="text-amber-500/70" />
+            <Icon name="chevron-right" size={10} />
           </button>
         )}
 
@@ -580,8 +565,8 @@ export function ChannelList({
           const items = groupedSessions[group];
           if (items.length === 0) return null;
           return (
-            <div key={group} className="mb-1">
-              <div className="sidebar-group-label">
+            <div key={group} className="project-session-group">
+              <div className="project-session-group-label">
                 <span>{GROUP_LABELS[group]}</span>
               </div>
               <div className="space-y-px">
@@ -609,18 +594,15 @@ export function ChannelList({
         })}
 
         {filteredSessions.length === 0 && (
-          <div className="px-4 py-8">
-            <p
-              className="text-ink-500 text-[0.78rem] text-center"
-              style={{ fontFamily: "var(--font-serif)", fontStyle: "italic" }}
-            >
-              {search ? "No matches." : "No sessions yet."}
-            </p>
-            {!search && (
-              <p className="text-ink-500 text-[0.6rem] font-mono text-center mt-1.5">
-                Press <kbd className="px-1 py-0.5 rounded bg-ink-800/60 text-ink-300 font-mono text-[0.55rem]">⌘N</kbd> to start one.
-              </p>
-            )}
+          <div className="project-session-empty">
+            <div>
+              <strong>{search ? "No matches." : "No sessions yet."}</strong>
+              {!search && (
+                <span>
+                  Press <kbd>⌘N</kbd> to start one.
+                </span>
+              )}
+            </div>
           </div>
         )}
       </div>

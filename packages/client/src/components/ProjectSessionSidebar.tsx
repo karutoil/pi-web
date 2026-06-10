@@ -34,7 +34,7 @@ export function ProjectSessionSidebar(props: ProjectSessionSidebarProps) {
   const project = props.selectedProject;
 
   return (
-    <div className="flex min-w-0 min-h-0 h-full max-h-full max-w-full overflow-hidden">
+    <div className="project-session-shell">
       <ServerRail
         projects={props.projects}
         selectedProject={project}
@@ -73,9 +73,13 @@ export function ProjectSessionSidebar(props: ProjectSessionSidebarProps) {
           fill
         />
       ) : (
-        <div className="flex-1 flex flex-col min-w-0 min-h-0 h-full max-h-full max-w-full p-5 text-ink-300">
-          <div className="text-ink-100 font-serif text-lg mb-2">Projects</div>
-          <p className="text-ink-500 text-xs font-mono leading-relaxed">Select a project from the left rail to view its sessions.</p>
+        <div className="project-session-panel">
+          <div className="project-session-empty">
+            <div>
+              <strong>Project ledger</strong>
+              <span>Select a project from the left rail to open its session archive.</span>
+            </div>
+          </div>
         </div>
       )}
     </div>
