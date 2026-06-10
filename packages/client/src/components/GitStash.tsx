@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { Icon } from "./Icon";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { DiffRenderer } from "./DiffRenderer";
@@ -245,7 +246,7 @@ export function GitStash({ cwd, stashCount, onRefresh }: GitStashProps) {
             />
           )}
 
-          {modalViewingIndex != null && (
+          {modalViewingIndex != null && createPortal(
             <div className="git-stash-view-modal-backdrop" onMouseDown={() => setModalViewingIndex(null)}>
               <div className="git-stash-view-modal" onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Stash view">
                 <StashViewModal
@@ -258,7 +259,8 @@ export function GitStash({ cwd, stashCount, onRefresh }: GitStashProps) {
                   onClose={() => setModalViewingIndex(null)}
                 />
               </div>
-            </div>
+            </div>,
+            document.body
           )}
         </>
       )}
