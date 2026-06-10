@@ -35,23 +35,21 @@ export function ConfirmDialog({
 
   return createPortal(
     <>
-      {/* Backdrop */}
       <div
-        className="fixed inset-0 z-60 bg-ink-950/60 backdrop-blur-sm animate-fade-in"
+        className="modal-backdrop animate-fade-in"
         onClick={onCancel}
       />
-      {/* Dialog */}
-      <div className="fixed inset-0 z-70 flex items-center justify-center animate-fade-in">
+      <div className="modal-stage animate-fade-in">
         <div
-          className="bg-ink-900 border border-ink-800/60 rounded-lg shadow-xl max-w-sm w-full mx-4 p-5 mobile-safe-bottom"
+          className="modal-card"
           role="dialog"
           aria-modal="true"
           aria-labelledby="confirm-title"
         >
-          <div className="overflow-y-auto max-h-[calc(60vh-2.5rem)]">
+          <div className="modal-body modal-body--compact">
             <h3
               id="confirm-title"
-              className="text-ink-100 text-sm font-semibold mb-2"
+              className="modal-title"
             >
               {title}
             </h3>
@@ -62,16 +60,16 @@ export function ConfirmDialog({
               This cannot be undone.
             </p>
           </div>
-          <div className="flex justify-end gap-2 mt-4">
+          <div className="modal-footer modal-footer--justify-end">
             <button
               onClick={onCancel}
-              className="px-3 py-1.5 min-h-[44px] text-ink-400 hover:text-ink-200 text-xs rounded-md hover:bg-ink-800/40 transition-theme"
+              className="modal-button modal-button--ghost"
             >
               Cancel
             </button>
             <button
               onClick={onConfirm}
-              className="px-3 py-1.5 min-h-[44px] bg-amber-600/90 hover:bg-amber-500 text-ink-950 text-xs font-medium rounded-md transition-theme"
+              className="modal-button modal-button--danger"
               autoFocus
             >
               {confirmLabel}

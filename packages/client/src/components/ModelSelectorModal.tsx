@@ -45,22 +45,20 @@ export function ModelSelectorModal({ ws, open, onClose }: Props) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh] animate-fade-in-up" onClick={onClose}>
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-ink-950/70 backdrop-blur-sm" />
+    <div className="modal-stage modal-stage--top animate-fade-in-up" onClick={onClose}>
+      <div className="modal-backdrop" />
 
-      {/* Modal */}
       <div
-        className="relative bg-ink-900 border border-ink-700 rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden animate-fade-in-up"
+        className="modal-card modal-card--wide"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center gap-3 px-4 pt-4 pb-2">
-          <Icon name="pi-logo" size={18} className="text-amber-500 opacity-70" />
-          <h3 className="text-ink-200 font-medium text-sm flex-1">Select Model</h3>
+        <div className="modal-header">
+          <Icon name="pi-logo" size={18} className="modal-header-icon" />
+          <h3 className="modal-title">Select Model</h3>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-ink-500 hover:text-ink-300 hover:bg-ink-800/50 transition-theme"
+            className="modal-close"
             aria-label="Close"
           >
             <Icon name="close" size={16} />
@@ -68,43 +66,42 @@ export function ModelSelectorModal({ ws, open, onClose }: Props) {
         </div>
 
         {/* Search */}
-        <div className="px-4 pb-2">
+        <div className="modal-body modal-body--compact">
           <input
             ref={inputRef}
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Filter by name, provider, or id..."
-            className="w-full bg-ink-950 border border-ink-700 rounded-xl px-3 py-2.5 text-ink-100 text-sm font-mono placeholder-ink-500 outline-none focus:border-amber-500/60 transition-theme"
+            className="modal-field"
             aria-label="Search models"
           />
-        </div>
+          </div>
 
         {/* Thinking level pills */}
-        <div className="px-4 pb-2 flex flex-wrap gap-1.5">
-          <span className="text-ink-600 text-[0.6rem] font-mono uppercase tracking-wider self-center mr-1">Think</span>
-          {thinkingLevels.map(l => (
-            <button
-              key={l}
-              onClick={() => ws.send({ type: "set_thinking", level: l })}
-              className={`px-2.5 py-1 text-xs font-mono rounded-lg transition-theme ${
-                ws.state?.thinkingLevel === l
-                  ? "bg-amber-600/25 text-amber-400 border border-amber-500/30"
-                  : "bg-ink-850 text-ink-500 border border-ink-800 hover:text-ink-300 hover:border-ink-700"
-              }`}
-            >
-              {l}
-            </button>
-          ))}
+        <div className="modal-body modal-body--compact">
+          <div className="modal-tag-row">
+            <span className="text-ink-600 text-[0.6rem] font-mono uppercase tracking-wider self-center">Think</span>
+            {thinkingLevels.map(l => (
+              <button
+                key={l}
+                onClick={() => ws.send({ type: "set_thinking", level: l })}
+                className={`modal-tag ${ws.state?.thinkingLevel === l ? "modal-tag--active" : ""}`}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Divider */}
         <div className="border-t border-ink-800" />
 
         {/* Model list */}
-        <div ref={listRef} className="max-h-[50vh] overflow-y-auto custom-scrollbar">
+        <div ref={listRef} className="modal-list custom-scrollbar">
           {filtered.length === 0 && (
-            <div className="px-4 py-8 text-center text-ink-500 text-sm font-mono">
-              No models match "<span className="text-ink-300">{search}</span>"
+            <div className="modal-empty">
+              <strong>No matches</strong>
+              <span>No models match "<span className="text-ink-300">{search}</span>"</span>
             </div>
           )}
           {filtered.map(m => {
@@ -116,33 +113,27 @@ export function ModelSelectorModal({ ws, open, onClose }: Props) {
                   ws.send({ type: "set_model", provider: m.provider, modelId: m.id });
                   onClose();
                 }}
-                className={`w-full text-left px-4 py-3 hover:bg-ink-850 transition-theme flex items-center gap-3 ${
-                  active ? "bg-ink-850/60" : ""
-                }`}
+                className={`modal-model-row ${active ? "modal-model-row--active" : ""}`}
               >
-                {/* Active indicator */}
-                <span className={`w-2 h-2 rounded-full shrink-0 ${active ? "bg-amber-500" : "bg-ink-700"}`} />
+                <span className="modal-model-dot" />
 
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className={`text-sm font-medium truncate ${active ? "text-amber-400" : "text-ink-200"}`}>
-                      {m.name}
-                    </span>
-                    <span className="text-ink-600 text-[0.65rem] font-mono shrink-0">
-                      {m.contextWindow >= 1000 ? `${(m.contextWindow / 1000).toFixed(0)}k` : m.contextWindow} ctx
-                    </span>
+                <div className="modal-model-copy">
+                  <div className="modal-model-name">
+                    {m.name}
                   </div>
-                  <div className="text-ink-500 text-xs font-mono mt-0.5">
+                  <div className="modal-model-meta">
                     {m.provider}{m.reasoning ? " · reasoning" : ""}
                   </div>
                 </div>
+                <span className="modal-model-context">
+                  {m.contextWindow >= 1000 ? `${(m.contextWindow / 1000).toFixed(0)}k` : m.contextWindow} ctx
+                </span>
               </button>
             );
           })}
         </div>
 
-        {/* Footer */}
-        <div className="border-t border-ink-800 px-4 py-2.5 flex items-center justify-between text-ink-600 text-[0.65rem] font-mono">
+        <div className="modal-footer-meta">
           <span>{ws.models.length} models</span>
           <span>↻ cycles model · Tab</span>
         </div>

@@ -141,35 +141,32 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-60 flex items-center justify-center bg-ink-950/70 backdrop-blur-sm"
+      className="modal-backdrop"
       onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}
       onKeyDown={handleKeyDown}
     >
-      <div
-        className="relative z-70 bg-ink-950 border border-ink-800/60 rounded-2xl shadow-2xl w-full max-w-xl mx-4 overflow-hidden animate-fade-in-up flex flex-col"
-        style={{ maxHeight: "80vh" }}
-      >
-        {/* ── Header ── */}
-        <div className="px-5 pt-5 pb-3 flex items-center justify-between mobile-safe-top">
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-amber-600/15 flex items-center justify-center">
-              <Icon name="plus" size={14} className="text-amber-500" />
-            </div>
-            <h2 className="text-ink-100 text-sm font-semibold tracking-wide">Add Project</h2>
+      <div className="modal-stage">
+        <div
+          className="modal-card modal-card--full explorer-modal animate-fade-in-up flex flex-col"
+          style={{ maxHeight: "80vh" }}
+        >
+        <div className="modal-header mobile-safe-top">
+          <div className="modal-header-icon">
+            <Icon name="plus" size={14} />
           </div>
+          <h2 className="modal-title">Add Project</h2>
           <button
             onClick={onCancel}
-            className="w-7 h-7 rounded-lg flex items-center justify-center text-ink-400 hover:text-ink-300 hover:bg-ink-800/50 transition-theme touch-target-sm"
+            className="modal-close"
             aria-label="Close"
           >
             <Icon name="close" size={14} />
           </button>
         </div>
 
-        {/* ── Path bar ── */}
-        <form onSubmit={handlePathSubmit} className="px-5 pb-2">
-          <div className="flex items-center gap-1.5 bg-ink-900/80 border border-ink-800/50 rounded-lg px-2.5 py-1.5">
-            <span className="text-ink-500 text-xs font-mono shrink-0">~/</span>
+        <form onSubmit={handlePathSubmit} className="modal-body modal-body--compact">
+          <div className="explorer-pathbar">
+            <span className="explorer-path-prefix">~/</span>
             <input
               ref={pathInputRef}
               type="text"
@@ -178,7 +175,7 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
               onKeyDown={e => {
                 if (e.key === "Escape") { onCancel(); e.stopPropagation(); }
               }}
-              className="flex-1 bg-transparent text-ink-200 text-xs font-mono placeholder-ink-500 outline-none min-w-0 min-h-[44px]"
+              className="explorer-path-input"
               placeholder="/home/user"
               spellCheck={false}
               enterKeyHint="go"
@@ -186,7 +183,7 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
             />
             <button
               type="submit"
-              className="shrink-0 text-ink-500 hover:text-amber-500 transition-theme p-1.5 touch-target-sm"
+              className="modal-close"
               aria-label="Go to path"
             >
               <Icon name="chevron-right" size={12} />
@@ -194,43 +191,43 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
           </div>
         </form>
 
-        {/* ── Directory listing ── */}
         <div className="px-5 flex-1 min-h-0 flex flex-col">
-          {/* Navigation breadcrumb */}
-          <div className="flex items-center gap-1 mb-2 text-xs">
+          <div className="explorer-breadcrumb">
             {parentPath && (
               <button
                 onClick={() => navigateTo(parentPath)}
-                className="flex items-center gap-1 text-ink-500 hover:text-amber-400 transition-theme"
+                className="modal-button modal-button--ghost"
                 aria-label="Go to parent directory"
               >
                 <Icon name="chevron-left" size={10} />
                 <span className="font-mono">..</span>
               </button>
             )}
-            <span className="text-ink-500 font-mono truncate flex-1 text-right">{currentPath}</span>
+            <span className="explorer-breadcrumb-path truncate flex-1 text-right">{currentPath}</span>
           </div>
 
           {/* File list */}
           <div
             ref={listRef}
-            className="flex-1 min-h-0 overflow-y-auto custom-scrollbar rounded-lg border border-ink-800/30 bg-ink-900/40"
+            className="explorer-list custom-scrollbar"
             tabIndex={0}
             role="listbox"
             aria-label="Directory contents"
           >
             {loading ? (
-              <div className="flex items-center justify-center py-12 gap-2">
-                <div className="w-3 h-3 border-2 border-ink-700 border-t-amber-500 rounded-full animate-spin" />
-                <span className="text-ink-500 text-xs font-mono">Scanning...</span>
+              <div className="modal-empty">
+                <strong>Scanning…</strong>
+                <span>Reading the directory.</span>
               </div>
             ) : error ? (
-              <div className="py-12 text-center">
-                <span className="text-rose-400/80 text-xs font-mono">{error}</span>
+              <div className="modal-empty">
+                <strong>Could not browse</strong>
+                <span>{error}</span>
               </div>
             ) : items.length === 0 ? (
-              <div className="py-12 text-center">
-                <span className="text-ink-500 text-xs font-mono">No subdirectories found</span>
+              <div className="modal-empty">
+                <strong>No subdirectories found</strong>
+                <span>Choose another location.</span>
               </div>
             ) : (
               items.map((item, idx) => {
@@ -242,28 +239,18 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
                     role="option"
                     aria-selected={isSelected}
                     onClick={() => handleSelect(item)}
-                    className={`w-full text-left flex items-center gap-2.5 px-3 py-3 md:py-2 transition-theme group cursor-pointer ${
-                      isSelected
-                        ? "bg-amber-500/10 border-l-2 border-l-amber-500"
-                        : isFocused
-                        ? "bg-ink-800/30 border-l-2 border-l-transparent"
-                        : "border-l-2 border-l-transparent hover:bg-ink-800/20"
-                    }`}
+                    className={`explorer-item ${isSelected ? "explorer-item--selected" : isFocused ? "explorer-item--focused" : ""}`}
                   >
                     {/* Folder icon */}
-                    <div className={`shrink-0 w-5 h-5 rounded flex items-center justify-center transition-theme ${
-                      isSelected ? "bg-amber-500/20" : "bg-ink-800/40 group-hover:bg-ink-800/60"
-                    }`}>
-                      <svg viewBox="0 0 16 16" width="12" height="12" fill="none" className={isSelected ? "text-amber-400" : "text-ink-500 group-hover:text-ink-400"}>
+                    <div className="explorer-folder-icon">
+                      <svg viewBox="0 0 16 16" width="12" height="12" fill="none" className="explorer-folder-svg">
                         <path d="M2 4.5C2 3.67 2.67 3 3.5 3H6L7.5 4.5H12.5C13.33 4.5 14 5.17 14 6V11.5C14 12.33 13.33 13 12.5 13H3.5C2.67 13 2 12.33 2 11.5V4.5Z" fill="currentColor" opacity="0.3"/>
                         <path d="M2 6H14V11.5C14 12.33 13.33 13 12.5 13H3.5C2.67 13 2 12.33 2 11.5V6Z" fill="currentColor"/>
                       </svg>
                     </div>
                     {/* Name + path hint */}
                     <div className="min-w-0 flex-1">
-                      <div className={`text-xs font-medium truncate transition-theme ${
-                        isSelected ? "text-amber-300" : "text-ink-200"
-                      }`}>
+                      <div className="explorer-item-name">
                         {item.name}
                       </div>
                     </div>
@@ -271,7 +258,7 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
                     {item.isDirectory ? (
                       <button
                         onClick={(e) => { e.stopPropagation(); handleEnterDirectory(item); }}
-                        className="shrink-0 p-1 touch-target-sm"
+                        className="explorer-item-arrow"
                         aria-label="Open directory"
                       >
                         <Icon
@@ -284,9 +271,7 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
                       <Icon
                         name="chevron-right-sm"
                         size={8}
-                        className={`shrink-0 transition-theme ${
-                          isSelected ? "text-amber-500/60" : "text-ink-500 group-hover:text-ink-400"
-                        }`}
+                        className={`explorer-item-arrow ${isSelected ? "explorer-item-arrow--selected" : ""}`}
                       />
                     )}
                   </div>
@@ -296,21 +281,18 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
           </div>
         </div>
 
-        {/* ── Footer: selection + display name + submit ── */}
-        <div className="px-5 pt-3 pb-4 mt-3 border-t border-ink-800/40 mobile-safe-bottom">
-          {/* Selected path preview */}
+        <div className="modal-footer mobile-safe-bottom">
           {selectedPath && (
-            <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/5 border border-amber-500/15">
-              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" className="text-amber-500 shrink-0">
+            <div className="explorer-preview">
+              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" className="explorer-preview-icon">
                 <path d="M2 4.5C2 3.67 2.67 3 3.5 3H6L7.5 4.5H12.5C13.33 4.5 14 5.17 14 6V11.5C14 12.33 13.33 13 12.5 13H3.5C2.67 13 2 12.33 2 11.5V4.5Z" fill="currentColor" opacity="0.3"/>
                 <path d="M2 6H14V11.5C14 12.33 13.33 13 12.5 13H3.5C2.67 13 2 12.33 2 11.5V6Z" fill="currentColor"/>
               </svg>
-              <span className="text-amber-400/80 text-xs font-mono truncate">{selectedPath}</span>
+              <span className="truncate">{selectedPath}</span>
             </div>
           )}
 
-          {/* Display name input */}
-          <div className="flex items-center gap-2 mb-3">
+          <div className="explorer-name-row">
             <label className="text-ink-500 text-xs shrink-0" htmlFor="project-display-name">Name</label>
             <input
               id="project-display-name"
@@ -318,31 +300,28 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
               value={displayName}
               onChange={e => setDisplayName(e.target.value)}
               placeholder={selectedName || "Folder name"}
-              className="flex-1 bg-ink-900/60 border border-ink-800/50 rounded-md px-2.5 py-1.5 text-ink-200 text-xs placeholder-ink-500 outline-none focus:border-amber-500/50 transition-theme"
+              className="modal-field flex-1"
               spellCheck={false}
             />
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full">
             <button
               onClick={handleSubmit}
               disabled={!selectedPath || isAdding}
-              className={`flex-1 py-2 rounded-lg text-xs font-medium transition-theme min-h-[44px] ${
-                selectedPath && !isAdding
-                  ? "bg-amber-600 hover:bg-amber-500 text-ink-950"
-                  : "bg-ink-800/40 text-ink-400 cursor-not-allowed"
-              }`}
+              className={`modal-button modal-button--primary flex-1 ${!selectedPath || isAdding ? "opacity-45 cursor-not-allowed" : ""}`}
             >
               {isAdding ? "Adding..." : selectedPath ? "Add Project" : "Select a Directory"}
             </button>
             <button
               onClick={onCancel}
-              className="px-4 py-2 rounded-lg bg-ink-800/30 hover:bg-ink-800/50 text-ink-400 hover:text-ink-200 text-xs transition-theme min-h-[44px]"
+              className="modal-button modal-button--ghost"
             >
               Cancel
             </button>
           </div>
+        </div>
         </div>
       </div>
     </div>

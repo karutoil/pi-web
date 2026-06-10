@@ -41,12 +41,12 @@ export function ExtensionUIModal({ request, onRespond }: Props) {
     switch (request.method) {
       case "select":
         return (
-          <div className="space-y-1 max-h-60 overflow-y-auto custom-scrollbar">
+          <div className="modal-list custom-scrollbar space-y-1">
             {(request.options || []).map(opt => (
               <button
                 key={opt}
                 onClick={() => onRespond({ value: opt })}
-                className="w-full text-left px-3 py-2 rounded text-sm transition-theme hover:bg-ink-850 text-ink-300"
+                className="modal-option"
               >
                 {opt}
               </button>
@@ -63,13 +63,13 @@ export function ExtensionUIModal({ request, onRespond }: Props) {
             <div className="flex gap-2">
               <button
                 onClick={() => onRespond({ confirmed: true })}
-                className="flex-1 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-ink-950 text-sm font-medium transition-theme"
+                className="modal-button modal-button--primary flex-1"
               >
                 Confirm
               </button>
               <button
                 onClick={() => onRespond({ cancelled: true })}
-                className="flex-1 py-2 rounded-lg bg-ink-850 hover:bg-ink-800 text-ink-400 text-sm transition-theme border border-ink-700"
+                className="modal-button modal-button--ghost flex-1"
               >
                 Cancel
               </button>
@@ -89,19 +89,19 @@ export function ExtensionUIModal({ request, onRespond }: Props) {
                 if (e.key === "Escape") onRespond({ cancelled: true });
               }}
               placeholder={request.placeholder}
-              className="w-full bg-ink-900 border border-ink-700 rounded-lg px-3 py-2 text-ink-100 text-sm font-mono placeholder-ink-500 outline-none focus:border-amber-500"
+              className="modal-field"
               enterKeyHint="done"
             />
             <div className="flex gap-2">
               <button
                 onClick={() => onRespond({ value: value || undefined })}
-                className="flex-1 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-ink-950 text-sm font-medium transition-theme min-h-[44px]"
+                className="modal-button modal-button--primary flex-1"
               >
                 Submit
               </button>
               <button
                 onClick={handleCancel}
-                className="flex-1 py-2 rounded-lg bg-ink-850 hover:bg-ink-800 text-ink-400 text-sm transition-theme border border-ink-700 min-h-[44px]"
+                className="modal-button modal-button--ghost flex-1"
               >
                 Cancel
               </button>
@@ -120,18 +120,18 @@ export function ExtensionUIModal({ request, onRespond }: Props) {
                 if (e.key === "Escape") onRespond({ cancelled: true });
               }}
               placeholder={request.placeholder}
-              className="w-full bg-ink-900 border border-ink-700 rounded-lg px-3 py-2 text-ink-100 text-sm font-mono placeholder-ink-500 outline-none focus:border-amber-500 resize-none min-h-[120px] md:min-h-[200px]"
+              className="modal-field resize-none min-h-[120px] md:min-h-[200px]"
             />
             <div className="flex gap-2">
               <button
                 onClick={() => onRespond({ value: value || undefined })}
-                className="flex-1 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-ink-950 text-sm font-medium transition-theme min-h-[44px]"
+                className="modal-button modal-button--primary flex-1"
               >
                 Submit
               </button>
               <button
                 onClick={handleCancel}
-                className="flex-1 py-2 rounded-lg bg-ink-850 hover:bg-ink-800 text-ink-400 text-sm transition-theme border border-ink-700 min-h-[44px]"
+                className="modal-button modal-button--ghost flex-1"
               >
                 Cancel
               </button>
@@ -154,25 +154,23 @@ export function ExtensionUIModal({ request, onRespond }: Props) {
     const c = notifyColors[variant];
 
     return (
-      <div className="fixed top-3 left-3 right-3 md:left-1/2 md:right-auto md:-translate-x-1/2 md:max-w-sm z-[110] animate-fade-in-up pointer-events-auto">
-        <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-ink-900/95 border border-ink-800 shadow-lg backdrop-blur-sm">
-          <div className={`shrink-0 mt-1.5 w-1.5 h-1.5 rounded-full ${c.dot}`} />
+      <div className="modal-extension-notify animate-fade-in-up pointer-events-auto">
+        <div className="modal-extension-notify-card">
+          <div className={`modal-extension-notify-dot ${c.dot}`} />
           <div className="flex-1 min-w-0">
             {request.title && (
-              <p className={`text-xs font-medium leading-tight ${c.text}`}>{request.title}</p>
+              <p className={`modal-extension-notify-title ${c.text}`}>{request.title}</p>
             )}
-            <p className={`text-[11px] font-mono leading-snug ${request.title ? c.subtext : c.text} mt-0.5`}>
+            <p className={`modal-extension-notify-message ${request.title ? c.subtext : c.text}`}>
               {request.message || request.title}
             </p>
           </div>
           <button
             onClick={() => onRespond({ cancelled: true })}
-            className="shrink-0 mt-0.5 text-ink-600 hover:text-ink-400 transition-colors p-1"
+            className="modal-extension-notify-close"
             aria-label="Dismiss notification"
           >
-            <svg width="8" height="8" viewBox="0 0 10 10" fill="none" className="stroke-current" strokeWidth="2" strokeLinecap="round">
-              <path d="M1.5 1.5l7 7M8.5 1.5l-7 7" />
-            </svg>
+            <Icon name="close" size={14} />
           </button>
         </div>
       </div>
@@ -180,18 +178,18 @@ export function ExtensionUIModal({ request, onRespond }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-60 flex items-center justify-center bg-ink-950/60 backdrop-blur-sm animate-fade-in-up">
-      <div className="relative z-70 bg-ink-900 border border-ink-700 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden mobile-safe-bottom">
-        {/* Header */}
-        <div className="px-5 py-4 border-b border-ink-800 flex items-center justify-between">
-          <h3 className="text-ink-200 font-medium text-sm">{request.title || "Extension"}</h3>
-          <button onClick={handleCancel} className="text-ink-500 hover:text-ink-400 transition-theme p-1.5 touch-target-sm" aria-label="Close">
-            <Icon name="close" size={16} />
-          </button>
-        </div>
-        {/* Body */}
-        <div className="px-5 py-4">
-          {renderContent()}
+    <div className="modal-backdrop animate-fade-in-up">
+      <div className="modal-stage">
+        <div className="modal-card relative z-70 mobile-safe-bottom">
+          <div className="modal-header">
+            <h3 className="modal-title">{request.title || "Extension"}</h3>
+            <button onClick={handleCancel} className="modal-close" aria-label="Close">
+              <Icon name="close" size={16} />
+            </button>
+          </div>
+          <div className="modal-body">
+            {renderContent()}
+          </div>
         </div>
       </div>
     </div>
