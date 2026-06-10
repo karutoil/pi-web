@@ -916,14 +916,18 @@ button, a, input, textarea, select, [role="button"] {
   align-items: center;
   gap: 0.3rem;
   max-width: 100%;
-  padding: 0.25rem 0.45rem;
-  border: 1px solid color-mix(in srgb, var(--workspace-brass) 28%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--workspace-brass) 10%, transparent);
-  color: var(--workspace-brass);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-ink-500);
   font-family: var(--font-mono);
   font-size: 0.58rem;
   line-height: 1;
+}
+
+.git-panel-branch span:first-child {
+  color: var(--workspace-brass);
 }
 
 .git-panel-sync {
@@ -962,72 +966,79 @@ button, a, input, textarea, select, [role="button"] {
 }
 
 .git-panel-branch-selector {
-  padding: 0.6rem 1rem;
+  padding: 0.45rem 1rem;
   border-bottom: 1px solid var(--workspace-seam);
-  background: color-mix(in srgb, var(--color-ink-950) 12%, transparent);
+  background: transparent;
 }
 
 .git-panel-tabs {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.35rem;
-  padding: 0.55rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.4rem 1rem;
   border-bottom: 1px solid var(--workspace-seam);
-  background: color-mix(in srgb, var(--color-ink-950) 10%, transparent);
+  background: transparent;
 }
 
 .git-panel-tab {
-  min-height: 2rem;
-  border: 1px solid transparent;
-  border-radius: 0.7rem;
+  min-height: 1.65rem;
+  border: 0;
+  border-radius: 0;
   color: var(--color-ink-500);
   font-family: var(--font-ui);
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.04em;
-  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+  transition: color 160ms ease;
+}
+
+.git-panel-tab::after {
+  content: "";
+  display: block;
+  width: 100%;
+  height: 1px;
+  margin-top: 0.25rem;
+  background: transparent;
 }
 
 .git-panel-tab:hover {
-  border-color: var(--workspace-seam);
-  background: color-mix(in srgb, var(--workspace-panel-strong) 55%, transparent);
   color: var(--color-ink-200);
 }
 
 .git-panel-tab[data-active="true"] {
-  border-color: color-mix(in srgb, var(--workspace-brass) 38%, transparent);
-  background: color-mix(in srgb, var(--workspace-brass) 13%, transparent);
   color: var(--workspace-brass);
-  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--workspace-brass) 55%, transparent);
+}
+
+.git-panel-tab[data-active="true"]::after {
+  background: var(--workspace-brass);
 }
 
 .git-panel-selection-bar {
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  margin: 0.65rem 1rem 0;
-  padding: 0.5rem 0.6rem;
-  border: 1px solid color-mix(in srgb, var(--workspace-brass) 24%, transparent);
-  border-radius: 0.8rem;
-  background: color-mix(in srgb, var(--workspace-brass) 8%, transparent);
+  margin: 0.35rem 1rem 0;
+  padding: 0.25rem 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--workspace-brass);
   font-family: var(--font-mono);
   font-size: 0.62rem;
 }
 
 .git-panel-selection-bar button {
-  border: 1px solid color-mix(in srgb, var(--workspace-brass) 24%, transparent);
-  border-radius: 0.55rem;
-  background: color-mix(in srgb, var(--workspace-brass) 12%, transparent);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--workspace-brass);
   font-family: var(--font-mono);
   font-size: 0.62rem;
-  padding: 0.35rem 0.55rem;
-  transition: background-color 160ms ease, color 160ms ease;
+  padding: 0.2rem 0.35rem;
+  transition: color 160ms ease;
 }
 
 .git-panel-selection-bar button:hover {
-  background: color-mix(in srgb, var(--workspace-brass) 20%, transparent);
   color: var(--color-ink-100);
 }
 
@@ -1044,11 +1055,17 @@ button, a, input, textarea, select, [role="button"] {
 }
 
 .git-panel-section {
-  margin: 0.75rem 0 0;
-  overflow: hidden;
-  border: 1px solid var(--workspace-seam);
-  border-radius: 0.9rem;
-  background: color-mix(in srgb, var(--color-ink-950) 10%, transparent);
+  margin: 0.35rem 0 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.git-panel-section + .git-panel-section {
+  margin-top: 0.65rem;
+  padding-top: 0.25rem;
+  border-top: 1px solid color-mix(in srgb, var(--workspace-seam) 55%, transparent);
 }
 
 .git-panel-section-header {
@@ -1056,24 +1073,23 @@ button, a, input, textarea, select, [role="button"] {
   align-items: center;
   gap: 0.55rem;
   width: 100%;
-  min-height: 2.35rem;
-  padding: 0.65rem 0.75rem;
+  min-height: 2rem;
+  padding: 0.35rem 0.35rem;
   border: 0;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--workspace-panel-strong) 82%, transparent), color-mix(in srgb, var(--workspace-panel) 72%, transparent));
-  color: var(--color-ink-200);
+  background: transparent;
+  color: var(--color-ink-400);
   cursor: pointer;
   font-family: var(--font-mono);
   font-size: 0.62rem;
-  font-weight: 800;
-  letter-spacing: 0.16em;
+  font-weight: 750;
+  letter-spacing: 0.12em;
   text-align: left;
   text-transform: uppercase;
-  transition: background-color 160ms ease;
+  transition: color 160ms ease;
 }
 
 .git-panel-section-header:hover {
-  background: color-mix(in srgb, var(--workspace-brass) 8%, transparent);
+  color: var(--workspace-brass);
 }
 
 .git-panel-section-title {
@@ -1097,10 +1113,10 @@ button, a, input, textarea, select, [role="button"] {
 }
 
 .git-file-diffbar {
-  width: 0.35rem;
+  width: 0.2rem;
   align-self: stretch;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--workspace-seam) 50%, transparent);
+  background: color-mix(in srgb, var(--workspace-seam) 35%, transparent);
 }
 
 .git-file-diffbar--blank {
@@ -1110,38 +1126,43 @@ button, a, input, textarea, select, [role="button"] {
 .git-file-row {
   position: relative;
   display: grid;
-  grid-template-columns: auto auto 1.1rem minmax(0, 1fr) auto auto;
+  grid-template-columns: auto auto 1rem minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 0.45rem;
-  min-height: 2.55rem;
-  padding: 0.55rem 0.7rem;
-  border-top: 1px solid color-mix(in srgb, var(--workspace-seam) 70%, transparent);
+  gap: 0.4rem;
+  min-height: 2.25rem;
+  padding: 0.4rem 0.35rem;
+  border-top: 1px solid color-mix(in srgb, var(--workspace-seam) 38%, transparent);
   background: transparent;
   color: var(--color-ink-300);
   cursor: pointer;
   transition: background-color 140ms ease;
 }
 
+.git-file-row:first-of-type {
+  border-top: 0;
+}
+
 .git-file-row:hover,
 .git-file-row:focus-within {
-  background: color-mix(in srgb, var(--workspace-brass) 7%, transparent);
+  background: color-mix(in srgb, var(--workspace-brass) 4%, transparent);
 }
 
 .git-file-row[data-selected="true"] {
-  background: color-mix(in srgb, var(--workspace-brass) 12%, transparent);
+  background: color-mix(in srgb, var(--workspace-brass) 7%, transparent);
 }
 
 .git-file-status {
   display: inline-grid;
   place-items: center;
-  width: 1.1rem;
-  height: 1.1rem;
-  border: 1px solid currentColor;
-  border-radius: 0.35rem;
-  background: color-mix(in srgb, currentColor 10%, transparent);
+  width: auto;
+  min-width: 1rem;
+  height: 1rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   font-family: var(--font-mono);
-  font-size: 0.56rem;
-  font-weight: 900;
+  font-size: 0.6rem;
+  font-weight: 850;
   line-height: 1;
 }
 
@@ -1214,10 +1235,10 @@ button, a, input, textarea, select, [role="button"] {
   place-items: center;
   min-height: 12rem;
   margin-top: 0.75rem;
-  padding: 2rem 1rem;
-  border: 1px dashed color-mix(in srgb, var(--workspace-seam) 85%, transparent);
-  border-radius: 1rem;
-  background: color-mix(in srgb, var(--color-ink-950) 12%, transparent);
+  padding: 1.25rem 0.5rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   text-align: center;
 }
 
@@ -1240,11 +1261,11 @@ button, a, input, textarea, select, [role="button"] {
 }
 
 .git-conflict-banner {
-  margin: 0.75rem 1rem 0;
-  padding: 0.7rem;
-  border: 1px solid color-mix(in srgb, var(--workspace-rust) 34%, transparent);
-  border-radius: 0.9rem;
-  background: color-mix(in srgb, var(--workspace-rust) 8%, transparent);
+  margin: 0.5rem 0 0;
+  padding: 0.65rem 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .git-conflict-banner p {
@@ -1258,37 +1279,35 @@ button, a, input, textarea, select, [role="button"] {
 }
 
 .git-conflict-banner button {
-  min-height: 2rem;
-  border: 1px solid color-mix(in srgb, var(--workspace-rust) 28%, transparent);
-  border-radius: 0.55rem;
-  background: color-mix(in srgb, var(--workspace-rust) 10%, transparent);
-  color: var(--color-ink-200);
+  min-height: 1.8rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--workspace-rust);
   font-family: var(--font-mono);
   font-size: 0.62rem;
-  padding: 0.35rem 0.55rem;
-  transition: background-color 160ms ease, color 160ms ease;
+  padding: 0.25rem 0.35rem;
+  transition: color 160ms ease;
 }
 
 .git-conflict-banner button:hover {
-  background: color-mix(in srgb, var(--workspace-rust) 18%, transparent);
   color: var(--color-ink-100);
 }
 
 .git-commit-dock {
   flex: 0 0 auto;
-  padding: 0.75rem 1rem 0.9rem;
+  padding: 0.65rem 1rem 0.8rem;
   border-top: 1px solid var(--workspace-seam);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--color-ink-950) 4%, transparent), color-mix(in srgb, var(--color-ink-950) 16%, transparent));
+  background: transparent;
 }
 
 .git-commit-textarea {
   width: 100%;
-  min-height: 4.25rem;
+  min-height: 3.8rem;
   resize: none;
-  border: 1px solid var(--workspace-seam);
-  border-radius: 0.85rem;
-  background: color-mix(in srgb, var(--color-ink-950) 38%, transparent);
+  border: 1px solid color-mix(in srgb, var(--workspace-seam) 75%, transparent);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--color-ink-950) 28%, transparent);
   color: var(--color-ink-100);
   font-family: var(--font-mono);
   font-size: 0.72rem;
@@ -1360,9 +1379,9 @@ button, a, input, textarea, select, [role="button"] {
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--workspace-seam);
-  border-radius: 0.9rem;
-  background: color-mix(in srgb, var(--color-ink-950) 18%, transparent);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .git-diff-toolbar {
