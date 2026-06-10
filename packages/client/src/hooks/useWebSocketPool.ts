@@ -56,6 +56,10 @@ function createConnection(
     extensionErrors: [] as Array<{ extensionPath: string; event: string; error: string }>,
     // New: compaction result
     compactionResult: null as { reason: string; aborted: boolean; result?: any; willRetry?: boolean; errorMessage?: string } | null,
+    // New: session action results
+    exportHtmlResult: null as { path: string } | null,
+    cloneResult: null as { cancelled: boolean; sessionPath?: string } | null,
+    lastCommandResponse: null as { command: string; success: boolean; error?: string; id?: string } | null,
   };
 
   // If this connection is for a brand-new session (no sessionPath yet), the
@@ -188,8 +192,8 @@ function createConnection(
         break;
       case "error": console.error("Agent error:", msg.message); data.isStreaming = false; break;
       case "response":
-        // Generic command success/failure response — just log for now
-        if (msg.success === false) console.warn(`Command ${msg.command} failed:`, msg.error);
+        data.lastCommandResponse = { command: msg.command, success: msg.success, error: msg.error, id: msg.id };
+        if (onSessionEventRef.current) onSessionEventRef.current(msg);
         break;
       case "session_loaded": if (msg.session && onSessionLoadedRef.current) onSessionLoadedRef.current(msg.session); break;
       case "available_models": data.models = msg.models; break;
@@ -283,7 +287,13 @@ function createConnection(
         if (data.extensionErrors.length > 20) data.extensionErrors = data.extensionErrors.slice(-20);
         break;
       case "export_html_result":
+        data.exportHtmlResult = { path: msg.path || "" };
+        if (onSessionEventRef.current) onSessionEventRef.current(msg as any);
+        break;
       case "clone_result":
+        data.cloneResult = { cancelled: msg.cancelled || false, sessionPath: msg.sessionPath };
+        if (onSessionEventRef.current) onSessionEventRef.current(msg as any);
+        break;
       case "messages_result":
       case "last_assistant_text_result":
         // These result types are forwarded to session event listeners
@@ -332,6 +342,9 @@ function createConnection(
       data.isActive = false;
       data.state = null;
       data.compactionResult = null;
+      data.exportHtmlResult = null;
+      data.cloneResult = null;
+      data.lastCommandResponse = null;
       notify();
     },
     loadSession: (sessionPath: string) => {
@@ -344,6 +357,9 @@ function createConnection(
       data.isActive = false;
       data.state = null;
       data.compactionResult = null;
+      data.exportHtmlResult = null;
+      data.cloneResult = null;
+      data.lastCommandResponse = null;
       notify();
     },
     // New command methods
@@ -356,7 +372,12 @@ function createConnection(
     setSteeringMode: (mode: "all" | "one-at-a-time") => { send({ type: "set_steering_mode", mode }); },
     setFollowUpMode: (mode: "all" | "one-at-a-time") => { send({ type: "set_follow_up_mode", mode }); },
     exportHtml: (outputPath?: string) => { send({ type: "export_html", outputPath }); },
-    switchSession: (sessionPath: string) => { send({ type: "switch_session", sessionPath }); },
+    switchSession: (sessionPath: string) => {
+      data.exportHtmlResult = null;
+      data.cloneResult = null;
+      data.lastCommandResponse = null;
+      send({ type: "switch_session", sessionPath });
+    },
     clone: () => { send({ type: "clone" }); },
     getMessages: () => { send({ type: "get_messages" }); },
     getLastAssistantText: () => { send({ type: "get_last_assistant_text" }); },
@@ -382,6 +403,9 @@ function createConnection(
     get autoRetry() { return data.autoRetry; },
     get extensionErrors() { return data.extensionErrors; },
     get compactionResult() { return data.compactionResult; },
+    get exportHtmlResult() { return data.exportHtmlResult; },
+    get cloneResult() { return data.cloneResult; },
+    get lastCommandResponse() { return data.lastCommandResponse; },
 
     respondToUI: (response) => {
       const id = data.pendingDialogId;

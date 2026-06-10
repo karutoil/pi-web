@@ -154,7 +154,7 @@ export function ExtensionUIModal({ request, onRespond }: Props) {
     const c = notifyColors[variant];
 
     return (
-      <div className="absolute top-2 left-3 right-3 md:left-1/2 md:right-auto md:-translate-x-1/2 md:max-w-sm z-30 animate-fade-in-up pointer-events-auto">
+      <div className="fixed top-3 left-3 right-3 md:left-1/2 md:right-auto md:-translate-x-1/2 md:max-w-sm z-[110] animate-fade-in-up pointer-events-auto">
         <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-ink-900/95 border border-ink-800 shadow-lg backdrop-blur-sm">
           <div className={`shrink-0 mt-1.5 w-1.5 h-1.5 rounded-full ${c.dot}`} />
           <div className="flex-1 min-w-0">

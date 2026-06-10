@@ -8,20 +8,15 @@ interface Props {
   ws: WSBridge;
   cwd: string;
   sessionName: string | null;
-  onToggleGit?: () => void;
-  showGit?: boolean;
   onToggleSidebar?: () => void;
   showSidebar?: boolean;
   onSessionActions?: () => void;
-  /** Preview panel toggle */
-  onTogglePreview?: () => void;
-  showPreview?: boolean;
   /** Terminal panel toggle */
   onToggleTerminal?: () => void;
   showTerminal?: boolean;
 }
 
-export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggleSidebar, showSidebar, onSessionActions, onTogglePreview, showPreview, onToggleTerminal, showTerminal }: Props) {
+export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar, onSessionActions, onToggleTerminal, showTerminal }: Props) {
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(sessionName || "");
   const isMobile = useIsMobile();
@@ -168,18 +163,6 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleGit, showGit, onToggl
           {onSessionActions && (
             <button onClick={onSessionActions} className="icon-btn" aria-label="Session actions" title="Export, clone, compact…">
               <Icon name="more" size={14} />
-            </button>
-          )}
-
-          {onToggleGit && (
-            <button onClick={onToggleGit} className={`icon-btn ${showGit ? "icon-btn-active" : ""}`} aria-label="Toggle git panel" title="Source Control">
-              <Icon name="git" size={14} />
-            </button>
-          )}
-
-          {onTogglePreview && (
-            <button onClick={onTogglePreview} className={`icon-btn ${showPreview ? "icon-btn-active" : ""}`} aria-label="Toggle preview" title="Preview">
-              <span className="text-xs">◧</span>
             </button>
           )}
 

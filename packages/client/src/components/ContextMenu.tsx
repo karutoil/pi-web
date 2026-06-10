@@ -68,6 +68,7 @@ export function ContextMenuPortal({
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) close();
     };
     const timer = setTimeout(() => {
+      document.addEventListener("pointerdown", handler);
       document.addEventListener("mousedown", handler);
       document.addEventListener("touchend", handler);
       document.addEventListener("contextmenu", handler);
@@ -84,6 +85,7 @@ export function ContextMenuPortal({
     document.addEventListener("keydown", keyHandler);
     return () => {
       clearTimeout(timer);
+      document.removeEventListener("pointerdown", handler);
       document.removeEventListener("mousedown", handler);
       document.removeEventListener("touchend", handler);
       document.removeEventListener("contextmenu", handler);

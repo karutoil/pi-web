@@ -52,6 +52,22 @@ export interface CompactionResultState {
   errorMessage?: string;
 }
 
+export interface ExportHtmlResultState {
+  path: string;
+}
+
+export interface CloneResultState {
+  cancelled: boolean;
+  sessionPath?: string;
+}
+
+export interface CommandResponseState {
+  command: string;
+  success: boolean;
+  error?: string;
+  id?: string;
+}
+
 /**
  * Minimal interface that components depend on.
  * WSConnection (from useWebSocketPool) extends this with pool-specific
@@ -95,6 +111,10 @@ export interface WSBridge {
   extensionErrors: ExtensionErrorEntry[];
   // New: compaction result
   compactionResult: CompactionResultState | null;
+  // New: session action results
+  exportHtmlResult: ExportHtmlResultState | null;
+  cloneResult: CloneResultState | null;
+  lastCommandResponse: CommandResponseState | null;
   // New: command methods
   cycleModel: () => void;
   cycleThinkingLevel: () => void;

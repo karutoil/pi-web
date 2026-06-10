@@ -50,6 +50,22 @@ const REGION_LIMITS: Record<WorkspaceRegionId, { min: number; max: number; axis:
   center: { min: 80, max: 100, axis: "y" },
 };
 
+const REGION_LABELS: Record<WorkspaceRegionId, string> = {
+  left: "Project rail",
+  center: "Work surface",
+  right: "Tool bench",
+  top: "Upper tray",
+  bottom: "Terminal tray",
+};
+
+const REGION_SHORT_LABELS: Record<WorkspaceRegionId, string> = {
+  left: "Rail",
+  center: "Surface",
+  right: "Tools",
+  top: "Upper",
+  bottom: "Terminal",
+};
+
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
@@ -239,14 +255,14 @@ export function WorkspaceDock({ layout, panels, onMovePanel, onResizeRegion, onR
   const renderedRegionIds = REGION_IDS.filter(region => draggingPanel || regionHasPanels(region) || region === "center");
 
   return (
-    <div ref={containerRef} className="relative flex-1 min-w-0 min-h-0 overflow-hidden bg-ink-950/20">
+    <div ref={containerRef} className="workspace-bench relative flex-1 min-w-0 min-h-0 h-full overflow-hidden">
       {error && (
-        <div className="absolute left-1/2 top-3 -translate-x-1/2 z-30 px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-[0.65rem] font-mono">
+        <div className="workspace-error absolute left-1/2 top-3 -translate-x-1/2 z-30 px-3 py-1.5 rounded-lg">
           {error}
         </div>
       )}
       <div
-        className={["grid min-w-0 min-h-0 h-full", draggingPanel ? "gap-px bg-ink-800/40" : ""].join(" ")}
+        className="workspace-grid grid min-w-0 min-h-0 h-full overflow-hidden"
         style={{ gridTemplateColumns, gridTemplateRows, gridTemplateAreas: `"left top right" "left center right" "left bottom right"` }}
       >
         {renderedRegionIds.map(region => (
@@ -255,6 +271,8 @@ export function WorkspaceDock({ layout, panels, onMovePanel, onResizeRegion, onR
             region={region}
             panels={panelsByRegion.get(region) ?? []}
             mode={regionMode(region)}
+            regionLabel={REGION_LABELS[region]}
+            regionShortLabel={REGION_SHORT_LABELS[region]}
             panelConfigById={panelConfigById}
             draggingPanel={draggingPanel}
             dropTarget={dropTarget}
@@ -288,7 +306,7 @@ export function WorkspaceDock({ layout, panels, onMovePanel, onResizeRegion, onR
           <button
             key={panel.id}
             onClick={() => onReopenPanel?.(panel.id)}
-            className={`absolute z-30 ${classes} rounded-full bg-ink-900/90 border border-ink-700/70 text-ink-300 hover:text-amber-500 hover:border-amber-500/50 shadow-lg shadow-ink-950/60 p-1.5 transition-theme`}
+            className={`absolute z-30 workspace-closed-panel workspace-closed-panel-${edge} ${classes}`}
             title={`Reopen ${panel.title}`}
             aria-label={`Reopen ${panel.title}`}
           >
@@ -300,10 +318,12 @@ export function WorkspaceDock({ layout, panels, onMovePanel, onResizeRegion, onR
   );
 }
 
-function RegionDock({ region, panels, mode, panelConfigById, draggingPanel, dropTarget, resizingRegion, resizingPanel, onDragStart, onRegionDragOver, onRegionDrop, onPanelDragOver, onDragEnd, onMovePanel, onResizeRegion, onResizePanel, onReset, onRegionResizeMouseDown, onRegionResizeDoubleClick, onPanelResizeMouseDown, saving }: {
+function RegionDock({ region, panels, mode, regionLabel, regionShortLabel, panelConfigById, draggingPanel, dropTarget, resizingRegion, resizingPanel, onDragStart, onRegionDragOver, onRegionDrop, onPanelDragOver, onDragEnd, onMovePanel, onResizeRegion, onResizePanel, onReset, onRegionResizeMouseDown, onRegionResizeDoubleClick, onPanelResizeMouseDown, saving }: {
   region: WorkspaceRegionId;
   panels: WorkspaceLayout["panels"];
   mode: WorkspaceRegionMode;
+  regionLabel: string;
+  regionShortLabel: string;
   panelConfigById: Map<WorkspacePanelKind, WorkspacePanelConfig>;
   draggingPanel: WorkspacePanelKind | null;
   dropTarget: { region: WorkspaceRegionId; beforePanelId?: WorkspacePanelKind; placement: DropPlacement } | null;
@@ -345,9 +365,9 @@ function RegionDock({ region, panels, mode, panelConfigById, draggingPanel, drop
         onDrop={onRegionDrop(region)}
         onDragEnd={onDragEnd}
         className={[
-          "relative flex flex-col min-w-0 min-h-0 h-full max-w-full max-h-full overflow-hidden bg-ink-900/35",
-          draggingPanel === panel.id ? "opacity-45" : "",
-          isDrop ? "ring-2 ring-amber-500/60 ring-inset z-20" : "",
+          "workspace-panel",
+          draggingPanel === panel.id ? "is-dragging" : "",
+          isDrop ? "workspace-panel-drop" : "",
           selected ? "" : "hidden",
         ].join(" ")}
         style={mode === "split" ? {
@@ -358,21 +378,21 @@ function RegionDock({ region, panels, mode, panelConfigById, draggingPanel, drop
       >
         <RegionHeader
           region={region}
+          regionLabel={regionLabel}
           panel={config}
           active={selected}
           saving={saving}
           onReset={onReset}
           onDragStart={onDragStart}
         />
-        <div className="flex-1 min-h-0 min-w-0 h-full overflow-hidden">{config.children}</div>
+        <div className="flex-1 min-h-0 min-w-0 overflow-hidden">{config.children}</div>
         {mode === "split" && index < count - 1 && (
           <div
             onMouseDown={onPanelResizeMouseDown(panel.id, panel.size)}
             onDoubleClick={() => configuredPanels.forEach(item => onResizePanel(item.layout.id, 100 / configuredPanels.length, true))}
-            className={[
-              splitAxis(region) === "column" ? "absolute left-0 right-0 bottom-0 h-1.5 cursor-row-resize" : "absolute top-0 bottom-0 right-0 w-1.5 cursor-col-resize",
-              resizingPanel?.panelId === panel.id ? "bg-amber-500/40" : "hover:bg-amber-500/20",
-            ].join(" ")}
+            className="workspace-split-handle"
+            data-axis={splitAxis(region)}
+            data-resizing={resizingPanel?.panelId === panel.id}
             title="Drag to resize split"
           />
         )}
@@ -383,38 +403,44 @@ function RegionDock({ region, panels, mode, panelConfigById, draggingPanel, drop
   return (
     <div
       data-region={region}
+      data-mode={mode}
+      data-empty={configuredPanels.length === 0}
       onDragOver={onRegionDragOver(region, panels)}
       onDrop={onRegionDrop(region)}
       className={[
-        "relative min-w-0 min-h-0 h-full overflow-hidden bg-ink-950/10",
-        isRegionDrop ? "ring-2 ring-inset ring-amber-500/50" : "",
+        "workspace-region",
+        isRegionDrop ? "workspace-region-target" : "",
+        draggingPanel && configuredPanels.length > 0 ? "workspace-region-muted" : "",
       ].join(" ")}
       style={{ gridArea: region }}
     >
       {mode === "tabs" ? (
-        <div className="flex flex-col min-w-0 min-h-0 h-full">
-          <div className="flex items-center gap-1 h-9 shrink-0 border-b border-ink-800/50 bg-ink-950/40 px-1 overflow-x-auto custom-scrollbar-x">
-            {configuredPanels.map(({ layout }, index) => (
-              <button
-                key={layout.id}
-                draggable
-                onDragStart={onDragStart(layout.id)}
-                onDragOver={onPanelDragOver(region, layout.id)}
-                onDrop={onRegionDrop(region)}
-                onDragEnd={onDragEnd}
-                onClick={() => setActiveTab(layout.id)}
-                className={[
-                  "flex items-center gap-1.5 shrink-0 px-2.5 py-1 rounded-md text-[0.65rem] font-mono uppercase tracking-[0.12em] transition-theme",
-                  activeTab === layout.id ? "bg-ink-800/80 text-amber-500" : "text-ink-500 hover:text-ink-200 hover:bg-ink-800/40",
-                ].join(" ")}
-              >
-                <span className="shrink-0">{panelConfigById.get(layout.id)?.icon}</span>
-                {panelConfigById.get(layout.id)?.title}
-              </button>
-            ))}
-            <div className="flex-1" />
+        <div className="workspace-region-tabs flex flex-col min-w-0 min-h-0 h-full overflow-hidden">
+          <div className="workspace-tab-strip">
+            <div className="workspace-tab-scroller custom-scrollbar-x">
+              {configuredPanels.map(({ layout }) => (
+                <button
+                  key={layout.id}
+                  draggable
+                  onDragStart={onDragStart(layout.id)}
+                  onDragOver={onPanelDragOver(region, layout.id)}
+                  onDrop={onRegionDrop(region)}
+                  onDragEnd={onDragEnd}
+                  onClick={() => setActiveTab(layout.id)}
+                  className="workspace-tab"
+                  data-active={activeTab === layout.id}
+                  aria-selected={activeTab === layout.id}
+                >
+                  <span className="workspace-tab-icon" aria-hidden={true}>
+                    {panelConfigById.get(layout.id)?.icon}
+                  </span>
+                  <span>{panelConfigById.get(layout.id)?.title}</span>
+                </button>
+              ))}
+            </div>
+            <div className="workspace-region-label" title={regionLabel}>{regionShortLabel}</div>
           </div>
-          <div className="flex-1 min-h-0 min-w-0 h-full overflow-hidden">
+          <div className="flex flex-col flex-1 min-h-0 min-w-0 h-full overflow-hidden">
             {configuredPanels.map(({ layout }) => layout.id === activeTab ? renderPanel(layout, 0, configuredPanels.length) : null)}
           </div>
         </div>
@@ -425,7 +451,7 @@ function RegionDock({ region, panels, mode, panelConfigById, draggingPanel, drop
         >
           {configuredPanels.map((item, index) => renderPanel(item.layout, index, configuredPanels.length))}
           {configuredPanels.length === 0 && (
-            <div className="flex-1 flex items-center justify-center text-ink-600 text-[0.65rem] font-mono">Drop a panel here</div>
+            <div className="workspace-empty-drop">Drop a panel into {regionLabel}</div>
           )}
         </div>
       )}
@@ -435,9 +461,10 @@ function RegionDock({ region, panels, mode, panelConfigById, draggingPanel, drop
           onMouseDown={onRegionResizeMouseDown(region)}
           onDoubleClick={onRegionResizeDoubleClick(region)}
           className={[
-            region === "left" ? "absolute top-0 right-0 bottom-0 w-1.5 cursor-col-resize" : "absolute top-0 left-0 bottom-0 w-1.5 cursor-col-resize",
-            resizingRegion === region ? "bg-amber-500/40" : "hover:bg-amber-500/20",
+            region === "left" ? "workspace-region-handle workspace-region-handle-left" : "workspace-region-handle workspace-region-handle-right",
           ].join(" ")}
+          data-axis={limits.axis}
+          data-resizing={resizingRegion === region}
           title="Drag to resize region"
         />
       )}
@@ -446,9 +473,10 @@ function RegionDock({ region, panels, mode, panelConfigById, draggingPanel, drop
           onMouseDown={onRegionResizeMouseDown(region)}
           onDoubleClick={onRegionResizeDoubleClick(region)}
           className={[
-            region === "top" ? "absolute left-0 right-0 bottom-0 h-1.5 cursor-row-resize" : "absolute left-0 right-0 top-0 h-1.5 cursor-row-resize",
-            resizingRegion === region ? "bg-amber-500/40" : "hover:bg-amber-500/20",
+            region === "top" ? "workspace-region-handle workspace-region-handle-top" : "workspace-region-handle workspace-region-handle-bottom",
           ].join(" ")}
+          data-axis={limits.axis}
+          data-resizing={resizingRegion === region}
           title="Drag to resize region"
         />
       )}
@@ -456,8 +484,9 @@ function RegionDock({ region, panels, mode, panelConfigById, draggingPanel, drop
   );
 }
 
-function RegionHeader({ region, panel, active, saving, onReset, onDragStart }: {
+function RegionHeader({ region, regionLabel, panel, active, saving, onReset, onDragStart }: {
   region: WorkspaceRegionId;
+  regionLabel: string;
   panel: WorkspacePanelConfig;
   active: boolean;
   saving: boolean;
@@ -465,17 +494,18 @@ function RegionHeader({ region, panel, active, saving, onReset, onDragStart }: {
   onDragStart: (panelId: WorkspacePanelKind) => (event: DragEvent) => void;
 }) {
   return (
-    <header className="h-9 shrink-0 flex items-center gap-1.5 px-2 border-b border-ink-800/50 bg-ink-950/40 select-none cursor-grab active:cursor-grabbing">
-      <button draggable onDragStart={onDragStart(panel.id)} className="p-1 rounded text-ink-500 hover:text-amber-500 hover:bg-ink-800/50" aria-label={`Move ${panel.title}`}>
+    <header className="workspace-panel-header">
+      <button draggable onDragStart={onDragStart(panel.id)} className="workspace-panel-grip" aria-label={`Move ${panel.title}`}>
         <Icon name="grip" size={10} />
       </button>
-      <span className="text-ink-400 shrink-0">{panel.icon}</span>
-      <span className="text-ink-300 text-[0.68rem] font-mono uppercase tracking-[0.14em] truncate flex-1">{panel.title}</span>
+      <span className="workspace-panel-icon">{panel.icon}</span>
+      <span className="workspace-panel-title">{panel.title}</span>
+      <span className="workspace-panel-region" title={regionLabel}>{REGION_SHORT_LABELS[region]}</span>
       {region === "center" && active && (
-        <button onClick={onReset} disabled={saving} className="px-2 py-1 rounded text-[0.6rem] font-mono text-ink-500 hover:text-amber-500 hover:bg-ink-800/50 disabled:opacity-50">Reset</button>
+        <button onClick={onReset} disabled={saving} className="workspace-panel-action">Reset</button>
       )}
       {panel.onClose && active && (
-        <button onClick={panel.onClose} className="p-1 rounded text-ink-500 hover:text-rose-400 hover:bg-rose-400/10 touch-target-sm" aria-label={`Close ${panel.title}`} title={`Close ${panel.title}`}>
+        <button onClick={panel.onClose} className="workspace-panel-close" aria-label={`Close ${panel.title}`} title={`Close ${panel.title}`}>
           <Icon name="close" size={10} />
         </button>
       )}

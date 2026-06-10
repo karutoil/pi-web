@@ -564,7 +564,7 @@ export default function App() {
     <div className="flex h-screen overflow-hidden bg-ink-950">
       <PWABanner />
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-0 focus:left-0 focus:z-80 focus:bg-ink-900 focus:p-4 focus:text-amber-500">Skip to chat</a>
-      <main id="main-content" className="flex-1 flex flex-row min-w-0">
+      <main id="main-content" className="flex-1 flex flex-row min-w-0 min-h-0 h-full overflow-hidden">
         <WorkspaceDock
           layout={workspaceLayout.layout}
           panels={[
@@ -607,7 +607,7 @@ export default function App() {
               title: "Conversation",
               icon: <Icon name="pi-logo" size={12} />,
               children: (
-                <div className="flex-1 flex flex-col min-w-0 min-h-0">
+                <div className="flex-1 flex flex-col min-w-0 min-h-0 h-full overflow-hidden">
                   {view === "chat" && ws ? (
                     <ChatView
                       ws={ws}

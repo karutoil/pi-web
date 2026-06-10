@@ -5,8 +5,6 @@ import { SCROLL_THRESHOLD, SCROLL_THROTTLE_MS } from "../lib/constants";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
 import { ChatHeader } from "./ChatHeader";
-import { usePreviewStore } from "../hooks/usePreviewStore";
-import { useRightPanelStore } from "../hooks/useRightPanelStore";
 import { ExtensionUIModal } from "./ExtensionUIModal";
 import { Icon } from "./Icon";
 import { SessionActions } from "./SessionActions";
@@ -63,17 +61,19 @@ function extractMsgText(msg: ChatMessage): string {
 export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar, showSidebar }: ChatViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showThinking, setShowThinking] = useState(true);
-  const previewOpen = usePreviewStore((s) => s.isOpen);
-  const togglePreview = useCallback(() => usePreviewStore.getState().setOpen(!usePreviewStore.getState().isOpen), []);
-  const rightPanel = useRightPanelStore();
-  const gitOpen = rightPanel.isOpen("git");
-  const toggleGit = useCallback(() => rightPanel.toggle("git"), [rightPanel]);
   const [srAnnouncement, setSrAnnouncement] = useState('');
   const [autoScroll, setAutoScroll] = useState(true);
   const autoScrollRef = useRef(true);
   useEffect(() => { autoScrollRef.current = autoScroll; }, [autoScroll]);
   const contentRef = useRef<HTMLDivElement>(null);
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [sessionActionStatus, setSessionActionStatus] = useState<string | null>(null);
+  const lastExportPathRef = useRef<string | null>(null);
+  const lastCloneSessionRef = useRef<string | null>(null);
+  const lastCloneCancelledRef = useRef<boolean | null>(null);
+  const lastAutoCompactionEnabledRef = useRef<boolean | null>(null);
+  const lastCommandResponseKeyRef = useRef<string | null>(null);
 
   // Virtualization: only render the last RENDER_LIMIT messages
   const [renderLimit, setRenderLimit] = useState(200);
@@ -81,6 +81,16 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
     .filter((e: SessionEntry) => e.message && e.type !== "compaction" && e.type !== "branch_summary");
   const hasMoreHistory = allHistorical.length > renderLimit;
   const historicalEntries = hasMoreHistory ? allHistorical.slice(-renderLimit) : allHistorical;
+
+  useEffect(() => () => {
+    if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+  }, []);
+
+  const showSessionActionStatus = useCallback((message: string) => {
+    setSessionActionStatus(message);
+    if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+    statusTimerRef.current = setTimeout(() => setSessionActionStatus(null), 4500);
+  }, []);
 
   // Auto-scroll via ResizeObserver — fires after DOM commit, always in sync
   // This is more reliable than useEffect deps for rapid streaming updates
@@ -123,6 +133,71 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
     setAutoScroll(true);
   }, []);
 
+  const sessionName = ws.state?.sessionName || session?.name || session?.lastMessage || null;
+  const downloadSessionHtml = useCallback(async (sessionPath: string) => {
+    try {
+      const response = await fetch("/api/sessions/export-html", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionPath }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.error) throw new Error(data.error || "Export failed");
+      const blob = new Blob([data.html || ""], { type: "text/html" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const safeName = (sessionName || "session").replace(/[^\w.-]+/g, "_").replace(/^_+|_+$/g, "");
+      link.href = url;
+      link.download = `${safeName || "session"}.html`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      showSessionActionStatus("HTML export downloaded.");
+    } catch (error: any) {
+      showSessionActionStatus(`Export failed: ${error.message || "unknown error"}`);
+    }
+  }, [sessionName, showSessionActionStatus]);
+
+  useEffect(() => {
+    const result = ws.exportHtmlResult;
+    if (!result?.path || result.path === lastExportPathRef.current) return;
+    lastExportPathRef.current = result.path;
+    downloadSessionHtml(result.path);
+  }, [downloadSessionHtml, ws.exportHtmlResult]);
+
+  useEffect(() => {
+    const result = ws.cloneResult;
+    if (!result) return;
+    const key = `${result.cancelled}:${result.sessionPath || ""}`;
+    if (lastCloneSessionRef.current === result.sessionPath && lastCloneCancelledRef.current === result.cancelled) return;
+    lastCloneSessionRef.current = result.sessionPath || null;
+    lastCloneCancelledRef.current = result.cancelled;
+    if (result.cancelled) {
+      showSessionActionStatus("Clone cancelled.");
+      return;
+    }
+    if (result.sessionPath) {
+      showSessionActionStatus("Clone complete. Loading cloned session…");
+      ws.switchSession(result.sessionPath);
+    } else {
+      showSessionActionStatus("Clone complete.");
+    }
+  }, [showSessionActionStatus, ws, ws.cloneResult]);
+
+  useEffect(() => {
+    const response = ws.lastCommandResponse;
+    if (!response || response.command !== "set_auto_compaction") return;
+    const key = `${response.command}:${response.success}:${response.id || ""}`;
+    if (lastCommandResponseKeyRef.current === key) return;
+    lastCommandResponseKeyRef.current = key;
+    if (response.success) {
+      showSessionActionStatus(`Auto-compaction ${lastAutoCompactionEnabledRef.current ? "enabled" : "disabled"}.`);
+    } else {
+      showSessionActionStatus(`Auto-compaction update failed: ${response.error || "unknown error"}`);
+    }
+  }, [showSessionActionStatus, ws.lastCommandResponse]);
+
   const handleSend = useCallback((text: string, images?: { data: string; mimeType: string }[]) => {
     if (ws.isStreaming) {
       ws.send({ type: "steer", message: text });
@@ -149,14 +224,24 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
   }, [ws.extensionErrors.length]);
 
   const handleExportHtml = useCallback(() => {
-    ws.exportHtml();
-  }, [ws]);
+    const exportSessionPath = ws.state?.sessionFile || session?.filePath;
+    if (!exportSessionPath) {
+      showSessionActionStatus("No session file is available to export yet.");
+      return;
+    }
+    lastExportPathRef.current = exportSessionPath;
+    showSessionActionStatus("Preparing HTML export…");
+    downloadSessionHtml(exportSessionPath);
+  }, [downloadSessionHtml, session?.filePath, showSessionActionStatus, ws.state?.sessionFile]);
   const handleClone = useCallback(() => {
+    showSessionActionStatus("Cloning session…");
     ws.clone();
-  }, [ws]);
+  }, [showSessionActionStatus, ws]);
   const handleSetAutoCompaction = useCallback((enabled: boolean) => {
+    lastAutoCompactionEnabledRef.current = enabled;
+    showSessionActionStatus(`Auto-compaction ${enabled ? "enabled" : "disabled"}…`);
     ws.setAutoCompaction(enabled);
-  }, [ws]);
+  }, [showSessionActionStatus, ws]);
 
   // Screen reader announcements for streaming + loading state
   useEffect(() => {
@@ -189,7 +274,6 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
     return () => clearInterval(t);
   }, [refreshGitStatus]);
 
-  const sessionName = ws.state?.sessionName || session?.name || session?.lastMessage || null;
   const hasHistoricalMessages = sessionDetail?.entries?.some(e => e.message) || false;
 
   // Map entry IDs for fork support on historical messages
@@ -287,22 +371,22 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
   }, []);
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 min-w-0 h-full max-h-full max-w-full overflow-hidden relative">
-      <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} onToggleGit={toggleGit} showGit={gitOpen} onToggleSidebar={onToggleSidebar} showSidebar={showSidebar} onSessionActions={() => setShowSessionActions(true)} onTogglePreview={togglePreview} showPreview={previewOpen} />
+    <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden relative">
+      <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} onToggleSidebar={onToggleSidebar} showSidebar={showSidebar} onSessionActions={() => setShowSessionActions(true)} />
 
       <div aria-live="polite" className="sr-only">{srAnnouncement}</div>
 
       {/* Main content row: chat area + right-side panels */}
-      <div className="flex-1 flex min-h-0 min-w-0 h-full max-w-full max-h-full overflow-hidden relative">
+      <div className="flex-1 flex min-h-0 min-w-0 overflow-hidden relative">
         {/* Loading overlay — blurs + blocks interaction until connected + state received */}
         {isLoading && <SessionLoadingOverlay />}
 
         {/* Chat column — takes remaining space after terminal panel */}
-        <div className="flex-1 flex flex-col min-h-0 min-w-0 h-full max-h-full max-w-full overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
           <div
             ref={scrollRef}
             onScroll={handleScroll}
-            className="flex-1 min-h-0 max-h-full overflow-y-auto overflow-x-hidden custom-scrollbar px-3 md:px-5 pt-6 pb-4 relative"
+            className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar px-3 md:px-5 pt-6 pb-4 relative"
           >
         {/* Notification toast — absolute overlay pinned to top of scroll area */}
         {ws.pendingNotification && (
@@ -508,12 +592,21 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
       {/* Session actions dropdown */}
       {showSessionActions && (
         <SessionActions
-          onCompact={(instr) => ws.compact(instr)}
+          onCompact={(instr) => {
+            showSessionActionStatus(instr ? "Compacting with custom instructions…" : "Compacting context…");
+            ws.compact(instr);
+          }}
           onExportHtml={handleExportHtml}
           onClone={handleClone}
           onSetAutoCompaction={handleSetAutoCompaction}
           onClose={() => setShowSessionActions(false)}
         />
+      )}
+
+      {sessionActionStatus && (
+        <div className="fixed left-1/2 bottom-4 -translate-x-1/2 z-[70] max-w-[min(90vw,32rem)] px-3 py-2 rounded-lg bg-ink-950/95 border border-ink-700 text-ink-100 text-xs font-mono shadow-2xl mobile-safe-bottom">
+          {sessionActionStatus}
+        </div>
       )}
     </div>
   );

@@ -96,6 +96,7 @@ function ProjectHeader({
 }) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const menuBtnRef = useRef<HTMLButtonElement>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
 
   useEffect(() => {
     if (!menu) return;
@@ -126,7 +127,7 @@ function ProjectHeader({
           ref={menuBtnRef}
           onClick={(e) => {
             const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-            setMenu({ x: rect.right - 192, y: rect.bottom + 6 });
+            setMenu(prev => prev ? null : { x: rect.right - 192, y: rect.bottom + 6 });
           }}
           className="shrink-0 p-1.5 -m-1.5 rounded-md text-ink-500 hover:text-ink-200 hover:bg-ink-800/40 transition-theme"
           aria-label="Project actions"
@@ -139,7 +140,7 @@ function ProjectHeader({
         <ContextMenuPortal
           x={menu.x}
           y={menu.y}
-          onClose={() => setMenu(null)}
+          onClose={closeMenu}
         >
           <ContextMenuItem
             label="New session"
