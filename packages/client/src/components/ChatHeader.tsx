@@ -149,7 +149,7 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar,
         {stats && (
           <div className="conversation-stats">
             {stats.contextUsage && (
-              <span title={`${stats.contextUsage.tokens.toLocaleString()} / ${stats.contextUsage.contextWindow.toLocaleString()} tokens`}>
+              <span title={`${stats.contextUsage.tokens.toLocaleString()} / ${stats.contextUsage.contextWindow?.toLocaleString() ?? "unknown"} tokens`}>
                 {stats.contextUsage.percent.toFixed(0)}%
               </span>
             )}
