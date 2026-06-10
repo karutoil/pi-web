@@ -91,6 +91,7 @@
   --workspace-seam: rgba(128, 119, 107, 0.28);
   --workspace-brass: #a07508;
   --workspace-blueprint: #5f8fb3;
+  --workspace-teal: #359e88;
   --workspace-rust: #c8525c;
 }
 
@@ -137,6 +138,7 @@
   --workspace-seam: rgba(157, 148, 132, 0.18);
   --workspace-brass: #d4a020;
   --workspace-blueprint: #7db4d4;
+  --workspace-teal: #4db5a0;
   --workspace-rust: #f2636e;
 }
 
