@@ -1901,8 +1901,9 @@ button, a, input, textarea, select, [role="button"] {
 }
 
 .git-stash-view {
-  max-height: min(60vh, 36rem);
-  overflow-y: auto;
+  max-height: 32rem;
+  overflow-y: scroll;
+  overscroll-behavior: contain;
   margin: 0.5rem 0 0.25rem;
   overflow: hidden;
   border: 1px solid var(--workspace-seam);
@@ -2013,6 +2014,15 @@ button, a, input, textarea, select, [role="button"] {
 .git-stash-view-files,
 .git-stash-view-diff {
   padding: 0.65rem 0.75rem;
+}
+
+.git-stash-view-files {
+  max-height: 12rem;
+  overflow-y: auto;
+}
+
+.git-stash-view-diff .diff-renderer {
+  max-height: 24rem;
 }
 
 .git-stash-view-diff {
