@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, type RefObject } from "react";
 import type { ModelInfo } from "@pi-web/shared";
 import type { WSBridge } from "../lib/types";
+import { Icon } from "./Icon";
 
 interface Props {
   ws: WSBridge;
@@ -59,6 +60,7 @@ export function ModelSelectorDropdown({ ws, open, onClose, anchorRef }: Props) {
   }, [ws.models, search]);
 
   const currentModelId = ws.state?.model;
+  const activeModel = ws.models.find(m => m.id === currentModelId);
   const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh"];
 
   useEffect(() => {
@@ -94,19 +96,35 @@ export function ModelSelectorDropdown({ ws, open, onClose, anchorRef }: Props) {
       }}
       onClick={e => e.stopPropagation()}
     >
-      <div className="conversation-model-dropdown-search">
+      <div className="conversation-model-header">
+        <div className="conversation-model-header-copy">
+          <div className="conversation-model-kicker">Model registry</div>
+          <div className="conversation-model-title">Select model</div>
+        </div>
+        <div className="conversation-model-count">{ws.models.length} available</div>
+        <button
+          type="button"
+          className="conversation-model-close"
+          onClick={onClose}
+          aria-label="Close model selector"
+        >
+          <Icon name="close" size={12} />
+        </button>
+      </div>
+
+      <div className="conversation-model-search">
         <input
           ref={inputRef}
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Filter models..."
-          className="conversation-input conversation-input--compact"
+          className="conversation-input conversation-model-input"
           aria-label="Search models"
         />
       </div>
 
       <div className="conversation-model-thinking">
-        <span>Think</span>
+        <span className="conversation-model-section-label">Think</span>
         {thinkingLevels.map(l => (
           <button
             type="button"
@@ -119,9 +137,9 @@ export function ModelSelectorDropdown({ ws, open, onClose, anchorRef }: Props) {
         ))}
       </div>
 
-      <div className="conversation-model-list">
+      <div className="conversation-model-list" role="listbox" aria-label="Models">
         {filtered.length === 0 && (
-          <div className="conversation-empty">
+          <div className="conversation-model-empty">
             No models match "<span>{search}</span>"
           </div>
         )}
@@ -135,15 +153,20 @@ export function ModelSelectorDropdown({ ws, open, onClose, anchorRef }: Props) {
                 ws.send({ type: "set_model", provider: m.provider, modelId: m.id });
                 onClose();
               }}
-              className={active ? "active" : ""}
+              className={`conversation-model-row ${active ? "active" : ""}`}
+              role="option"
+              aria-selected={active}
             >
-              <span className={active ? "active" : ""} />
-              <div>
+              <span className="conversation-model-dot" />
+              <div className="conversation-model-row-copy">
                 <div className="conversation-model-row-head">
                   <span className={active ? "active" : ""}>{m.name}</span>
                   <span>{m.contextWindow >= 1000 ? `${(m.contextWindow / 1000).toFixed(0)}k` : m.contextWindow} ctx</span>
                 </div>
-                <div>{m.provider}{m.reasoning ? " · reasoning" : ""}</div>
+                <div className="conversation-model-row-meta">
+                  <span>{m.provider}</span>
+                  {m.reasoning && <span>reasoning</span>}
+                </div>
               </div>
             </button>
           );
@@ -151,8 +174,8 @@ export function ModelSelectorDropdown({ ws, open, onClose, anchorRef }: Props) {
       </div>
 
       <div className="conversation-model-footer">
-        <span>{ws.models.length} models</span>
-        <span>↻ cycles model · Tab</span>
+        <span>{activeModel?.name || "No active model"}</span>
+        <span>Tab cycles · Esc closes</span>
       </div>
     </div>
   );
