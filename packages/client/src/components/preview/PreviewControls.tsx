@@ -7,7 +7,6 @@
 import { useState, useCallback } from "react";
 import type { PreviewInfo } from "@pi-web/shared";
 
-
 type Viewport = "100%" | "375px" | "768px" | "1280px";
 
 interface PreviewControlsProps {
@@ -64,88 +63,83 @@ export function PreviewControls({
     );
   };
 
-  const viewportBtnClass = (v: Viewport) =>
-    "px-1.5 py-0.5 rounded text-[0.6rem] font-mono transition-theme " +
-    (viewport === v
-      ? "bg-amber-500/20 text-amber-500"
-      : "text-ink-500 hover:text-ink-300 hover:bg-ink-900");
+  const viewportLabel = (v: Viewport) => {
+    switch (v) {
+      case "375px": return "M";
+      case "768px": return "T";
+      case "1280px": return "D";
+      case "100%": return "F";
+    }
+  };
 
   return (
-    <div className="flex items-center gap-1 px-3 py-1.5 border-b border-ink-800 shrink-0 pl-5">
-      {/* Status badge */}
+    <div className="preview-toolbar">
       {preview && (
-        <span
-          className={
-            "px-1.5 py-0.5 rounded text-[0.6rem] font-mono leading-none mr-1 " +
-            (preview.status === "running"
-              ? "bg-emerald-500/20 text-emerald-400"
-              : preview.status === "starting"
-              ? "bg-amber-500/20 text-amber-400 animate-pulse"
-              : preview.status === "crashed"
-              ? "bg-red-500/20 text-red-400"
-              : "bg-ink-800 text-ink-500")
-          }
-        >
+        <span className="preview-status-badge" data-status={preview.status === "running" ? "live" : preview.status}>
           {preview.status}
         </span>
       )}
 
-      {/* Spacer */}
-      <div className="flex-1" />
+      <div className="preview-tool-divider" />
 
-      {/* Viewport switcher */}
-      <div className="flex items-center gap-0.5">
-        <button onClick={() => setViewport("375px")} className={viewportBtnClass("375px")}>M</button>
-        <button onClick={() => setViewport("768px")} className={viewportBtnClass("768px")}>T</button>
-        <button onClick={() => setViewport("1280px")} className={viewportBtnClass("1280px")}>D</button>
-        <button onClick={() => setViewport("100%")} className={viewportBtnClass("100%")}>F</button>
+      <div className="preview-toolbar-port-chips">
+        {(["375px", "768px", "1280px", "100%"] as Viewport[]).map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setViewport(v)}
+            className="preview-tool-button"
+            data-active={viewport === v}
+            title={`${viewportLabel(v)} viewport`}
+          >
+            {viewportLabel(v)}
+          </button>
+        ))}
       </div>
 
-      {/* Element picker toggle */}
       {isRunning && (
         <button
+          type="button"
           onClick={onTogglePicker}
-          className={
-            "px-2 py-0.5 rounded text-[0.6rem] font-mono transition-theme " +
-            (pickerActive
-              ? "bg-blue-500/30 text-blue-400 border border-blue-500/40"
-              : "text-ink-500 hover:text-ink-300 hover:bg-ink-900 border border-transparent")
-          }
+          className="preview-tool-button"
+          data-active={pickerActive}
           title="Toggle element picker"
         >
-          <span className="mr-1">⌘</span>Pick
+          Pick
         </button>
       )}
 
-      {/* Refresh */}
+      <div className="preview-tool-divider" />
+
       <button
+        type="button"
         onClick={handleRefresh}
-        className="p-1 rounded hover:bg-ink-900 text-ink-500 hover:text-ink-200 transition-theme"
+        className="preview-tool-button"
         title="Refresh"
         disabled={!isRunning}
       >
-        <span className="text-[0.7rem]">↻</span>
+        Refresh
       </button>
 
-      {/* Open in browser */}
       <button
+        type="button"
         onClick={handleOpen}
-        className="p-1 rounded hover:bg-ink-900 text-ink-500 hover:text-ink-200 transition-theme"
+        className="preview-tool-button"
         title="Open in browser"
         disabled={!isRunning || loading.open}
       >
-        <span className="text-[0.7rem]">↗</span>
+        Open
       </button>
 
-      {/* Stop */}
       {preview && preview.status !== "stopped" && (
         <button
+          type="button"
           onClick={handleStop}
-          className="p-1 rounded hover:bg-red-500/10 text-ink-500 hover:text-red-400 transition-theme"
+          className="preview-tool-button"
           title="Stop preview"
           disabled={loading.stop}
         >
-          <span className="text-xs">×</span>
+          Stop
         </button>
       )}
     </div>
