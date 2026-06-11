@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, type RefObject } from "react";
 import type { CommandInfo } from "@pi-web/shared";
 
 interface Props {
@@ -6,10 +6,13 @@ interface Props {
   filter: string; // text after "/"
   onSelect: (name: string) => void;
   onClose: () => void;
+  anchorRef?: RefObject<HTMLElement | null>;
 }
 
-export function CommandCompleter({ commands, filter, onSelect, onClose }: Props) {
+export function CommandCompleter({ commands, filter, onSelect, onClose, anchorRef }: Props) {
   const [activeIdx, setActiveIdx] = useState(0);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ left: 0, width: 0, bottom: 0, maxHeight: 320 });
 
   const filtered = useMemo(() => {
     if (!filter) return commands.slice(0, 12);
@@ -20,6 +23,32 @@ export function CommandCompleter({ commands, filter, onSelect, onClose }: Props)
   }, [commands, filter]);
 
   useEffect(() => { setActiveIdx(0); }, [filter]);
+
+  // Position the popup above the anchor using fixed positioning
+  useEffect(() => {
+    const gap = 8;
+    const minTop = 12;
+    const updatePosition = () => {
+      const anchor = anchorRef?.current;
+      if (!anchor) return;
+      const rect = anchor.getBoundingClientRect();
+      const availableHeight = Math.max(140, rect.top - gap - minTop);
+      setPosition({
+        left: rect.left,
+        width: rect.width,
+        bottom: window.innerHeight - rect.top + gap,
+        maxHeight: availableHeight,
+      });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [anchorRef]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -32,9 +61,29 @@ export function CommandCompleter({ commands, filter, onSelect, onClose }: Props)
     return () => document.removeEventListener("keydown", handler);
   }, [filtered, activeIdx, onSelect, onClose]);
 
+  // Close on click outside
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [onClose]);
+
   if (filtered.length === 0) {
     return (
-      <div className="conversation-completer">
+      <div
+        ref={panelRef}
+        className="conversation-completer"
+        style={{
+          left: position.left,
+          width: position.width,
+          bottom: position.bottom,
+          maxHeight: position.maxHeight,
+        }}
+      >
         <div className="conversation-completer-header">
           <span>Commands</span>
           <button type="button" onClick={onClose} className="conversation-completer-dismiss">Dismiss</button>
@@ -51,7 +100,16 @@ export function CommandCompleter({ commands, filter, onSelect, onClose }: Props)
   };
 
   return (
-    <div className="conversation-completer">
+    <div
+      ref={panelRef}
+      className="conversation-completer"
+      style={{
+        left: position.left,
+        width: position.width,
+        bottom: position.bottom,
+        maxHeight: position.maxHeight,
+      }}
+    >
       <div className="conversation-completer-header">
         <span>Commands {filter ? `matching "${filter}"` : ""}</span>
       </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type RefObject } from "react";
 
 export interface FileEntry {
   path: string;
@@ -12,14 +12,54 @@ interface Props {
   filter: string; // text after "@"
   onSelect: (relativePath: string, isDirectory: boolean) => void;
   onClose: () => void;
+  anchorRef?: RefObject<HTMLElement | null>;
 }
 
-export function FileMentionCompleter({ projectPath, filter, onSelect, onClose }: Props) {
+export function FileMentionCompleter({ projectPath, filter, onSelect, onClose, anchorRef }: Props) {
   const [activeIdx, setActiveIdx] = useState(0);
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ left: 0, width: 0, bottom: 0, maxHeight: 320 });
+
+  // Position the popup above the anchor using fixed positioning
+  useEffect(() => {
+    const gap = 8;
+    const minTop = 12;
+    const updatePosition = () => {
+      const anchor = anchorRef?.current;
+      if (!anchor) return;
+      const rect = anchor.getBoundingClientRect();
+      const availableHeight = Math.max(140, rect.top - gap - minTop);
+      setPosition({
+        left: rect.left,
+        width: rect.width,
+        bottom: window.innerHeight - rect.top + gap,
+        maxHeight: availableHeight,
+      });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [anchorRef]);
+
+  // Close on click outside
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [onClose]);
 
   useEffect(() => {
     if (!projectPath) { setFiles([]); return; }
@@ -70,10 +110,21 @@ export function FileMentionCompleter({ projectPath, filter, onSelect, onClose }:
 
   const fileIcon = (_name: string, isDir: boolean): string => isDir ? "DIR" : "FILE";
 
+  const positionStyle = {
+    left: position.left,
+    width: position.width,
+    bottom: position.bottom,
+    maxHeight: position.maxHeight,
+  };
+
   return (
-    <div className="conversation-completer conversation-completer--wide">
+    <div
+      ref={panelRef}
+      className="conversation-completer conversation-completer--wide"
+      style={positionStyle}
+    >
       <div className="conversation-completer-header">
-        <span>Files & dirs {filter ? `matching "${filter}"` : ""}</span>
+        <span>Files &amp; dirs {filter ? `matching "${filter}"` : ""}</span>
         {loading && <span className="conversation-completer-hint">Searching…</span>}
       </div>
       {files.length === 0 && !loading && (

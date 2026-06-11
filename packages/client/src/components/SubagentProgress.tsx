@@ -1,5 +1,8 @@
+import { useState, useCallback, useEffect, useMemo } from "react";
 import type { ToolDetails } from "@pi-web/shared";
 import { Icon } from "./Icon";
+import { SubagentLiveModal } from "./SubagentLiveModal";
+import { formatDuration, formatTokenCount } from "../lib/formatters";
 
 // ─── Types matching pi-subagents AgentProgress/Details ───
 
@@ -58,31 +61,14 @@ function isSubagentDetails(d: ToolDetails | undefined): d is ToolDetails & { mod
   return "mode" in d && typeof (d as { mode: unknown }).mode === "string";
 }
 
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  const remS = s % 60;
-  if (m < 60) return `${m}m ${remS}s`;
-  const h = Math.floor(m / 60);
-  return `${h}h ${m % 60}m`;
-}
-
-function formatTokenCount(tokens: number): string {
-  if (tokens < 1000) return `${tokens}`;
-  if (tokens < 1_000_000) return `${(tokens / 1000).toFixed(1)}k`;
-  return `${(tokens / 1_000_000).toFixed(1)}M`;
-}
-
-function AgentProgressView({ progress, now }: { progress: AgentProgress; now: number }) {
+function AgentProgressView({ progress, now, onClick }: { progress: AgentProgress; now: number; onClick?: () => void }) {
   const isRunning = progress.status === "running";
   const isDone = progress.status === "completed";
   const isFailed = progress.status === "failed";
-  const elapsed = isRunning ? progress.durationMs + (now - (progress.currentToolStartedAt || progress.durationMs)) : progress.durationMs;
+  const elapsed = isRunning ? progress.durationMs + (now - (progress.currentToolStartedAt ?? progress.durationMs)) : progress.durationMs;
 
   return (
-    <div className="conversation-subagent-agent">
+    <div className={`conversation-subagent-agent${onClick ? " conversation-subagent-agent-clickable" : ""}`} onClick={onClick} role={onClick ? "button" : undefined} tabIndex={onClick ? 0 : undefined} onKeyDown={onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } } : undefined}>
       <div className="conversation-subagent-agent-head">
         <span className={`conversation-subagent-agent-name ${isRunning ? "conversation-status-running" : isDone ? "conversation-status-done" : isFailed ? "conversation-status-failed" : ""}`}>
           {progress.agent}
@@ -147,62 +133,151 @@ function ChainStepIndicator({
   );
 }
 
+/**
+ * Resolve the AgentProgress to display in the modal for a given selectedAgentIndex.
+ * Checks live progress first, then falls back to constructing from result data.
+ */
+function resolveDisplayProgress(
+  selectedAgentIndex: number,
+  progressList: AgentProgress[],
+  results: SubagentDetails["results"],
+): AgentProgress | null {
+  // Try live progress first
+  const sp = progressList.find(p => p.index === selectedAgentIndex);
+  if (sp) return sp;
+
+  if (!results) return null;
+
+  // Try r.progress on the result
+  for (const r of results) {
+    if (r.progress && r.progress.index === selectedAgentIndex) return r.progress;
+    // Match by finding progress with same agent name
+    const matched = progressList.find(p => p.agent === r.agent);
+    if (matched?.index === selectedAgentIndex) return matched;
+  }
+
+  // Fallback: construct from result data — try matching by agent name first, then by index
+  const result = results.find(r => {
+    const matched = progressList.find(p => p.agent === r.agent);
+    return matched?.index === selectedAgentIndex;
+  }) ?? (progressList.length === 0 && selectedAgentIndex < results.length ? results[selectedAgentIndex] : null);
+
+  if (!result) return null;
+
+  return {
+    index: selectedAgentIndex,
+    agent: result.agent,
+    status: (result.exitCode === 0 ? "completed" : "failed") as AgentProgress["status"],
+    task: result.task,
+    recentTools: [],
+    recentOutput: [],
+    toolCount: result.progressSummary?.toolCount ?? 0,
+    tokens: result.progressSummary?.tokens ?? 0,
+    durationMs: result.progressSummary?.durationMs ?? 0,
+    error: result.error,
+  } satisfies AgentProgress;
+}
+
 export function SubagentProgressView({ details, isRunning }: { details: ToolDetails; isRunning: boolean }) {
   if (!isSubagentDetails(details)) return null;
 
   const sub = details as SubagentDetails;
   const progressList = sub.progress || [];
+  const results = sub.results || [];
   const now = Date.now();
+
+  // Modal state for live view
+  const [selectedAgentIndex, setSelectedAgentIndex] = useState<number | null>(null);
+
+  // Reset selectedAgentIndex when the selected agent drops from progressList during running
+  useEffect(() => {
+    if (selectedAgentIndex !== null && isRunning && !progressList.find(p => p.index === selectedAgentIndex)) {
+      setSelectedAgentIndex(null);
+    }
+  }, [selectedAgentIndex, progressList, isRunning]);
+
+  // Resolve the display progress for the modal
+  const displayProgress = useMemo(
+    () => selectedAgentIndex !== null ? resolveDisplayProgress(selectedAgentIndex, progressList, results) : null,
+    [selectedAgentIndex, progressList, results],
+  );
+
+  const handleCloseModal = useCallback(() => {
+    setSelectedAgentIndex(null);
+  }, []);
+
+  const handleSelectAgent = useCallback((index: number) => {
+    setSelectedAgentIndex(index);
+  }, []);
 
   if (isRunning && progressList.length > 0) {
     return (
-      <div className="conversation-subagent-progress">
-        <div className="conversation-subagent-progress-head">
-          <span className="conversation-subagent-mode">{sub.mode}</span>
-          {sub.context && <span className="conversation-subagent-context">{sub.context}</span>}
+      <>
+        <div className="conversation-subagent-progress">
+          <div className="conversation-subagent-progress-head">
+            <span className="conversation-subagent-mode">{sub.mode}</span>
+            {sub.context && <span className="conversation-subagent-context">{sub.context}</span>}
+          </div>
+          <ChainStepIndicator
+            chainAgents={sub.chainAgents}
+            totalSteps={sub.totalSteps}
+            currentStepIndex={sub.currentStepIndex}
+          />
+          {progressList.map((p) => (
+            <AgentProgressView key={p.index} progress={p} now={now} onClick={() => handleSelectAgent(p.index)} />
+          ))}
         </div>
-        <ChainStepIndicator
-          chainAgents={sub.chainAgents}
-          totalSteps={sub.totalSteps}
-          currentStepIndex={sub.currentStepIndex}
-        />
-        {progressList.map((p) => (
-          <AgentProgressView key={p.index} progress={p} now={now} />
-        ))}
-      </div>
+        {displayProgress && (
+          <SubagentLiveModal
+            progress={displayProgress}
+            details={sub}
+            onClose={handleCloseModal}
+          />
+        )}
+      </>
     );
   }
 
-  const results = sub.results || [];
   if (results.length > 0) {
     return (
-      <div className="conversation-subagent-progress">
-        <div className="conversation-subagent-progress-head">
-          <span className="conversation-subagent-mode muted">{sub.mode}</span>
-          {sub.context && <span className="conversation-subagent-context">{sub.context}</span>}
-        </div>
-        {results.map((r, i) => {
-          const hasError = r.exitCode !== 0 || r.error;
-          return (
-            <div key={i} className="conversation-subagent-result">
-              <div className="conversation-subagent-result-head">
-                <span className={hasError ? "conversation-status-failed" : "conversation-status-done"}>
-                  {hasError ? "✗" : "✓"}
-                </span>
-                <span className="conversation-subagent-agent-name">{r.agent}</span>
-                {r.progressSummary && (
-                  <>
-                    <span>{r.progressSummary.toolCount} tools</span>
-                    <span>{formatTokenCount(r.progressSummary.tokens)} tok</span>
-                    <span>{formatDuration(r.progressSummary.durationMs)}</span>
-                  </>
-                )}
+      <>
+        <div className="conversation-subagent-progress">
+          <div className="conversation-subagent-progress-head">
+            <span className="conversation-subagent-mode muted">{sub.mode}</span>
+            {sub.context && <span className="conversation-subagent-context">{sub.context}</span>}
+          </div>
+          {results.map((r, i) => {
+            const hasError = r.exitCode !== 0 || r.error;
+            const resultProgress = r.progress || progressList.find(p => p.agent === r.agent);
+            const handleClick = resultProgress ? () => handleSelectAgent(resultProgress.index) : undefined;
+            return (
+              <div key={i} className={`conversation-subagent-result${handleClick ? " conversation-subagent-result-clickable" : ""}`} onClick={handleClick} role={handleClick ? "button" : undefined} tabIndex={handleClick ? 0 : undefined} onKeyDown={handleClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleClick(); } } : undefined}>
+                <div className="conversation-subagent-result-head">
+                  <span className={hasError ? "conversation-status-failed" : "conversation-status-done"}>
+                    {hasError ? "✗" : "✓"}
+                  </span>
+                  <span className="conversation-subagent-agent-name">{r.agent}</span>
+                  {r.progressSummary && (
+                    <>
+                      <span>{r.progressSummary.toolCount} tools</span>
+                      <span>{formatTokenCount(r.progressSummary.tokens)} tok</span>
+                      <span>{formatDuration(r.progressSummary.durationMs)}</span>
+                    </>
+                  )}
+                </div>
+                {r.error && <div className="conversation-subagent-error">{r.error}</div>}
               </div>
-              {r.error && <div className="conversation-subagent-error">{r.error}</div>}
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+        {displayProgress && (
+          <SubagentLiveModal
+            progress={displayProgress}
+            details={sub}
+            onClose={handleCloseModal}
+          />
+        )}
+      </>
     );
   }
 

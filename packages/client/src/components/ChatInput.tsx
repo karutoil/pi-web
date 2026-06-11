@@ -219,8 +219,8 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
         )}
 
         <div className="relative">
-          {showCommands && <CommandCompleter commands={commands} filter={commandFilter} onSelect={handleSelectCommand} onClose={() => setShowCommands(false)} />}
-          {showFileMentions && atMatch && <FileMentionCompleter projectPath={projectPath} filter={fileMentionFilter} onSelect={handleSelectFile} onClose={() => setShowFileMentions(false)} />}
+          {showCommands && <CommandCompleter commands={commands} filter={commandFilter} onSelect={handleSelectCommand} onClose={() => setShowCommands(false)} anchorRef={inputWrapRef} />}
+          {showFileMentions && atMatch && <FileMentionCompleter projectPath={projectPath} filter={fileMentionFilter} onSelect={handleSelectFile} onClose={() => setShowFileMentions(false)} anchorRef={inputWrapRef} />}
 
           <ModelSelectorDropdown ws={ws} open={modelOpen} onClose={() => setModelOpen(false)} anchorRef={inputWrapRef} />
 
