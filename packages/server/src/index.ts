@@ -11,7 +11,7 @@ import { addProject, removeProject, listProjects, getProject, touchProject, getL
 import { listProjectSessions, getSessionDetail } from "./pi-sessions";
 import { getOrCreateAgent, stopAllAgents, getPoolStats, lookupAgent, detachFromAgent, deleteFromPool, rekeyAgent } from "./pi-agent";
 import { createTerminal, getTerminal, listTerminals, killTerminal } from "./pi-terminal";
-import { getGitStatus, getGitDiff, gitStage, gitUnstage, gitCommit, gitLog, gitCheckout, gitDiscard, gitBranches, gitPush, gitPull, gitFetch, gitCreateBranch, gitDeleteBranch, gitRenameBranch, gitTags, gitCreateTag, gitDeleteTag, gitStashList, gitStashShow, gitStashPush, gitStashPop, gitStashApply, gitStashDrop, gitAmend, gitCherryPick, gitRevert, gitResolveConflict, getGitDiffStats, gitDiffWithRef, gitShowCommit, gitLogSearch, gitBlame, gitRemotes, gitUnstageAll } from "./pi-git";
+import { getGitStatus, getGitDiff, getGitDiffForCommit, gitStage, gitUnstage, gitCommit, gitLog, gitCheckout, gitDiscard, gitBranches, gitPush, gitPull, gitFetch, gitCreateBranch, gitDeleteBranch, gitRenameBranch, gitTags, gitCreateTag, gitDeleteTag, gitStashList, gitStashShow, gitStashPush, gitStashPop, gitStashApply, gitStashDrop, gitAmend, gitCherryPick, gitRevert, gitResolveConflict, getGitDiffStats, gitDiffWithRef, gitShowCommit, gitLogSearch, gitBlame, gitRemotes, gitUnstageAll } from "./pi-git";
 import type { GitResult } from "./pi-git";
 import { getVersionInfo } from "./pi-version";
 import { startPreview, stopPreview, getPreview, listPreviews, addLogListener, stopAllPreviews, setPreviewPort, setPreviewRemoteUrl } from "./pi-preview";
@@ -678,6 +678,81 @@ app.post("/api/git/unstage-all", async (c) => {
   const result = gitUnstageAll(cwd);
   if (!result.ok) return c.json({ success: false, error: result.stderr || "Unstage all failed" }, 500);
   return c.json({ success: true, result: result.stdout });
+});
+
+// Generate a commit message using PI
+app.post("/api/git/generate-commit", async (c) => {
+  const { cwd, model } = await c.req.json();
+  if (!cwd) return c.json({ error: "cwd required" }, 400);
+
+  const diff = getGitDiffForCommit(cwd);
+  const status = getGitStatus(cwd);
+  const hasChanges = diff.trim() || (status && status.untracked.length > 0);
+  if (!hasChanges) {
+    return c.json({ error: "No changes to generate a commit message for" }, 400);
+  }
+
+  // Build a brief file summary alongside the diff
+  let fileSummary = "";
+  if (status) {
+    const stagedFiles = status.staged.map(f => `${f.status} ${f.path}`);
+    const unstagedFiles = status.unstaged.map(f => `${f.status} ${f.path}`);
+    const untrackedFiles = status.untracked.map(p => `? ${p}`);
+    const all = [...stagedFiles, ...unstagedFiles, ...untrackedFiles];
+    if (all.length) fileSummary = `Files changed:\n${all.join("\n")}\n\n`;
+  }
+
+  const combined = fileSummary + diff;
+
+  // Truncate diff if too long (keep first 8KB for prompt)
+  const maxDiffLen = 8192;
+  const truncatedDiff = combined.length > maxDiffLen
+    ? combined.slice(0, maxDiffLen) + "\n... (diff truncated)"
+    : combined;
+
+  const prompt = `Generate a concise git commit message for the following diff. Use conventional commits format (e.g. "feat:", "fix:", "chore:", etc.). Only output the commit message, nothing else. Do not use backticks or quotes around the message.\n\n${truncatedDiff}`;
+
+  // Build pi CLI args
+  const args = ["-p", "--no-session"];
+  if (model) args.push("--model", model);
+  args.push(prompt);
+
+  const home = process.env.HOME || process.env.USERPROFILE || "/root";
+  const envPath = [
+    join(home, ".bun/bin"),
+    join(home, ".nvm/versions/node/v22.22.2/bin"),
+    "/usr/local/bin", "/usr/bin", "/bin",
+    process.env.PATH || "",
+  ].join(":");
+
+  try {
+    const proc = Bun.spawn(["pi", ...args], {
+      cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+      env: { ...process.env, PATH: envPath },
+    });
+
+    const timeoutMs = 30_000;
+    const exitCode = await Promise.race([
+      proc.exited,
+      new Promise<null>((_, reject) =>
+        setTimeout(() => { proc.kill(); reject(new Error("Timeout")); }, timeoutMs)
+      ),
+    ]);
+
+    if (exitCode !== 0) {
+      const stderr = await new Response(proc.stderr).text();
+      return c.json({ error: stderr.trim() || `PI exited with code ${exitCode}` }, 500);
+    }
+
+    const stdout = await new Response(proc.stdout).text();
+    const message = stdout.trim();
+    if (!message) return c.json({ error: "PI returned empty response" }, 500);
+    return c.json({ message });
+  } catch (err: any) {
+    return c.json({ error: err.message || "Failed to generate commit message" }, 500);
+  }
 });
 
 // Export session HTML (#2: validate path, #84: proper HTML escaping)

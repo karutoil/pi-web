@@ -126,9 +126,10 @@ interface GitPanelProps {
   onClose: () => void;
   embedded?: boolean;
   width?: number;
+  projectId?: string;
 }
 
-export function GitPanel({ cwd, visible, onClose, embedded = false, width }: GitPanelProps) {
+export function GitPanel({ cwd, visible, onClose, embedded = false, width, projectId }: GitPanelProps) {
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -143,6 +144,7 @@ export function GitPanel({ cwd, visible, onClose, embedded = false, width }: Git
   const [committing, setCommitting] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const [diffStats, setDiffStats] = useState<Map<string, GitDiffStats>>(new Map());
+  const [generatingCommit, setGeneratingCommit] = useState(false);
   const { width: resizableWidth, isDragging, handleMouseDown } = useResizable({
     defaultWidth: embedded ? (width ?? 380) : 380,
     minWidth: 260,
@@ -235,6 +237,51 @@ export function GitPanel({ cwd, visible, onClose, embedded = false, width }: Git
       else refresh();
     } catch (err) { setError(String(err)); }
   }, [cwd, refresh]);
+
+  const handleGenerateCommit = useCallback(async () => {
+    if (!cwd || generatingCommit) return;
+    setGeneratingCommit(true);
+    setError(null);
+    try {
+      // Fetch last-used model from sessions
+      let model: string | undefined;
+      if (projectId) {
+        try {
+          const sr = await fetch(`/api/projects/${encodeURIComponent(projectId)}/sessions`);
+          if (sr.ok) {
+            const sd = await sr.json();
+            const sessions: any[] = sd.sessions || [];
+            // Find the most recent session with a model
+            const withModel = sessions.filter(s => s.model);
+            if (withModel.length > 0) {
+              model = withModel[0].model;
+            }
+          }
+        } catch {}
+      }
+
+      const r = await fetch("/api/git/generate-commit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd, model }),
+      });
+      if (!r.ok) {
+        try {
+          const d = await r.json();
+          setError(d.error || `Generate commit failed (${r.status})`);
+        } catch {
+          setError(`Generate commit failed (${r.status})`);
+        }
+        return;
+      }
+      const d = await r.json();
+      if (d.message) setCommitMsg(d.message);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setGeneratingCommit(false);
+    }
+  }, [cwd, projectId, generatingCommit, setCommitMsg]);
 
   const handlePull = useCallback(async () => {
     if (!cwd) return;
@@ -367,6 +414,8 @@ export function GitPanel({ cwd, visible, onClose, embedded = false, width }: Git
         onPush={handlePush}
         onPull={handlePull}
         onFetch={handleFetch}
+        generatingCommit={generatingCommit}
+        onGenerateCommit={handleGenerateCommit}
         onViewDiff={handleViewDiff}
         onBlame={handleBlame}
         onComparePrev={handleComparePrev}
@@ -394,6 +443,7 @@ function GitPanelContent({
   onToggleStaged, onToggleChanges,
   onStage, onStageAll, onUnstage, onUnstageAll, onDiscard,
   onCommit, onPush, onPull, onFetch,
+  generatingCommit, onGenerateCommit,
   onViewDiff, onBlame, onComparePrev, onResolveConflict,
   onStageSelected, onUnstageSelected, onClearSelected, onToggleSelect,
   onRefresh, onClose, embedded,
@@ -430,6 +480,8 @@ function GitPanelContent({
   onPush: () => void;
   onPull: () => void;
   onFetch: () => void;
+  generatingCommit: boolean;
+  onGenerateCommit: () => void;
   onViewDiff: (path: string, staged: boolean) => void;
   onBlame: (path: string) => void;
   onComparePrev: (path: string) => void;
@@ -594,16 +646,31 @@ function GitPanelContent({
             <div className="text-ink-300 text-xs mt-0.5">Stage first, then write the change.</div>
           </div>
         </div>
-        <textarea
-          value={commitMsg}
-          onChange={e => setCommitMsg(e.target.value)}
-          placeholder={amend ? "Amend commit message" : "Commit message"}
-          className="git-commit-textarea"
-          onKeyDown={e => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onCommit(); }
-          }}
-          enterKeyHint="send"
-        />
+        <div className="relative">
+          <textarea
+            value={commitMsg}
+            onChange={e => setCommitMsg(e.target.value)}
+            placeholder={amend ? "Amend commit message" : "Commit message"}
+            className="git-commit-textarea"
+            onKeyDown={e => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onCommit(); }
+            }}
+            enterKeyHint="send"
+          />
+          <button
+            onClick={onGenerateCommit}
+            disabled={generatingCommit}
+            className="git-commit-ai-btn"
+            aria-label="Generate commit message with AI"
+            title="Generate commit message with AI"
+          >
+            {generatingCommit ? (
+              <span className="git-commit-ai-spinner" />
+            ) : (
+              <Icon name="spark" size={13} />
+            )}
+          </button>
+        </div>
         <div className="git-commit-controls">
           <button
             onClick={onCommit}

@@ -173,6 +173,14 @@ export function getGitDiff(cwd: string, path: string, staged: boolean): string {
   return runGitStr(cwd, "diff", "--", path);
 }
 
+/** Get combined diff for all staged changes, or all changes if nothing staged */
+export function getGitDiffForCommit(cwd: string): string {
+  const stagedDiff = runGitStr(cwd, "diff", "--cached");
+  if (stagedDiff) return stagedDiff;
+  // Nothing staged — fall back to all tracked changes
+  return runGitStr(cwd, "diff");
+}
+
 export function gitStage(cwd: string, path: string): GitResult {
   return runGit(cwd, "add", "--", path);
 }

@@ -690,6 +690,7 @@ export default function App() {
           visible={true}
           onClose={() => rightPanel.close("git")}
           embedded
+          projectId={selectedProject.id}
         />
       ),
       onClose: () => rightPanel.close("git"),
