@@ -17,7 +17,9 @@ import { TerminalPanel, TerminalPanelHeader, type TerminalTab } from "./componen
 import { usePreviewStore } from "./hooks/usePreviewStore";
 import { useRightPanelStore } from "./hooks/useRightPanelStore";
 import { useWorkspaceLayout } from "./hooks/useWorkspaceLayout";
+import { useIsMobile } from "./hooks/useIsMobile";
 import { WorkspaceDock } from "./components/WorkspaceDock";
+import { MobileShell } from "./components/MobileShell";
 import { Icon } from "./components/Icon";
 import { uuidV4 } from "./lib/uuid";
 import { sessionToMarkdown, copyToClipboard } from "./lib/markdownExport";
@@ -46,6 +48,8 @@ export default function App() {
   const [channelSearch, setChannelSearch] = useState("");
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; title: string; message: string; confirmLabel?: string; onConfirm: () => void }>({ open: false, title: "", message: "", onConfirm: () => {} });
   const workspaceLayout = useWorkspaceLayout();
+  const isMobile = useIsMobile();
+  const [activeMobilePanel, setActiveMobilePanel] = useState<WorkspacePanelKind>("chat");
 
   const requestWorkspaceReset = useCallback(() => {
     setConfirmDialog({
@@ -257,7 +261,7 @@ export default function App() {
   const closedPanels = useMemo(() => [
     ...(!sidebarOpen ? [{
       id: "channels" as const,
-      title: "Projects & Sessions",
+      title: "Channels",
       icon: <Icon name="hash" size={10} />,
       children: null,
     }] : []),
@@ -269,7 +273,7 @@ export default function App() {
     }] : []),
     ...(selectedProject && !gitOpen ? [{
       id: "git" as const,
-      title: "Source Control",
+      title: "Git",
       icon: <Icon name="git" size={10} />,
       children: null,
     }] : []),
@@ -363,11 +367,17 @@ export default function App() {
     setActiveSession(null);
     setSessionDetail(null);
     setView("sessions");
-  }, []);
+    if (isMobile) {
+      setActiveMobilePanel("chat");
+      setSidebarOpen(false);
+    }
+  }, [isMobile]);
 
   const handleSelectSession = useCallback(async (session: SessionSummary) => {
     setActiveSession(session);
     setView("chat");
+    if (isMobile) setActiveMobilePanel("chat");
+    if (isMobile) setSidebarOpen(false);
 
     // Do NOT call `ws.loadSession(...)` here. With the multi-session pool, each
     // session has its own PI process. Sending load_session on the OLD WS would
@@ -405,7 +415,7 @@ export default function App() {
         console.error("Failed to load session detail:", e);
       }
     }
-  }, []);
+  }, [isMobile]);
 
   /**
    * Copy a session's full transcript to the clipboard as raw API markdown.
@@ -448,10 +458,13 @@ export default function App() {
     setActiveSession(null);
     setSessionDetail(null);
     // #64 — Only set view to 'chat' when a project is selected (ws requires projectId)
-    if (selectedProject) setView("chat");
+    if (selectedProject) {
+      setView("chat");
+      if (isMobile) setActiveMobilePanel("chat");
+    }
     // Refresh session list after PI creates the new session file
     safeTimeout(() => fetchSessions(), SESSION_FETCH_DELAY_MS);
-  }, [fetchSessions, selectedProject]);
+  }, [fetchSessions, selectedProject, isMobile, setActiveMobilePanel]);
 
   const handleBack = useCallback(() => {
     if (view === "chat") {
@@ -572,6 +585,151 @@ export default function App() {
     }
   }, [sessions, handleSelectSession]);
 
+  const panels = useMemo(() => [
+    ...(sidebarOpen ? [{
+      id: "channels" as const,
+      title: "Channels",
+      icon: <Icon name="hash" size={12} />,
+      children: (
+        <ProjectSessionSidebar
+          projects={projects}
+          selectedProject={selectedProject}
+          streamingProjectIds={streamingProjectIds}
+          isAddingProject={isAddingProject}
+          sessions={sessions}
+          activeSession={activeSession}
+          search={channelSearch}
+          onSearch={setChannelSearch}
+          onSelectProject={handleSelectProject}
+          onSelectSession={handleSelectSession}
+          onSelectHome={handleGoHome}
+          onAddProject={() => setShowAddProject(true)}
+          onNewSession={handleNewSession}
+          onDeleteProject={(project) => handleDeleteProject(project.id)}
+          onDeleteSession={handleDeleteSession}
+          onRenameSession={handleRenameSession}
+          onForkSession={handleForkSession}
+          onCopySession={handleCopySession}
+          onRefreshSessions={handleRefreshSessions}
+          onContinueLatest={handleContinueLatest}
+          streamingSessionIds={streamingSessionIds}
+          onRequestConfirm={(title, message, onConfirm) => setConfirmDialog({ open: true, title, message, onConfirm })}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+        />
+      ),
+      onClose: () => setSidebarOpen(false),
+    }] : []),
+    {
+      id: "chat" as const,
+      title: "Chat",
+      icon: <Icon name="pi-logo" size={12} />,
+      children: (
+        <div className="flex-1 flex flex-col min-w-0 min-h-0 h-full overflow-hidden">
+          {view === "chat" && ws ? (
+            <ChatView
+              ws={ws}
+              sessionDetail={sessionDetail}
+              project={selectedProject}
+              session={activeSession}
+              showSidebar={sidebarOpen}
+              onToggleSidebar={() => setSidebarOpen((v) => !v)}
+              onBack={handleBack}
+              onToggleTerminal={() => { setTerminalOpen(v => !v); if (!terminalOpen && isMobile) setActiveMobilePanel("terminal"); }}
+              onTogglePreview={() => { const wasOpen = rightPanel.isOpen("preview"); rightPanel.toggle("preview"); if (!wasOpen && isMobile) setActiveMobilePanel("preview"); }}
+              onToggleGit={() => { const wasOpen = gitOpen; rightPanel.toggle("git"); if (!wasOpen && isMobile) setActiveMobilePanel("git"); }}
+              terminalOpen={terminalOpen}
+              previewOpen={rightPanel.isOpen("preview")}
+              gitOpen={gitOpen}
+            />
+          ) : view === "sessions" ? (
+            <SessionWelcome
+              project={selectedProject}
+              sessions={sessions}
+              onSelectSession={handleSelectSession}
+              onNewSession={handleNewSession}
+              onBack={handleBack}
+              onViewAllSessions={() => { setSidebarOpen(true); if (isMobile) setActiveMobilePanel("channels"); }}
+              onAddProject={() => setShowAddProject(true)}
+            />
+          ) : (
+            <EmptyState
+              projects={projects}
+              onSelectProject={handleSelectProject}
+              onAddProject={() => setShowAddProject(true)}
+            />
+          )}
+        </div>
+      ),
+    },
+    ...(rightPanel.isOpen("preview") && selectedProject ? [{
+      id: "preview" as const,
+      title: "Preview",
+      icon: <span className="text-xs">◧</span>,
+      children: (
+        <PreviewPanel
+          projectId={selectedProject.id}
+          projectName={selectedProject.name}
+          projectPath={selectedProject.path}
+          preview={activePreview || null}
+          onElementSelected={handleElementSelected}
+          onRefresh={fetchPreviews}
+          embedded
+          compactHeader
+        />
+      ),
+      onClose: () => rightPanel.close("preview"),
+    }] : []),
+    ...(gitOpen && selectedProject ? [{
+      id: "git" as const,
+      title: "Git",
+      icon: <Icon name="git" size={12} />,
+      children: (
+        <GitPanel
+          cwd={selectedProject.path}
+          visible={true}
+          onClose={() => rightPanel.close("git")}
+          embedded
+        />
+      ),
+      onClose: () => rightPanel.close("git"),
+    }] : []),
+    ...(terminalOpen ? [{
+      id: "terminal" as const,
+      title: "Terminal",
+      icon: <Icon name="terminal" size={12} />,
+      header: (
+        <TerminalPanelHeader
+          tabs={terminalTabs}
+          activeTabId={terminalActiveTabId}
+          onSelectTab={setTerminalActiveTabId}
+          onAddTerminal={addTerminal}
+          onRemoveTab={removeTerminal}
+          onRenameTab={renameTerminal}
+        />
+      ),
+      children: (
+        <TerminalPanel
+          visible={true}
+          onClose={() => setTerminalOpen(false)}
+          embedded
+          tabs={terminalTabs}
+          activeTabId={terminalActiveTabId}
+          onAddTerminal={addTerminal}
+        />
+      ),
+      onClose: () => setTerminalOpen(false),
+    }] : []),
+  ], [activePreview, addTerminal, channelSearch, gitOpen, handleDeleteProject, handleDeleteSession, handleElementSelected, handleForkSession, handleRefreshSessions, handleRenameSession, handleSelectProject, handleSelectSession, isAddingProject, projects, removeTerminal, renameTerminal, rightPanel, selectedProject, sessionDetail, sessions, sidebarOpen, streamingProjectIds, streamingSessionIds, terminalActiveTabId, terminalTabs, terminalOpen, theme, toggleTheme, view, ws]);
+
+  // Reset active mobile tab when the panel it points to is closed
+  useEffect(() => {
+    const openIds = new Set(panels.map((p) => p.id) as WorkspacePanelKind[]);
+    if (!openIds.has(activeMobilePanel)) {
+      setActiveMobilePanel("chat");
+    }
+  }, [panels, activeMobilePanel]);
+
   // Listen for WS session events
   useEffect(() => {
     if (!ws) return;
@@ -590,6 +748,7 @@ export default function App() {
   // Cmd/Ctrl+1..9 — jump to a project by index.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (isMobile) return;
       if ((e.metaKey || e.ctrlKey) && e.key === "n") {
         e.preventDefault();
         handleNewSession();
@@ -616,7 +775,7 @@ export default function App() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [handleNewSession, handleGoHome, handleSelectProject, projects, selectedProject]);
+  }, [handleNewSession, handleGoHome, handleSelectProject, isMobile, projects, selectedProject]);
 
   // #62 — Cleanup all safeTimeout timers on unmount
   useEffect(() => {
@@ -627,136 +786,22 @@ export default function App() {
   }, []);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-ink-950">
+    <div className="flex h-[100dvh] overflow-hidden bg-ink-950">
       <PWABanner />
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-0 focus:left-0 focus:z-80 focus:bg-ink-900 focus:p-4 focus:text-amber-500">Skip to chat</a>
       <main id="main-content" className="flex-1 flex flex-row min-w-0 min-h-0 h-full overflow-hidden">
-        <WorkspaceDock
+        {isMobile ? (
+          <MobileShell
+            panels={panels}
+            closedPanels={closedPanels}
+            activePanelId={activeMobilePanel}
+            onActivatePanel={setActiveMobilePanel}
+            onReopenPanel={reopenPanel}
+          />
+        ) : (
+          <WorkspaceDock
           layout={workspaceLayout.layout}
-          panels={[
-            ...(sidebarOpen ? [{
-              id: "channels" as const,
-              title: "Projects & Sessions",
-              icon: <Icon name="hash" size={12} />,
-              children: (
-                <ProjectSessionSidebar
-                  projects={projects}
-                  selectedProject={selectedProject}
-                  streamingProjectIds={streamingProjectIds}
-                  isAddingProject={isAddingProject}
-                  sessions={sessions}
-                  activeSession={activeSession}
-                  search={channelSearch}
-                  onSearch={setChannelSearch}
-                  onSelectProject={handleSelectProject}
-                  onSelectSession={handleSelectSession}
-                  onSelectHome={handleGoHome}
-                  onAddProject={() => setShowAddProject(true)}
-                  onNewSession={handleNewSession}
-                  onDeleteProject={(project) => handleDeleteProject(project.id)}
-                  onDeleteSession={handleDeleteSession}
-                  onRenameSession={handleRenameSession}
-                  onForkSession={handleForkSession}
-                  onCopySession={handleCopySession}
-                  onRefreshSessions={handleRefreshSessions}
-                  onContinueLatest={handleContinueLatest}
-                  streamingSessionIds={streamingSessionIds}
-                  onRequestConfirm={(title, message, onConfirm) => setConfirmDialog({ open: true, title, message, onConfirm })}
-                  theme={theme}
-                  onToggleTheme={toggleTheme}
-                />
-              ),
-              onClose: () => setSidebarOpen(false),
-            }] : []),
-            {
-              id: "chat",
-              title: "Conversation",
-              icon: <Icon name="pi-logo" size={12} />,
-              children: (
-                <div className="flex-1 flex flex-col min-w-0 min-h-0 h-full overflow-hidden">
-                  {view === "chat" && ws ? (
-                    <ChatView
-                      ws={ws}
-                      sessionDetail={sessionDetail}
-                      project={selectedProject}
-                      session={activeSession}
-                      showSidebar={false}
-                    />
-                  ) : view === "sessions" ? (
-                    <SessionWelcome
-                      project={selectedProject}
-                      sessions={sessions}
-                      onSelectSession={handleSelectSession}
-                    />
-                  ) : (
-                    <EmptyState
-                      projects={projects}
-                      onSelectProject={handleSelectProject}
-                      onAddProject={() => setShowAddProject(true)}
-                    />
-                  )}
-                </div>
-              ),
-            },
-            ...(rightPanel.isOpen("preview") && selectedProject ? [{
-              id: "preview" as const,
-              title: "Preview",
-              icon: <span className="text-xs">◧</span>,
-              children: (
-                <PreviewPanel
-                  projectId={selectedProject.id}
-                  projectName={selectedProject.name}
-                  projectPath={selectedProject.path}
-                  preview={activePreview || null}
-                  onElementSelected={handleElementSelected}
-                  onRefresh={fetchPreviews}
-                  embedded
-                  compactHeader
-                />
-              ),
-              onClose: () => rightPanel.close("preview"),
-            }] : []),
-            ...(gitOpen && selectedProject ? [{
-              id: "git" as const,
-              title: "Source Control",
-              icon: <Icon name="git" size={12} />,
-              children: (
-                <GitPanel
-                  cwd={selectedProject.path}
-                  visible={true}
-                  onClose={() => rightPanel.close("git")}
-                  embedded
-                />
-              ),
-              onClose: () => rightPanel.close("git"),
-            }] : []),
-            ...(terminalOpen ? [{
-              id: "terminal" as const,
-              title: "Terminal",
-              icon: <Icon name="terminal" size={12} />,
-              header: (
-                <TerminalPanelHeader
-                  tabs={terminalTabs}
-                  activeTabId={terminalActiveTabId}
-                  onSelectTab={setTerminalActiveTabId}
-                  onAddTerminal={addTerminal}
-                  onRemoveTab={removeTerminal}
-                  onRenameTab={renameTerminal}
-                />
-              ),
-              children: (
-                <TerminalPanel
-                  visible={true}
-                  onClose={() => setTerminalOpen(false)}
-                  embedded
-                  tabs={terminalTabs}
-                  activeTabId={terminalActiveTabId}
-                  onAddTerminal={addTerminal}
-                />
-              ),
-              onClose: () => setTerminalOpen(false),
-            }] : []),
-          ]}
+          panels={panels}
           onMovePanel={workspaceLayout.movePanel}
           onResizeRegion={workspaceLayout.resizeRegion}
           onResizePanel={workspaceLayout.resizePanel}
@@ -766,6 +811,7 @@ export default function App() {
           saving={workspaceLayout.saving}
           error={workspaceLayout.error}
         />
+        )}
       </main>
 
       <BackgroundSessionToast
@@ -794,14 +840,29 @@ export default function App() {
   );
 }
 
-function SessionWelcome({ project, sessions, onSelectSession }: {
+function SessionWelcome({ project, sessions, onSelectSession, onNewSession, onBack, onViewAllSessions, onAddProject }: {
   project: Project | null;
   sessions: SessionSummary[];
   onSelectSession: (s: SessionSummary) => void;
+  onNewSession?: () => void;
+  onBack?: () => void;
+  onViewAllSessions?: () => void;
+  onAddProject?: () => void;
 }) {
   return (
-    <div className="conversation-session-welcome mobile-safe-top">
+    <div className="conversation-session-welcome">
       <div className="conversation-session-welcome-card max-h-full overflow-y-auto custom-scrollbar">
+        {project && onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex items-center gap-1.5 mb-3 text-ink-500 hover:text-ink-200 text-xs font-mono transition-colors"
+            aria-label="Back to projects"
+          >
+            <Icon name="chevron-left" size={12} />
+            Projects
+          </button>
+        )}
         <div className="conversation-session-welcome-rule">
           <span className="conversation-session-welcome-label">
             {project ? "Project" : "Welcome"}
@@ -825,6 +886,20 @@ function SessionWelcome({ project, sessions, onSelectSession }: {
         {sessions.length > 0 && (
           <div className="conversation-session-welcome-section">
             <div className="conversation-session-welcome-section-title">Recent</div>
+            {onNewSession && (
+              <button
+                type="button"
+                onClick={onNewSession}
+                className="conversation-session-welcome-item"
+                style={{ animationDelay: '80ms' }}
+              >
+                <div className="conversation-session-welcome-index" aria-hidden>+</div>
+                <div className="conversation-session-welcome-copy">
+                  <div className="conversation-session-welcome-item-title">New session</div>
+                  <div className="conversation-session-welcome-meta">Start a new conversation</div>
+                </div>
+              </button>
+            )}
             {sessions.slice(0, 8).map((s, i) => (
               <button
                 type="button"
@@ -850,13 +925,54 @@ function SessionWelcome({ project, sessions, onSelectSession }: {
                 </div>
               </button>
             ))}
+            {sessions.length > 8 && onViewAllSessions && (
+              <button
+                type="button"
+                onClick={onViewAllSessions}
+                className="conversation-session-welcome-item"
+              >
+                <div className="conversation-session-welcome-index" aria-hidden>→</div>
+                <div className="conversation-session-welcome-copy">
+                  <div className="conversation-session-welcome-item-title">View all {sessions.length} sessions</div>
+                </div>
+              </button>
+            )}
           </div>
         )}
 
-        {sessions.length === 0 && (
+        {sessions.length === 0 && onNewSession && (
+          <button
+            type="button"
+            onClick={onNewSession}
+            className="conversation-session-welcome-item"
+            style={{ animationDelay: '80ms' }}
+          >
+            <div className="conversation-session-welcome-index" aria-hidden>+</div>
+            <div className="conversation-session-welcome-copy">
+              <div className="conversation-session-welcome-item-title">New session</div>
+              <div className="conversation-session-welcome-meta">Start a new conversation</div>
+            </div>
+          </button>
+        )}
+        {sessions.length === 0 && !onNewSession && (
           <div className="conversation-session-welcome-count conversation-session-welcome-shortcut">
             Press <kbd className="conversation-kbd">⌘N</kbd> to start a conversation
           </div>
+        )}
+
+        {onAddProject && !project && (
+          <button
+            type="button"
+            onClick={onAddProject}
+            className="conversation-session-welcome-item"
+            style={{ animationDelay: '160ms' }}
+          >
+            <div className="conversation-session-welcome-index" aria-hidden>+</div>
+            <div className="conversation-session-welcome-copy">
+              <div className="conversation-session-welcome-item-title">Add a project</div>
+              <div className="conversation-session-welcome-meta">Connect a codebase to get started</div>
+            </div>
+          </button>
         )}
       </div>
     </div>

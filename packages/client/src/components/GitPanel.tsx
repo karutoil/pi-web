@@ -3,8 +3,8 @@ import { Icon } from "./Icon";
 import { GitStash } from "./GitStash";
 import { GitLog } from "./GitLog";
 import { GitBlame } from "./GitBlame";
-import { GitBranchSelector } from "./GitBranchSelector";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { GitBranchSelector } from "./GitBranchSelector";
 import { useResizable } from "../hooks/useResizable";
 
 // ─── Types ───
@@ -143,8 +143,6 @@ export function GitPanel({ cwd, visible, onClose, embedded = false, width }: Git
   const [committing, setCommitting] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const [diffStats, setDiffStats] = useState<Map<string, GitDiffStats>>(new Map());
-  const isMobile = useIsMobile();
-
   const { width: resizableWidth, isDragging, handleMouseDown } = useResizable({
     defaultWidth: embedded ? (width ?? 380) : 380,
     minWidth: 260,
@@ -317,60 +315,6 @@ export function GitPanel({ cwd, visible, onClose, embedded = false, width }: Git
   const totalChanges = (status?.staged.length || 0) + (status?.unstaged.length || 0) + (status?.untracked.length || 0);
   const hasConflicts = !!(status?.unstaged.some(f => f.status === "U") || status?.staged.some(f => f.status === "U"));
 
-  // ── Mobile: full-screen overlay ──
-  if (isMobile) {
-    return (
-      <div className="fixed inset-0 z-45 bg-ink-900/35 border-l-0 flex flex-col select-none mobile-safe-top mobile-safe-bottom">
-        <GitPanelContent
-          cwd={cwd}
-          status={status}
-          loading={loading}
-          error={error}
-          view={view}
-          setView={setView}
-          commitMsg={commitMsg}
-          setCommitMsg={setCommitMsg}
-          amend={amend}
-          setAmend={setAmend}
-          committing={committing}
-          diffView={diffView}
-          setDiffView={setDiffView}
-          blameView={blameView}
-          setBlameView={setBlameView}
-          expandedStaged={expandedStaged}
-          expandedChanges={expandedChanges}
-          selectedFiles={selectedFiles}
-          diffStats={diffStats}
-          totalChanges={totalChanges}
-          hasConflicts={hasConflicts}
-          onToggleStaged={() => setExpandedStaged(v => !v)}
-          onToggleChanges={() => setExpandedChanges(v => !v)}
-          onStage={handleStage}
-          onStageAll={handleStageAll}
-          onUnstage={handleUnstage}
-          onUnstageAll={handleUnstageAll}
-          onDiscard={handleDiscard}
-          onCommit={handleCommit}
-          onPush={handlePush}
-          onPull={handlePull}
-          onFetch={handleFetch}
-          onViewDiff={handleViewDiff}
-          onBlame={handleBlame}
-          onComparePrev={handleComparePrev}
-          onResolveConflict={handleResolveConflict}
-          onStageSelected={handleStageSelected}
-          onUnstageSelected={handleUnstageSelected}
-          onClearSelected={() => setSelectedFiles(new Set())}
-          onToggleSelect={toggleFileSelect}
-          onRefresh={refresh}
-          onClose={onClose}
-          embedded={embedded}
-        />
-      </div>
-    );
-  }
-
-  // ── Desktop: right-side panel matching PreviewPanel ──
   return (
     <div
       className="git-panel-shell relative select-none"

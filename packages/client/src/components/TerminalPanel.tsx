@@ -236,36 +236,6 @@ export function TerminalPanel({ visible, onClose, embedded = false, tabs, active
   const panelRef = useRef<HTMLDivElement>(null);
   const startYRef = useRef(0);
   const startHeightRef = useRef(0);
-  const isMobile = useIsMobile();
-
-  // Mobile: bottom-sheet snap heights
-  const SNAP_POINTS = [0.3, 0.5, 0.7];
-  const [mobileSnap, setMobileSnap] = useState(0.5);
-  const mobileDragStart = useRef<{ y: number; snap: number } | null>(null);
-
-  const handleMobileTouchStart = useCallback((e: React.TouchEvent) => {
-    mobileDragStart.current = { y: e.touches[0].clientY, snap: mobileSnap };
-  }, [mobileSnap]);
-
-  const handleMobileTouchMove = useCallback((e: React.TouchEvent) => {
-    if (!mobileDragStart.current) return;
-    const dy = mobileDragStart.current.y - e.touches[0].clientY;
-    const vh = window.innerHeight;
-    const deltaSnap = dy / vh;
-    setMobileSnap(Math.max(0.2, Math.min(0.85, mobileDragStart.current.snap + deltaSnap)));
-  }, []);
-
-  const handleMobileTouchEnd = useCallback(() => {
-    if (mobileDragStart.current === null) return;
-    const nearest = SNAP_POINTS.reduce((best, point) =>
-      Math.abs(point - mobileSnap) < Math.abs(best - mobileSnap) ? point : best
-    );
-    if (Math.abs(nearest - mobileSnap) < 0.08) {
-      setMobileSnap(nearest);
-    }
-    mobileDragStart.current = null;
-  }, [mobileSnap]);
-
   // Terminal tabs are owned by App so they can live in the shared panel header.
 
   // Resize drag handler
@@ -321,20 +291,13 @@ export function TerminalPanel({ visible, onClose, embedded = false, tabs, active
 
   return (
     <>
-    {/* Mobile: backdrop behind bottom sheet */}
-    {isMobile && !embedded && (
-      <div className="terminal-backdrop" onClick={onClose} />
-    )}
     <div
       ref={panelRef}
-      className={`terminal-shell select-none ${
-        isMobile && !embedded ? "terminal-shell--mobile mobile-safe-bottom" : ""
-      }`}
-      style={{ touchAction: "manipulation", ...(embedded ? {} : isMobile ? { height: `${mobileSnap * 100}vh` } : { height: `${height}px` }) }}
+      className="terminal-shell select-none"
+      style={{ touchAction: "manipulation", ...(embedded ? {} : { height: `${height}px` }) }}
     >
       {/* ── Resize handle ── */}
-      {!embedded ? (
-        !isMobile ? (
+      {!embedded && (
           <div
             className="terminal-resize-handle"
             data-resizing={isResizing}
@@ -343,17 +306,7 @@ export function TerminalPanel({ visible, onClose, embedded = false, tabs, active
           >
             <div className="terminal-resize-grip" />
           </div>
-      ) : (
-      <div
-        className="terminal-mobile-handle"
-        onTouchStart={handleMobileTouchStart}
-        onTouchMove={handleMobileTouchMove}
-        onTouchEnd={handleMobileTouchEnd}
-      >
-        <div className="terminal-mobile-grip" />
-      </div>
-      )
-      ) : null}
+      )}
 
       {/* ── Terminal content ── */}
       <div className="terminal-content">

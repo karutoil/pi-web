@@ -3,7 +3,7 @@ import type { DragEvent, MouseEvent as ReactMouseEvent, ReactNode } from "react"
 import type { WorkspaceLayout, WorkspacePanelKind, WorkspaceRegionId, WorkspaceRegionMode } from "@pi-web/shared";
 import { Icon } from "./Icon";
 
-interface WorkspacePanelConfig {
+export interface WorkspacePanelConfig {
   id: WorkspacePanelKind;
   title: string;
   icon: ReactNode;

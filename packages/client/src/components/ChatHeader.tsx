@@ -14,9 +14,17 @@ interface Props {
   /** Terminal panel toggle */
   onToggleTerminal?: () => void;
   showTerminal?: boolean;
+  /** Back navigation */
+  onBack?: () => void;
+  /** Preview panel toggle */
+  onTogglePreview?: () => void;
+  previewOpen?: boolean;
+  /** Git panel toggle */
+  onToggleGit?: () => void;
+  gitOpen?: boolean;
 }
 
-export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar, onSessionActions, onToggleTerminal, showTerminal }: Props) {
+export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar, onSessionActions, onToggleTerminal, showTerminal, onBack, onTogglePreview, previewOpen, onToggleGit, gitOpen }: Props) {
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(sessionName || "");
   const isMobile = useIsMobile();
@@ -49,13 +57,12 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar,
   if (isMobile) {
     return (
       <div className="conversation-mobile-header shrink-0 max-h-[35vh] overflow-y-auto">
-        {onToggleSidebar && !showSidebar && (
-          <button onClick={onToggleSidebar} className="conversation-toolbar-pill" aria-label="Show sidebar" title="Show sidebar">
-            <Icon name="chevron-right" size={18} />
-          </button>
-        )}
-
         <div className="conversation-mobile-title-row">
+          {onBack && (
+            <button onClick={onBack} className="p-1.5 -ml-1 rounded-md hover:bg-ink-800 text-ink-400" aria-label="Back" title="Back">
+              <Icon name="chevron-left" size={18} />
+            </button>
+          )}
           {editingName ? (
             <input
               value={nameInput}
@@ -88,13 +95,30 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar,
               Live
             </span>
           )}
-        </div>
 
-        {onSessionActions && (
-          <button onClick={onSessionActions} className="conversation-toolbar-pill" aria-label="Session actions" title="Session actions">
-            <Icon name="more" size={18} />
-          </button>
-        )}
+          <div className="flex items-center gap-0.5 ml-auto">
+            {onToggleTerminal && (
+              <button onClick={onToggleTerminal} className={`p-1.5 rounded-md ${showTerminal ? 'text-amber-500 bg-amber-500/10' : 'text-ink-400 hover:bg-ink-800'}`} aria-label="Terminal" title="Terminal">
+                <Icon name="terminal" size={14} />
+              </button>
+            )}
+            {onTogglePreview && (
+              <button onClick={onTogglePreview} className={`p-1.5 rounded-md ${previewOpen ? 'text-amber-500 bg-amber-500/10' : 'text-ink-400 hover:bg-ink-800'}`} aria-label="Preview" title="Preview">
+                <span className="text-xs leading-none">◧</span>
+              </button>
+            )}
+            {onToggleGit && (
+              <button onClick={onToggleGit} className={`p-1.5 rounded-md ${gitOpen ? 'text-amber-500 bg-amber-500/10' : 'text-ink-400 hover:bg-ink-800'}`} aria-label="Git" title="Git">
+                <Icon name="git" size={14} />
+              </button>
+            )}
+            {onSessionActions && (
+              <button onClick={onSessionActions} className="p-1.5 rounded-md text-ink-400 hover:bg-ink-800" aria-label="Session actions" title="Session actions">
+                <Icon name="more" size={14} />
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     );
   }

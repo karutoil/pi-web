@@ -46,6 +46,20 @@ export function EmptyState({ projects, onSelectProject, onAddProject }: EmptySta
                 </div>
               </button>
             ))}
+            <button
+              type="button"
+              onClick={onAddProject}
+              className="empty-state-project"
+              style={{ borderStyle: 'dashed' }}
+            >
+              <div className="empty-state-project-icon">
+                <Icon name="plus-thick" size={14} />
+              </div>
+              <div className="empty-state-project-copy">
+                <div>Add a project</div>
+                <div>Connect another codebase</div>
+              </div>
+            </button>
           </div>
         ) : (
           <div>

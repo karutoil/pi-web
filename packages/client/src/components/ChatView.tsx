@@ -40,6 +40,13 @@ interface ChatViewProps {
   session: SessionSummary | null;
   onToggleSidebar?: () => void;
   showSidebar?: boolean;
+  onBack?: () => void;
+  onToggleTerminal?: () => void;
+  onTogglePreview?: () => void;
+  onToggleGit?: () => void;
+  terminalOpen?: boolean;
+  previewOpen?: boolean;
+  gitOpen?: boolean;
 }
 
 function extractMsgText(msg: ChatMessage): string {
@@ -54,7 +61,7 @@ function extractMsgText(msg: ChatMessage): string {
   return "";
 }
 
-export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar, showSidebar }: ChatViewProps) {
+export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar, showSidebar, onBack, onToggleTerminal, onTogglePreview, onToggleGit, terminalOpen, previewOpen, gitOpen }: ChatViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showThinking, setShowThinking] = useState(true);
   const [srAnnouncement, setSrAnnouncement] = useState('');
@@ -368,7 +375,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
 
   return (
     <div className="conversation-shell">
-      <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} onToggleSidebar={onToggleSidebar} showSidebar={showSidebar} onSessionActions={() => setShowSessionActions(true)} />
+      <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} onToggleSidebar={onToggleSidebar} showSidebar={showSidebar} onSessionActions={() => setShowSessionActions(true)} onBack={onBack} onToggleTerminal={onToggleTerminal} onTogglePreview={onTogglePreview} onToggleGit={onToggleGit} showTerminal={terminalOpen} previewOpen={previewOpen} gitOpen={gitOpen} />
 
       <div aria-live="polite" className="sr-only">{srAnnouncement}</div>
 

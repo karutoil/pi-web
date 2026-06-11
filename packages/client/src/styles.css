@@ -157,6 +157,11 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+}
+
 /* Subtle grain */
 body::after {
   content: "";
@@ -2344,11 +2349,6 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   .markdown-content h3 { font-size: 1em; }
 }
 
-@media (max-width: 767px) and (orientation: landscape) {
-  /* Reduce sidebar width in landscape to leave room for chat */
-  .mobile-sidebar { max-width: 240px !important; }
-}
-
 /* ========== xterm overrides ========== */
 
 .xterm {
@@ -2465,18 +2465,6 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   background-color: var(--color-ink-950);
 }
 
-/* Mobile: full-screen overlay for the server rail when opened */
-@media (max-width: 767px) {
-  .server-rail-mobile {
-    position: fixed;
-    inset: 0 auto 0 0;
-    z-index: 40;
-    width: 100vw !important;
-    max-width: 320px;
-    box-shadow: 6px 0 24px -4px rgba(0, 0, 0, 0.4);
-  }
-}
-
 /* Active stamp — subtle "ink on damp paper" glow underneath */
 .stamp-active-glow::after {
   content: "";
@@ -2494,18 +2482,12 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
 
 /* ========== Terminal panel ========== */
 
-.terminal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 39;
-  background: color-mix(in srgb, var(--color-ink-950) 55%, transparent);
-}
-
 .terminal-shell {
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  height: 100%;
   max-width: 100%;
   max-height: 100%;
   overflow: hidden;
@@ -2513,17 +2495,6 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--workspace-panel-strong) 94%, transparent), color-mix(in srgb, var(--workspace-panel) 96%, transparent));
   box-shadow: 0 -18px 48px -32px rgba(0, 0, 0, 0.55);
-}
-
-.terminal-shell--mobile {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 40;
-  border-top: 0;
-  border-radius: 1rem 1rem 0 0;
-  box-shadow: 0 -24px 60px -32px rgba(0, 0, 0, 0.75);
 }
 
 .terminal-resize-handle {
@@ -2555,27 +2526,6 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
 .terminal-resize-handle[data-resizing="true"] .terminal-resize-grip {
   width: 3rem;
   background: var(--workspace-brass);
-}
-
-.terminal-mobile-handle {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  height: 2rem;
-  cursor: grab;
-  touch-action: none;
-}
-
-.terminal-mobile-handle:active {
-  cursor: grabbing;
-}
-
-.terminal-mobile-grip {
-  width: 2.5rem;
-  height: 0.25rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--workspace-seam) 80%, transparent);
 }
 
 .workspace-panel-header .terminal-tabs {
@@ -5938,6 +5888,7 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
 .preview-toolbar {
   display: flex;
   flex: 0 0 auto;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.25rem;
   min-height: 2.85rem;
@@ -7473,25 +7424,16 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
 /* ========== Mobile responsive (<768px) ========== */
 
 @media (max-width: 767px) {
-  .workspace-panel-region,
-  .workspace-region-label {
-    display: none;
-  }
-
-  .workspace-tab {
-    max-width: 8.5rem;
-    padding-inline: 0.5rem;
-  }
-
-  .workspace-bench::before {
-    background-size: 25% 100%, 100% 25%;
-  }
-
   /* Touch-friendly scroll on code blocks */
   pre {
     -webkit-overflow-scrolling: touch;
     font-size: 0.75rem;
     padding: 0.75rem 1rem;
+  }
+
+  /* Prevent iOS input zoom on chat textarea */
+  .conversation-textarea {
+    font-size: 16px;
   }
 
   /* Safe area for notched phones */
