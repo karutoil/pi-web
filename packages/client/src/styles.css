@@ -1900,35 +1900,6 @@ button, a, input, textarea, select, [role="button"] {
   color: var(--workspace-rust);
 }
 
-.git-stash-view {
-  max-height: 32rem;
-  overflow-y: scroll;
-  overscroll-behavior: contain;
-  margin: 0.5rem 0 0.25rem;
-  overflow: hidden;
-  border: 1px solid var(--workspace-seam);
-  border-radius: 0.85rem;
-  background:
-    linear-gradient(180deg,
-      color-mix(in srgb, var(--workspace-panel-strong) 92%, transparent),
-      color-mix(in srgb, var(--workspace-panel) 96%, transparent));
-}
-
-.git-stash-view-header {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  min-height: 3rem;
-  padding: 0.6rem 0.75rem;
-  border-bottom: 1px solid var(--workspace-seam);
-  background: color-mix(in srgb, var(--workspace-panel-strong) 78%, transparent);
-}
-
-.git-stash-view-copy {
-  min-width: 0;
-  flex: 1 1 auto;
-}
-
 .git-stash-view-kicker {
   display: block;
   color: var(--workspace-brass);
@@ -1938,25 +1909,6 @@ button, a, input, textarea, select, [role="button"] {
   letter-spacing: 0.12em;
   line-height: 1;
   text-transform: uppercase;
-}
-
-.git-stash-view-copy strong {
-  display: block;
-  margin-top: 0.25rem;
-  color: var(--color-ink-100);
-  font-family: var(--font-serif);
-  font-size: 0.95rem;
-  font-style: italic;
-  font-weight: 650;
-  line-height: 1.1;
-}
-
-.git-stash-view-copy span:last-child {
-  display: block;
-  margin-top: 0.18rem;
-  color: var(--color-ink-500);
-  font-family: var(--font-mono);
-  font-size: 0.6rem;
 }
 
 .git-stash-view-close {
@@ -1972,34 +1924,7 @@ button, a, input, textarea, select, [role="button"] {
   transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
 }
 
-.git-stash-view-popout {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  min-height: 1.75rem;
-  border: 1px solid color-mix(in srgb, var(--workspace-brass) 28%, transparent);
-  border-radius: 0.55rem;
-  background: color-mix(in srgb, var(--workspace-brass) 8%, transparent);
-  color: var(--workspace-brass);
-  cursor: pointer;
-  font-family: var(--font-mono);
-  font-size: 0.6rem;
-  font-weight: 850;
-  padding: 0.32rem 0.55rem;
-  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, opacity 140ms ease;
-}
 
-.git-stash-view-popout:hover:not(:disabled),
-.git-stash-view-popout:focus-visible {
-  border-color: color-mix(in srgb, var(--workspace-brass) 42%, transparent);
-  background: color-mix(in srgb, var(--workspace-brass) 14%, transparent);
-  color: var(--color-ink-100);
-}
-
-.git-stash-view-popout:disabled {
-  cursor: default;
-  opacity: 0.45;
-}
 
 .git-stash-view-close:hover,
 .git-stash-view-close:focus-visible {
@@ -2046,19 +1971,6 @@ button, a, input, textarea, select, [role="button"] {
 }
 
 .git-stash-view-files {
-  max-height: 12rem;
-  overflow-y: auto;
-}
-
-.git-stash-view-diff .diff-renderer {
-  display: flex;
-  flex-direction: column;
-  height: 24rem;
-  max-height: 24rem;
-}
-
-.git-stash-view-diff .diff-scroll {
-  min-height: 0;
   overflow-y: auto;
 }
 

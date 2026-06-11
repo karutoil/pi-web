@@ -547,6 +547,7 @@ app.get("/api/git/stash/show", (c) => {
   const cwd = c.req.query("cwd");
   const index = parseInt(c.req.query("index") || "0");
   if (!cwd) return c.json({ error: "cwd required" }, 400);
+  if (isNaN(index) || index < 0) return c.json({ error: "invalid index" }, 400);
   const result = gitStashShow(cwd, index);
   return c.json(result);
 });

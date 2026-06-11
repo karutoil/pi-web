@@ -52,6 +52,7 @@ export interface GitStashFileChange {
 export interface GitStashShowResult {
   files: GitStashFileChange[];
   diff: string;
+  error?: string;
 }
 
 export interface GitDiffStats {
@@ -287,11 +288,18 @@ function parseStashNameStatus(raw: string): GitStashFileChange[] {
 
 export function gitStashShow(cwd: string, index: number): GitStashShowResult {
   const ref = `stash@{${index}}`;
-  const filesRaw = runGitStr(cwd, "stash", "show", "--name-status", ref);
-  const diff = runGitStr(cwd, "stash", "show", "--patch", ref);
+  const filesResult = runGit(cwd, "stash", "show", "--name-status", ref);
+  const diffResult = runGit(cwd, "stash", "show", "--patch", ref);
+  if (!filesResult.ok) {
+    return {
+      files: [],
+      diff: "",
+      error: filesResult.stderr || `Failed to read stash@{${index}}`,
+    };
+  }
   return {
-    files: parseStashNameStatus(filesRaw),
-    diff,
+    files: parseStashNameStatus(filesResult.stdout),
+    diff: diffResult.ok ? diffResult.stdout : "",
   };
 }
 

@@ -40,7 +40,6 @@ export function GitStash({ cwd, stashCount, onRefresh }: GitStashProps) {
   const [stashing, setStashing] = useState(false);
   const [showStashInput, setShowStashInput] = useState(false);
   const [actingIndex, setActingIndex] = useState<number | null>(null);
-  const [viewingIndex, setViewingIndex] = useState<number | null>(null);
   const [modalViewingIndex, setModalViewingIndex] = useState<number | null>(null);
   const [modalTab, setModalTab] = useState<"files" | "diff">("files");
   const [stashView, setStashView] = useState<GitStashShowResult | null>(null);
@@ -74,10 +73,10 @@ export function GitStash({ cwd, stashCount, onRefresh }: GitStashProps) {
   }, [stashCount, expanded, cwd]);
 
   useEffect(() => {
-    if (viewingIndex == null) return;
+    if (modalViewingIndex == null) return;
     setViewLoading(true);
     setViewError(null);
-    fetch(`/api/git/stash/show?cwd=${encodeURIComponent(cwd)}&index=${viewingIndex}`)
+    fetch(`/api/git/stash/show?cwd=${encodeURIComponent(cwd)}&index=${modalViewingIndex}`)
       .then(r => r.json())
       .then(d => {
         if (d.error) setViewError(d.error);
@@ -85,18 +84,16 @@ export function GitStash({ cwd, stashCount, onRefresh }: GitStashProps) {
       })
       .catch(() => setViewError("Failed to load stash"))
       .finally(() => setViewLoading(false));
-  }, [viewingIndex, cwd]);
-
-  useEffect(() => {
-    if (modalViewingIndex == null || modalViewingIndex === viewingIndex) return;
-    setViewingIndex(modalViewingIndex);
-  }, [modalViewingIndex, viewingIndex]);
+  }, [modalViewingIndex, cwd]);
 
   useEffect(() => {
     if (modalViewingIndex == null) return;
     setModalTab("files");
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setModalViewingIndex(null);
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        setModalViewingIndex(null);
+      }
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
@@ -227,24 +224,13 @@ export function GitStash({ cwd, stashCount, onRefresh }: GitStashProps) {
               key={stash.index}
               stash={stash}
               acting={actingIndex === stash.index}
-              viewing={viewingIndex === stash.index}
+              viewing={modalViewingIndex === stash.index}
               onApply={() => handleAction("apply", stash.index)}
               onPop={() => handleAction("pop", stash.index)}
               onDrop={() => handleAction("drop", stash.index)}
-              onView={() => setViewingIndex(viewingIndex === stash.index ? null : stash.index)}
+              onView={() => setModalViewingIndex(modalViewingIndex === stash.index ? null : stash.index)}
             />
           ))}
-
-          {viewingIndex != null && (
-            <StashView
-              stash={stashes.find(s => s.index === viewingIndex)}
-              view={stashView}
-              loading={viewLoading}
-              error={viewError}
-              onClose={() => setViewingIndex(null)}
-              onOpenModal={() => setModalViewingIndex(viewingIndex)}
-            />
-          )}
 
           {modalViewingIndex != null && createPortal(
             <div className="git-stash-view-modal-backdrop" onMouseDown={() => setModalViewingIndex(null)}>
@@ -365,7 +351,7 @@ function StashViewModal({ stash, view, loading, error, tab, onTabChange, onClose
     <>
       <div className="git-stash-view-modal-header">
         <div className="git-stash-view-modal-copy">
-          <span className="git-stash-view-kicker">Rebase View</span>
+          <span className="git-stash-view-kicker">Stash View</span>
           <strong>{stash?.message || `stash@{...}`}</strong>
         </div>
         <div className="git-stash-view-modal-tabs" role="tablist" aria-label="Stash view tabs">
@@ -417,62 +403,4 @@ function StashViewModal({ stash, view, loading, error, tab, onTabChange, onClose
   );
 }
 
-function StashView({ stash, view, loading, error, onClose, onOpenModal, modal }: {
-  stash?: GitStashEntry;
-  view: GitStashShowResult | null;
-  loading: boolean;
-  error: string | null;
-  onClose: () => void;
-  onOpenModal?: () => void;
-  modal?: boolean;
-}) {
-  return (
-    <div className="git-stash-view">
-      <div className="git-stash-view-header">
-        <div className="git-stash-view-copy">
-          <span className="git-stash-view-kicker">Stash view</span>
-          <strong>{stash?.message || `stash@{...}`}</strong>
-          <span>{stash?.branch}</span>
-        </div>
-        <button type="button" className="git-stash-view-popout" onClick={onOpenModal} aria-label="Open stash view in modal" disabled={modal}>
-          <Icon name="copy-offset" size={12} />
-          <span>Pop out</span>
-        </button>
-        <button type="button" className="git-stash-view-close" onClick={onClose} aria-label="Close stash view">
-          <Icon name="close" size={12} />
-        </button>
-      </div>
 
-      {loading && (
-        <div className="git-stash-view-loading">
-          <div className="git-stash-view-spinner" />
-          <span>Loading stash…</span>
-        </div>
-      )}
-
-      {error && <div className="git-stash-view-error">{error}</div>}
-
-      {!loading && !error && view && (
-        <>
-          <div className="git-stash-view-files">
-            <div className="git-stash-view-section-title">Files</div>
-            {view.files.length === 0 && <div className="git-stash-view-empty">No file changes</div>}
-            {view.files.map((file, i) => (
-              <div key={`${file.status}-${file.path}-${i}`} className="git-stash-file-row">
-                <span className={`git-stash-file-status git-stash-file-status--${file.status.toLowerCase()}`}>{file.status}</span>
-                <span className="git-stash-file-path" title={file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}>
-                  {file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          <div className="git-stash-view-diff">
-            <div className="git-stash-view-section-title">Edits</div>
-            {view.diff ? <DiffRenderer content={view.diff} collapsible={false} /> : <div className="git-stash-view-empty">No patch available</div>}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
