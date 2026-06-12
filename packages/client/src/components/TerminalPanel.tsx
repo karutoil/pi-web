@@ -346,7 +346,7 @@ export function TerminalPanelHeader({
   onRenameTab: (id: string, name: string) => void;
 }) {
   return (
-    <div className="terminal-tabs" aria-label="Terminal tabs">
+    <div className="terminal-tabs terminal-tabs--embedded" aria-label="Terminal tabs">
       <div className="terminal-tab-scroller custom-scrollbar-x">
         {tabs.map(tab => (
           <TabButton

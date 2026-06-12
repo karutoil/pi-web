@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent, MouseEvent as ReactMouseEvent, ReactNode } from "react";
+import type { DragEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import type { WorkspaceLayout, WorkspacePanelKind, WorkspaceRegionId, WorkspaceRegionMode } from "@pi-web/shared";
 import { Icon } from "./Icon";
 
@@ -377,15 +377,17 @@ function RegionDock({ region, panels, mode, regionLabel, regionShortLabel, panel
           ...(index < count - 1 && splitAxis(region) === "row" ? { minWidth: 120 } : {}),
         } : undefined}
       >
-        <RegionHeader
-          region={region}
-          regionLabel={regionLabel}
-          panel={config}
-          active={selected}
-          saving={saving}
-          onReset={onReset}
-          onDragStart={onDragStart}
-        />
+        {mode !== "tabs" && (
+          <RegionHeader
+            region={region}
+            regionLabel={regionLabel}
+            panel={config}
+            active={selected}
+            saving={saving}
+            onReset={onReset}
+            onDragStart={onDragStart}
+          />
+        )}
         {config.header}
         <div className="flex-1 min-h-0 min-w-0 overflow-hidden">{config.children}</div>
         {mode === "split" && index < count - 1 && (
@@ -419,28 +421,68 @@ function RegionDock({ region, panels, mode, regionLabel, regionShortLabel, panel
       {mode === "tabs" ? (
         <div className="workspace-region-tabs flex flex-col min-w-0 min-h-0 h-full overflow-hidden">
           <div className="workspace-tab-strip">
-            <div className="workspace-tab-scroller custom-scrollbar-x">
-              {configuredPanels.map(({ layout }) => (
-                <button
-                  key={layout.id}
-                  draggable
-                  onDragStart={onDragStart(layout.id)}
-                  onDragOver={onPanelDragOver(region, layout.id)}
-                  onDrop={onRegionDrop(region)}
-                  onDragEnd={onDragEnd}
-                  onClick={() => setActiveTab(layout.id)}
-                  className="workspace-tab"
-                  data-active={activeTab === layout.id}
-                  aria-selected={activeTab === layout.id}
-                >
-                  <span className="workspace-tab-icon" aria-hidden={true}>
-                    {panelConfigById.get(layout.id)?.icon}
-                  </span>
-                  <span>{panelConfigById.get(layout.id)?.title}</span>
-                </button>
-              ))}
+            <div className="workspace-tab-scroller custom-scrollbar-x" role="tablist" aria-label={regionLabel}>
+              {configuredPanels.map(({ layout }) => {
+                const tabConfig = panelConfigById.get(layout.id)!;
+                const isActive = activeTab === layout.id;
+                return (
+                  <div
+                    key={layout.id}
+                    role="tab"
+                    tabIndex={0}
+                    draggable
+                    onDragStart={onDragStart(layout.id)}
+                    onDragOver={onPanelDragOver(region, layout.id)}
+                    onDrop={onRegionDrop(region)}
+                    onDragEnd={onDragEnd}
+                    onClick={() => setActiveTab(layout.id)}
+                    onKeyDown={(e: ReactKeyboardEvent<HTMLDivElement>) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setActiveTab(layout.id);
+                      }
+                    }}
+                    className="workspace-tab"
+                    data-active={isActive}
+                    aria-selected={isActive}
+                  >
+                    <span className="workspace-tab-icon" aria-hidden={true}>
+                      {tabConfig.icon}
+                    </span>
+                    <span className="workspace-tab-title">{tabConfig.title}</span>
+                    {tabConfig.onClose && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          tabConfig.onClose?.();
+                        }}
+                        className="workspace-tab-close"
+                        aria-label={`Close ${tabConfig.title}`}
+                        title={`Close ${tabConfig.title}`}
+                      >
+                        <Icon name="close" size={10} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-            <div className="workspace-region-label" title={regionLabel}>{regionShortLabel}</div>
+            <div className="workspace-region-label" title={regionLabel}>
+              {region === "center" && (
+                <button
+                  type="button"
+                  onClick={onReset}
+                  disabled={saving}
+                  className="workspace-region-reset"
+                  aria-label="Reset workspace layout"
+                  title="Reset workspace layout"
+                >
+                  <Icon name="refresh" size={10} />
+                </button>
+              )}
+              {regionShortLabel}
+            </div>
           </div>
           <div className="flex flex-col flex-1 min-h-0 min-w-0 h-full overflow-hidden">
             {configuredPanels.map(({ layout }) => layout.id === activeTab ? renderPanel(layout, 0, configuredPanels.length) : null)}

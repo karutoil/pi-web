@@ -559,6 +559,8 @@ button, a, input, textarea, select, [role="button"] {
 }
 
 .workspace-region-label {
+  display: inline-flex;
+  align-items: center;
   align-self: center;
   margin-left: auto;
   padding-right: 0.25rem;
@@ -713,6 +715,67 @@ button, a, input, textarea, select, [role="button"] {
 .workspace-panel-action:disabled {
   cursor: wait;
   opacity: 0.45;
+}
+
+.workspace-tab-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workspace-tab-close {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 1.1rem;
+  height: 1.1rem;
+  margin-left: 0.15rem;
+  border-radius: 0.3rem;
+  color: currentColor;
+  opacity: 0.55;
+  transition: background-color 160ms ease, color 160ms ease, opacity 160ms ease;
+}
+
+.workspace-tab:hover .workspace-tab-close,
+.workspace-tab[data-active="true"] .workspace-tab-close {
+  opacity: 0.9;
+}
+
+.workspace-tab-close:hover {
+  background: color-mix(in srgb, var(--workspace-rust) 12%, transparent);
+  color: var(--color-ink-200);
+  opacity: 1;
+}
+
+.workspace-tab[data-active="true"] .workspace-tab-close:hover {
+  color: var(--workspace-brass);
+}
+
+.workspace-tab:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--workspace-blueprint) 60%, transparent);
+  outline-offset: -2px;
+}
+
+.workspace-region-reset {
+  display: inline-grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-right: 0.25rem;
+  border-radius: 0.3rem;
+  color: var(--color-ink-500);
+  vertical-align: middle;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.workspace-region-reset:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--workspace-blueprint) 12%, transparent);
+  color: var(--workspace-blueprint);
+}
+
+.workspace-region-reset:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .workspace-empty-drop {
@@ -2594,7 +2657,7 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   background: var(--workspace-brass);
 }
 
-.workspace-panel-header .terminal-tabs {
+.terminal-tabs--embedded {
   display: flex;
   align-items: center;
   gap: 0.25rem;
@@ -2606,11 +2669,11 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   background: transparent;
 }
 
-.workspace-panel-header .terminal-tab-scroller {
+.terminal-tabs--embedded .terminal-tab-scroller {
   gap: 0.2rem;
 }
 
-.workspace-panel-header .terminal-tab {
+.terminal-tabs--embedded .terminal-tab {
   min-height: 1.55rem;
   max-width: 10rem;
   padding: 0.2rem 0.35rem;
@@ -2618,11 +2681,11 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   font-size: 0.58rem;
 }
 
-.workspace-panel-header .terminal-actions {
+.terminal-tabs--embedded .terminal-actions {
   padding-left: 0;
 }
 
-.workspace-panel-header .terminal-icon-button {
+.terminal-tabs--embedded .terminal-icon-button {
   min-width: 1.35rem;
   min-height: 1.35rem;
   border-radius: 0.4rem;
