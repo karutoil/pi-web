@@ -404,11 +404,10 @@ export async function startPreview(opts: {
   const framework = detectFramework(opts.cwd);
   if (!command && framework) {
     command = framework.command;
-    if (!requestedPort) requestedPort = framework.defaultPort;
   }
   if (!command) command = "npm run dev";
 
-  // If the caller explicitly supplied a port and a server is already there,
+  // If the caller explicitly supplied a port and it is already listening,
   // attach to it instead of spawning.
   if (requestedPort && await isPortReachable(requestedPort, { host: "127.0.0.1", timeout: 500 })) {
     const id = nanoid(12);
@@ -462,7 +461,7 @@ export async function startPreview(opts: {
   const proc = spawn({
     cmd: [sh.shell, sh.flag, command],
     cwd: opts.cwd,
-    env: { ...process.env, PORT: String(requestedPort || 0) },
+    env: { ...process.env, ...(requestedPort ? { PORT: String(requestedPort) } : {}) },
     stdout: "pipe",
     stderr: "pipe",
   });
