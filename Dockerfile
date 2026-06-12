@@ -15,6 +15,10 @@ COPY packages/shared/package.json packages/shared/
 # Install workspace dependencies
 RUN bun install
 
+# Mark /app as a safe directory for git so the version checker works
+# regardless of which user runs the container.
+RUN git config --system --add safe.directory /app
+
 # Copy full source (includes scripts/docker-entrypoint.sh)
 COPY . .
 
