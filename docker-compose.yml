@@ -12,7 +12,7 @@ services:
       HOME: "${HOME}"
       PATH: "/host-pi-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     ports:
-      - "0:3069"
+      - "33647:3069"
     volumes:
       - "${HOME}:${HOME}"
       - "${PI_BINARY_DIR:-/dev/null}:/host-pi-bin:ro"
