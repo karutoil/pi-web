@@ -201,12 +201,12 @@ function parseLsofPorts(out: string): Set<number> {
   return ports;
 }
 
-function parseNetstatPorts(out: string, pids: Set<number>): Set<number> {
+function parseNetstatPorts(out: string, pids?: Set<number>): Set<number> {
   const ports = new Set<number>();
   for (const line of out.split("\n")) {
     const trimmed = line.trim();
     const m = trimmed.match(/^TCP\s+\S+:(\d+)\s+\S+:\d+\s+LISTENING\s+(\d+)/i);
-    if (m && pids.has(parseInt(m[2], 10))) {
+    if (m && (!pids || pids.has(parseInt(m[2], 10)))) {
       const p = parseInt(m[1], 10);
       if (!isNaN(p) && p > 0 && p < 65536) ports.add(p);
     }
@@ -257,6 +257,44 @@ export function listeningPortsForPids(pids: number[]): Set<number> {
 }
 
 /**
+ * Returns all listening TCP ports on the system. Used for snapshot-diff
+ * fallback when process-tree scanning misses a port.
+ */
+export function allListeningPorts(): Set<number> {
+  try {
+    if (platform() === "win32") {
+      const out = execSync("netstat -ano", { encoding: "utf-8", timeout: 5000 });
+      return parseNetstatPorts(out);
+    }
+    try {
+      const out = execFileSync(
+        "lsof",
+        ["-iTCP", "-sTCP:LISTEN", "-P", "-n"],
+        { encoding: "utf-8", timeout: 3000, stdio: ["pipe", "pipe", "pipe"] },
+      ).toString();
+      return parseLsofPorts(out);
+    } catch {
+      const out = execFileSync("ss", ["-tln"], {
+        encoding: "utf-8",
+        timeout: 3000,
+        stdio: ["pipe", "pipe", "pipe"],
+      }).toString();
+      const ports = new Set<number>();
+      for (const line of out.split("\n")) {
+        const m = line.match(/:(\d+)(?:\s|$)/);
+        if (m) {
+          const p = parseInt(m[1], 10);
+          if (!isNaN(p) && p > 0 && p < 65536) ports.add(p);
+        }
+      }
+      return ports;
+    }
+  } catch {
+    return new Set<number>();
+  }
+}
+
+/**
  * Scan a process tree for listening ports, updating the preview entry in place.
  * Returns the set of unique ports found after scanning completes.
  */
@@ -267,6 +305,7 @@ async function scanProcessPorts(
 ): Promise<Set<number>> {
   const found = new Set<number>();
   const start = Date.now();
+  let announced = false;
 
   while (Date.now() - start < maxWaitMs) {
     const current = previews.get(k);
@@ -284,6 +323,11 @@ async function scanProcessPorts(
       }
       if (changed) {
         current.detectedPorts = [...found].sort((a, b) => a - b);
+        if (!announced && current.status === "detecting") {
+          current.status = "selecting";
+          current.logs.push("[system] Select a detected port to open preview.");
+          announced = true;
+        }
         await persistPreviews();
       }
     } catch {
@@ -456,6 +500,10 @@ export async function startPreview(opts: {
   previews.set(k, info);
   await persistPreviews();
 
+  // Snapshot current ports before spawning so we can diff later as a fallback
+  // if process-tree scanning misses the dev server.
+  const preSnapshot = requestedPort ? undefined : allListeningPorts();
+
   // Spawn the dev server; pass the user/default port as a hint.
   const sh = getPlatformShell();
   const proc = spawn({
@@ -539,19 +587,41 @@ export async function startPreview(opts: {
     }
 
     info.logs.push("[system] Detecting ports from dev server...");
-    const ports = await scanProcessPorts(k, rootPid);
+    let ports = await scanProcessPorts(k, rootPid);
 
     const current = previews.get(k);
     if (!current) return;
-
     if (current.status === "stopped" || current.status === "crashed") return;
 
+    // Fallback: diff a fresh system-wide snapshot to catch ports our
+    // process-tree walk missed (e.g. shells without /proc children, some
+    // Docker runtimes, or unusual process nesting).
+    if (ports.size === 0 && preSnapshot) {
+      await new Promise((r) => setTimeout(r, 500));
+      const postSnapshot = allListeningPorts();
+      const extra = new Set<number>();
+      for (const p of postSnapshot) {
+        if (!preSnapshot.has(p)) extra.add(p);
+      }
+      if (extra.size > 0) {
+        ports = extra;
+        if (current.status === "detecting") {
+          current.status = "selecting";
+        }
+        current.logs.push(`[system] Found ${extra.size} new port(s) via system snapshot.`);
+      }
+    }
+
     if (ports.size > 0) {
-      current.status = "selecting";
+      if (current.status === "detecting") {
+        current.status = "selecting";
+      }
       const list = [...ports].sort((a, b) => a - b).join(", ");
       current.logs.push(`[system] Dev server ports: ${list}. Select one to open preview.`);
     } else {
-      current.status = "selecting";
+      if (current.status === "detecting") {
+        current.status = "selecting";
+      }
       current.logs.push("[system] No listening ports detected. Enter a port manually or check logs.");
     }
     current.detectedPorts = [...ports].sort((a, b) => a - b);
