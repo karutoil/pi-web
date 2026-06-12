@@ -38,6 +38,7 @@ coverage/
 
 # Vite
 packages/client/.vite/
+.pi-web-version.json
 .pi/packages/client/vite.config.d.ts
 packages/client/vite.config.js
 packages/client/dist/

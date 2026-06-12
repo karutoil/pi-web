@@ -59,6 +59,8 @@ export interface VersionInfo {
   unavailable: boolean;
   /** ISO timestamp this snapshot was taken. */
   fetchedAt: string;
+  /** Remote URL used to refresh the behind count at runtime (optional). */
+  remoteUrl?: string;
 }
 
 export interface SessionDetail {

@@ -2,6 +2,9 @@
 node_modules
 dist
 build
+Dockerfile
+docker-compose.yml
+.pi-web-version.json
 .env
 .env.*
 *.db

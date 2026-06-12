@@ -1,7 +1,9 @@
 import { execFileSync } from "child_process";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, statSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { VersionInfo } from "@pi-web/shared";
+
+const BAKED_VERSION_FILE = ".pi-web-version.json";
 
 /**
  * Walks up from `start` looking for a directory that contains a `.git` entry
@@ -57,6 +59,23 @@ function runGit(cwd: string, ...args: string[]): GitRunResult {
 const DEFAULT_BRANCH = "main";
 
 /**
+ * Looks for a baked `.pi-web-version.json` in the given directory or any
+ * parent up to the filesystem root. This lets Docker images ship version
+ * metadata without copying the `.git` directory.
+ */
+function findBakedVersion(start: string = process.cwd()): string | null {
+  let dir = resolve(start);
+  for (let i = 0; i < 8; i++) {
+    const candidate = join(dir, BAKED_VERSION_FILE);
+    if (existsSync(candidate)) return candidate;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
+/**
  * Build a VersionInfo snapshot for the running server. Cheap reads; only
  * the optional `git fetch` touches the network and is bounded by a timeout
  * so a hung remote cannot block the response.
@@ -66,7 +85,6 @@ export function getVersionInfo(
   options: { fetch?: boolean; fetchTimeoutMs?: number } = {},
 ): VersionInfo {
   const now = () => new Date().toISOString();
-  const root = rootOverride ?? findGitRoot();
 
   const unavailable: VersionInfo = {
     commit: "—",
@@ -83,6 +101,55 @@ export function getVersionInfo(
     fetchedAt: now(),
   };
 
+  // Prefer baked version metadata (used by Docker images without .git)
+  const bakedPath = findBakedVersion(rootOverride ?? process.cwd());
+  if (bakedPath) {
+    try {
+      const raw = readFileSync(bakedPath, "utf-8");
+      const baked: VersionInfo = JSON.parse(raw);
+
+      // Optionally check whether origin is ahead of the baked commit.
+      if (
+        options.fetch !== false &&
+        baked.remoteUrl &&
+        baked.defaultBranch
+      ) {
+        try {
+          const timeout = options.fetchTimeoutMs ?? 1500;
+          const out = execFileSync(
+            "git",
+            ["ls-remote", baked.remoteUrl, `refs/heads/${baked.defaultBranch}`],
+            {
+              encoding: "utf-8",
+              stdio: ["pipe", "pipe", "pipe"],
+              timeout,
+            },
+          )
+            .toString()
+            .trim();
+          const remoteCommit = out.split(/\s+/)[0] || "";
+          const behind =
+            remoteCommit && remoteCommit !== baked.fullCommit ? 1 : 0;
+          const upToDate =
+            baked.hasRemote && !baked.dirty && baked.ahead === 0 && behind === 0;
+          return {
+            ...baked,
+            behind,
+            upToDate,
+            fetchedAt: now(),
+          };
+        } catch {
+          // network or git unavailable — use baked values as-is
+        }
+      }
+
+      return { ...baked, fetchedAt: now() };
+    } catch {
+      // fall through to live git
+    }
+  }
+
+  const root = rootOverride ?? findGitRoot();
   if (!root) return unavailable;
 
   // HEAD identity

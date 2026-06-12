@@ -15,12 +15,13 @@ COPY packages/shared/package.json packages/shared/
 # Install workspace dependencies
 RUN bun install
 
-# Mark /app as a safe directory for git so the version checker works
-# regardless of which user runs the container.
-RUN git config --system --add safe.directory /app
-
 # Copy full source (includes scripts/docker-entrypoint.sh)
 COPY . .
+
+# Bake version metadata so the image can report its git sync state without
+# shipping the entire .git directory in the final layer.
+RUN bun run scripts/bake-version.ts
+RUN rm -rf .git
 
 # Remove any workspace-level node_modules copied from the host.
 # Bun installs all dependencies into the root node_modules and resolves them
