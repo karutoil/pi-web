@@ -488,9 +488,9 @@ function CombinedToolBubble({
           {isDiffResult && (
             <div className="conversation-tool-body conversation-diff-panel">
               {detailsDiff ? (
-                <DiffRenderer content={detailsDiff} collapsible={false} />
+                <DiffRenderer key={detailsDiff} content={detailsDiff} collapsible={false} />
               ) : resultContent ? (
-                <DiffRenderer content={resultContent} collapsible={false} />
+                <DiffRenderer key={resultContent} content={resultContent} collapsible={false} />
               ) : null}
             </div>
           )}
@@ -577,7 +577,7 @@ function ToolResultBubble({ message }: { message: ChatMessage }) {
           <span className="conversation-tool-name">{message.toolName || "tool"} result</span>
           <span className="conversation-tool-status">(diff)</span>
         </div>
-        <DiffRenderer content={detailsDiff} collapsible={false} />
+        <DiffRenderer key={detailsDiff} content={detailsDiff} collapsible={false} />
       </div>
     );
   }
@@ -593,7 +593,7 @@ function ToolResultBubble({ message }: { message: ChatMessage }) {
             <span className="conversation-tool-status">(diff)</span>
           )}
         </div>
-        <DiffRenderer content={content} collapsible={false} />
+        <DiffRenderer key={content} content={content} collapsible={false} />
       </div>
     );
   }
@@ -729,7 +729,7 @@ function CodeBlock({ children, className, ...props }: CodeBlockProps) {
         >
           {copied ? "Copied!" : "Copy"}
         </button>
-        <DiffRenderer content={text} />
+        <DiffRenderer key={text} content={text} />
       </div>
     );
   }

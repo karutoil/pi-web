@@ -1,6 +1,13 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { FileTree, useFileTree, useFileTreeSearch } from "@pierre/trees/react";
 import type { GitStatusEntry } from "@pierre/trees";
+import CodeMirror from "@uiw/react-codemirror";
+import { vscodeDark, vscodeLight } from "@uiw/codemirror-theme-vscode";
+import { EditorView } from "@codemirror/view";
+import { LanguageDescription } from "@codemirror/language";
+import type { Extension } from "@codemirror/state";
+import { languages } from "@codemirror/language-data";
+import { useTheme } from "../hooks/useTheme";
 import { Icon } from "./Icon";
 
 // ─── Types ───
@@ -19,6 +26,17 @@ function joinPath(a: string, b: string) {
   return a.replace(/\/+$/, "") + "/" + b.replace(/^\/+/, "");
 }
 
+async function loadLanguageExtension(fileName: string): Promise<Extension> {
+  const desc = LanguageDescription.matchFilename(languages, fileName);
+  if (!desc) return [];
+  try {
+    const support = await desc.load();
+    return support;
+  } catch {
+    return [];
+  }
+}
+
 // ─── Code Editor ───
 
 function CodeEditor({ filePath, content, onSave, onClose, saveError }: {
@@ -31,14 +49,52 @@ function CodeEditor({ filePath, content, onSave, onClose, saveError }: {
   const [editContent, setEditContent] = useState(content);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [theme] = useTheme();
+
+  const chromeTheme = useMemo(() => {
+    return EditorView.theme({
+      "&": {
+        backgroundColor: "var(--files-bg)",
+        color: "var(--files-text)",
+        height: "100%",
+      },
+      ".cm-gutters": {
+        backgroundColor: "var(--files-bg)",
+        color: "var(--files-text-muted)",
+        borderRight: "1px solid var(--files-border)",
+      },
+      ".cm-activeLine": { backgroundColor: "var(--files-surface)" },
+      ".cm-activeLineGutter": { backgroundColor: "var(--files-surface)" },
+      ".cm-cursor": { borderLeftColor: "var(--files-accent)" },
+      ".cm-selectionBackground": {
+        backgroundColor: "color-mix(in srgb, var(--files-accent) 15%, transparent)",
+      },
+      "&.cm-focused .cm-selectionBackground": {
+        backgroundColor: "color-mix(in srgb, var(--files-accent) 25%, var(--files-surface))",
+      },
+      ".cm-scroller": { fontFamily: "var(--font-mono)" },
+    });
+  }, []);
+
+  const [extensions, setExtensions] = useState<Extension[]>([chromeTheme, theme === "dark" ? vscodeDark : vscodeLight]);
 
   useEffect(() => {
     setEditContent(content);
     setDirty(false);
   }, [content]);
 
-  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setEditContent(e.target.value);
+  useEffect(() => {
+    let active = true;
+    const base = [chromeTheme, theme === "dark" ? vscodeDark : vscodeLight];
+    setExtensions(base as Extension[]);
+    loadLanguageExtension(filePath).then((ext) => {
+      if (active) setExtensions([...base, ext].filter(Boolean) as Extension[]);
+    });
+    return () => { active = false; };
+  }, [filePath, chromeTheme, theme]);
+
+  const handleChange = useCallback((value: string) => {
+    setEditContent(value);
     setDirty(true);
   }, []);
 
@@ -69,7 +125,7 @@ function CodeEditor({ filePath, content, onSave, onClose, saveError }: {
   return (
     <div className="files-editor flex flex-col h-full" onKeyDown={handleEditorKeyDown}>
       <div className="files-editor-toolbar shrink-0">
-        <button type="button" onClick={onClose} className="files-panel-icon-button" aria-label="Back">
+        <button type="button" onClick={onClose} className="files-panel-icon-button" aria-label="Close editor">
           <Icon name="chevron-left" size={12} />
         </button>
         <span className="files-editor-path truncate">{fileName}</span>
@@ -92,16 +148,13 @@ function CodeEditor({ filePath, content, onSave, onClose, saveError }: {
         </div>
       )}
       <div className="files-editor-content flex-1 min-h-0 relative">
-        <textarea
+        <CodeMirror
           value={editContent}
+          height="100%"
+          extensions={extensions}
           onChange={handleChange}
-          className="files-editor-textarea"
-          spellCheck={false}
-          autoComplete="off"
-          autoCorrect="off"
-          autoCapitalize="off"
-          aria-label={`Editing ${fileName}`}
-          autoFocus
+          className="h-full"
+          basicSetup={{ lineNumbers: true, highlightActiveLineGutter: true, highlightActiveLine: true }}
         />
       </div>
     </div>
@@ -169,11 +222,20 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [diffContent, setDiffContent] = useState<string | null>(null);
   const [diffPath, setDiffPath] = useState<string | null>(null);
-  const [view, setView] = useState<"tree" | "editor" | "diff">("tree");
   const [gitStatusEntries, setGitStatusEntries] = useState<GitStatusEntry[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  // Fetch file tree
+  const [explorerWidth, setExplorerWidth] = useState<number>(() => {
+    try {
+      const v = localStorage.getItem("files-panel-explorer-width");
+      if (v) return Math.max(160, parseInt(v, 10) || 192);
+    } catch {}
+    return 192;
+  });
+  const explorerWidthRef = useRef(explorerWidth);
+  explorerWidthRef.current = explorerWidth;
+  const dragStateRef = useRef<{ startX: number; startWidth: number; panelWidth: number } | null>(null);
+
   const fetchFiles = useCallback(async () => {
     if (!cwd) return;
     setLoading(true);
@@ -191,28 +253,23 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
     } finally {
       setLoading(false);
     }
-  }, [cwd]);
+  }, [cwd, projectId]);
 
-  // Fetch git status
   const fetchGitStatus = useCallback(async () => {
     if (!cwd) return;
     try {
       const res = await fetch(`/api/git/status?cwd=${encodeURIComponent(cwd)}`);
       const data = await res.json();
-      if (data.staged || data.unstaged) {
-        const entries: GitStatusEntry[] = [];
-        for (const f of data.staged || []) {
-          const status = mapGitStatus(f.status);
-          if (status) entries.push({ path: f.path, status });
-        }
-        for (const f of data.unstaged || []) {
-          const status = mapGitStatus(f.status);
-          if (status) entries.push({ path: f.path, status });
-        }
-        setGitStatusEntries(entries);
-      } else {
-        setGitStatusEntries([]);
+      const entries: GitStatusEntry[] = [];
+      for (const f of data.staged || []) {
+        const status = mapGitStatus(f.status);
+        if (status) entries.push({ path: f.path, status });
       }
+      for (const f of data.unstaged || []) {
+        const status = mapGitStatus(f.status);
+        if (status) entries.push({ path: f.path, status });
+      }
+      setGitStatusEntries(entries);
     } catch {
       setGitStatusEntries([]);
     }
@@ -230,7 +287,6 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
     const fullPath = joinPath(cwd, relativePath);
     setSelectedFile(fullPath);
     setSaveError(null);
-    setView("editor");
     try {
       const res = await fetch(`/api/fs/read?path=${encodeURIComponent(fullPath)}&projectId=${encodeURIComponent(projectId)}`);
       const data = await res.json();
@@ -242,7 +298,7 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
     } catch (e: any) {
       setFileContent(`// Error loading file: ${e.message}`);
     }
-  }, [cwd]);
+  }, [cwd, projectId]);
 
   const handleSaveFile = useCallback(async (content: string) => {
     if (!selectedFile) return;
@@ -267,7 +323,6 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
   const handleViewDiff = useCallback(async (relativePath: string) => {
     const fullPath = joinPath(cwd, relativePath);
     setDiffPath(fullPath);
-    setView("diff");
     try {
       const res = await fetch(`/api/git/diff?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(relativePath)}`);
       const data = await res.json();
@@ -277,19 +332,14 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
     }
   }, [cwd]);
 
-  const handleBackToTree = useCallback(() => {
-    setView("tree");
-    setSelectedFile(null);
-    setFileContent(null);
-    setDiffContent(null);
-    setDiffPath(null);
-    setSaveError(null);
-  }, []);
-
   const handleRefresh = useCallback(() => {
     fetchFiles();
     fetchGitStatus();
-  }, [fetchFiles, fetchGitStatus]);
+    if (selectedFile) {
+      const relativePath = selectedFile.slice(cwd.length + 1);
+      handleFileSelect(relativePath);
+    }
+  }, [fetchFiles, fetchGitStatus, selectedFile, cwd, handleFileSelect]);
 
   // Keep callbacks in refs so the model's stale closure still calls current versions
   const handleFileSelectRef = useRef(handleFileSelect);
@@ -297,7 +347,6 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
   const handleViewDiffRef = useRef(handleViewDiff);
   handleViewDiffRef.current = handleViewDiff;
 
-  // Build the file tree model
   const { model } = useFileTree({
     paths: [],
     gitStatus: [],
@@ -312,46 +361,55 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
     },
   });
 
-  // Sync paths to model when they change
   useEffect(() => {
     model.resetPaths(paths);
   }, [model, paths]);
 
-  // Sync git status to model when it changes
   useEffect(() => {
     model.setGitStatus(gitStatusEntries);
   }, [model, gitStatusEntries]);
 
-  // Search state
   const search = useFileTreeSearch(model);
 
   const handlePanelKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === "p" && view === "tree") {
+    if ((e.metaKey || e.ctrlKey) && e.key === "p") {
       e.preventDefault();
       search.open();
     }
-  }, [view, search]);
+  }, [search]);
+
+  const treeStyle = useMemo(() => ({
+    ["--trees-bg-override" as string]: "var(--files-bg)",
+    ["--trees-fg-override" as string]: "var(--files-text)",
+    ["--trees-fg-muted-override" as string]: "var(--files-text-muted)",
+    ["--trees-border-color-override" as string]: "var(--files-border)",
+    ["--trees-bg-muted-override" as string]: "var(--files-surface)",
+    ["--trees-accent-override" as string]: "var(--files-accent)",
+    ["--trees-selected-fg-override" as string]: "var(--files-text)",
+    ["--trees-selected-bg-override" as string]: "var(--files-surface)",
+    ["--trees-selected-focused-border-color-override" as string]: "var(--files-accent)",
+    ["--trees-focus-ring-color-override" as string]: "var(--files-accent)",
+    ["--trees-search-bg-override" as string]: "var(--files-surface)",
+    ["--trees-search-fg-override" as string]: "var(--files-text)",
+    ["--trees-font-family-override" as string]: "var(--font-mono)",
+    ["--trees-status-added-override" as string]: "var(--color-teal-500)",
+    ["--trees-status-modified-override" as string]: "var(--color-amber-500)",
+    ["--trees-status-renamed-override" as string]: "var(--color-amber-500)",
+    ["--trees-status-deleted-override" as string]: "var(--color-rose-500)",
+    ["--trees-status-untracked-override" as string]: "var(--color-teal-500)",
+    ["--trees-status-ignored-override" as string]: "var(--files-text-muted)",
+  } as React.CSSProperties), []);
 
   if (!visible) return null;
 
   return (
     <div ref={panelRef} className="files-panel flex flex-col h-full outline-none" tabIndex={-1} onKeyDown={handlePanelKeyDown}>
-      {view === "editor" && selectedFile && fileContent !== null ? (
-        <CodeEditor
-          filePath={selectedFile}
-          content={fileContent}
-          onSave={handleSaveFile}
-          onClose={handleBackToTree}
-          saveError={saveError}
-        />
-      ) : view === "diff" && diffPath && diffContent !== null ? (
-        <DiffViewer
-          diff={diffContent}
-          path={diffPath}
-          onClose={handleBackToTree}
-        />
-      ) : (
-        <>
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        {/* File tree */}
+        <div
+          className="shrink-0 min-w-[160px] max-w-[60%] flex flex-col border-r border-ink-800"
+          style={{ width: explorerWidth }}
+        >
           <div className="files-panel-header shrink-0">
             <div className="files-panel-title-row">
               <span className="files-panel-title">Files</span>
@@ -381,7 +439,6 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
                 )}
               </div>
             </div>
-            {/* Search bar - shown when search is active */}
             {search.isOpen && (
               <div className="files-panel-search">
                 <input
@@ -430,6 +487,7 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
             ) : (
               <FileTree
                 model={model}
+                style={treeStyle}
                 renderContextMenu={(item, context) => {
                   if (item.kind === "file") {
                     return (
@@ -461,17 +519,75 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
               />
             )}
           </div>
+        </div>
 
-          {/* Context hint */}
-          {gitStatusEntries.length > 0 && (
-            <div className="files-panel-footer shrink-0">
-              <span className="files-panel-footer-text">
-                {gitStatusEntries.length} changed file{gitStatusEntries.length !== 1 ? "s" : ""}
-                {" · "}Right-click file → View diff
-              </span>
+        {/* Resizer */}
+        <div
+          className="w-1.5 shrink-0 cursor-col-resize touch-none bg-ink-900 hover:bg-ink-700 active:bg-ink-600 transition-colors z-10"
+          onPointerDown={(e) => {
+            const target = e.currentTarget;
+            target.setPointerCapture(e.pointerId);
+            dragStateRef.current = {
+              startX: e.clientX,
+              startWidth: explorerWidthRef.current,
+              panelWidth: panelRef.current?.clientWidth || 800,
+            };
+            document.body.style.cursor = "col-resize";
+            document.body.style.userSelect = "none";
+          }}
+          onPointerMove={(e) => {
+            if (!dragStateRef.current) return;
+            const dx = e.clientX - dragStateRef.current.startX;
+            const next = Math.min(
+              Math.max(dragStateRef.current.startWidth + dx, 160),
+              dragStateRef.current.panelWidth - 240
+            );
+            setExplorerWidth(next);
+          }}
+          onPointerUp={(e) => {
+            e.currentTarget.releasePointerCapture(e.pointerId);
+            dragStateRef.current = null;
+            document.body.style.cursor = "";
+            document.body.style.userSelect = "";
+            try {
+              localStorage.setItem("files-panel-explorer-width", String(explorerWidthRef.current));
+            } catch {}
+          }}
+        />
+
+        {/* Editor / diff */}
+        <div className="flex-1 min-w-0 relative flex flex-col overflow-hidden">
+          {selectedFile && fileContent !== null ? (
+            <CodeEditor
+              key={selectedFile}
+              filePath={selectedFile}
+              content={fileContent}
+              onSave={handleSaveFile}
+              onClose={() => { setSelectedFile(null); setFileContent(null); setSaveError(null); }}
+              saveError={saveError}
+            />
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center text-ink-500 text-xs select-none">
+              <Icon name="file" size={24} />
+              <span className="mt-2">Select a file to edit</span>
             </div>
           )}
-        </>
+
+          {diffContent !== null && diffPath && (
+            <div className="absolute inset-0 z-30 bg-ink-900">
+              <DiffViewer diff={diffContent} path={diffPath} onClose={() => setDiffContent(null)} />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {gitStatusEntries.length > 0 && (
+        <div className="files-panel-footer shrink-0">
+          <span className="files-panel-footer-text">
+            {gitStatusEntries.length} changed file{gitStatusEntries.length !== 1 ? "s" : ""}
+            {" · "}Right-click file → View diff
+          </span>
+        </div>
       )}
     </div>
   );
@@ -479,8 +595,7 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
 
 // ─── Helpers ───
 
-/** Map pi-web git status codes to @pierre/trees GitStatus */
-function mapGitStatus(status: string): "added" | "deleted" | "modified" | "renamed" | "untracked" | "ignored" | undefined {
+function mapGitStatus(status: string): GitStatusEntry["status"] | undefined {
   switch (status) {
     case "M": return "modified";
     case "R": return "renamed";

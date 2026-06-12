@@ -393,7 +393,7 @@ function StashViewModal({ stash, view, loading, error, tab, onTabChange, onClose
             <div className="git-stash-view-section-title">Edits</div>
             {view.diff ? (
               <div className="git-stash-view-modal-diff-scroll">
-                <DiffRenderer content={view.diff} collapsible={false} />
+                <DiffRenderer key={view.diff} content={view.diff} collapsible={false} />
               </div>
             ) : <div className="git-stash-view-empty">No patch available</div>}
           </div>

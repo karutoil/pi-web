@@ -1,6 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { DiffRenderer, isDiffContent } from '../components/DiffRenderer';
+
+// @pierre/diffs and @pierre/diffs/react are mocked in __tests__/setup.ts.
 
 // ─── Diff parsing logic ───
 
@@ -50,45 +52,48 @@ const SAMPLE_DIFF = `--- a/file.ts
    return <div />;
  }`;
 
+function getFileDiff() {
+  return screen.getByTestId('file-diff');
+}
+
 describe('DiffRenderer', () => {
   it('renders nothing for non-diff content', () => {
     const { container } = render(<DiffRenderer content="just some text" />);
     expect(container.innerHTML).toBe('');
   });
 
-  it('renders diff stats header', () => {
+  it('renders a FileDiff for the patch', () => {
     render(<DiffRenderer content={SAMPLE_DIFF} />);
-    expect(screen.getByText('+1')).toBeInTheDocument();
-    expect(screen.getByText('-1')).toBeInTheDocument();
+    expect(getFileDiff()).toBeInTheDocument();
   });
 
-  it('defaults to unified view', () => {
+  it('uses unified diff style by default', () => {
     render(<DiffRenderer content={SAMPLE_DIFF} />);
-    expect(screen.getByText('Unified').closest('button')).toHaveClass('bg-ink-800');
+    const options = JSON.parse(getFileDiff().getAttribute('data-options') || '{}');
+    expect(options.diffStyle).toBe('unified');
   });
 
-  it('switches to side-by-side view on click', () => {
-    render(<DiffRenderer content={SAMPLE_DIFF} />);
-    fireEvent.click(screen.getByText('Side-by-side'));
-    expect(screen.getByText('Side-by-side').closest('button')).toHaveClass('bg-ink-800');
+  it('can disable the file header', () => {
+    render(<DiffRenderer content={SAMPLE_DIFF} disableFileHeader />);
+    const options = JSON.parse(getFileDiff().getAttribute('data-options') || '{}');
+    expect(options.disableFileHeader).toBe(true);
   });
 
-  it('shows file meta lines', () => {
+  it('keeps the file header visible by default', () => {
     render(<DiffRenderer content={SAMPLE_DIFF} />);
-    expect(screen.getByText('--- a/file.ts')).toBeInTheDocument();
-    expect(screen.getByText('+++ b/file.ts')).toBeInTheDocument();
+    const options = JSON.parse(getFileDiff().getAttribute('data-options') || '{}');
+    expect(options.disableFileHeader).toBe(false);
   });
 
   // ─── Collapse / Expand ───
 
   it('collapses long diffs by default', () => {
-    // Build a diff with >20 rows
     const lines = ['--- a/f', '+++ b/f', '@@ -1,30 +1,30 @@'];
     for (let i = 0; i < 25; i++) lines.push(` context ${i}`);
     const longDiff = lines.join('\n');
 
     render(<DiffRenderer content={longDiff} collapsible={true} />);
-    expect(screen.getByText(/Show all \d+ changes/)).toBeInTheDocument();
+    expect(screen.getByText(/Show all \d+ lines/)).toBeInTheDocument();
   });
 
   it('expands on click', () => {
@@ -97,7 +102,7 @@ describe('DiffRenderer', () => {
     const longDiff = lines.join('\n');
 
     render(<DiffRenderer content={longDiff} collapsible={true} />);
-    fireEvent.click(screen.getByText(/Show all \d+ changes/));
+    fireEvent.click(screen.getByText(/Show all \d+ lines/));
     expect(screen.getByText('▲ Collapse')).toBeInTheDocument();
   });
 
@@ -110,18 +115,25 @@ describe('DiffRenderer', () => {
     expect(screen.queryByText(/Show all/)).not.toBeInTheDocument();
   });
 
-  // ─── Side-by-side pairing ───
+  it('renders one FileDiff per changed file', () => {
+    const multi = `diff --git a/a.ts b/a.ts
+--- a/a.ts
++++ b/a.ts
+@@ -1,1 +1,1 @@
+-a
++b
 
-  it('pairs adjacent remove+add in side-by-side view', () => {
-    const pairedDiff = `--- a/f
-+++ b/f
-@@ -1,3 +1,3 @@
--old line
-+new line
- context`;
-    const { container } = render(<DiffRenderer content={pairedDiff} />);
-    // Side-by-side should show both left (old) and right (new) columns
-    const rows = container.querySelectorAll('.flex.text-\\[0\\.72rem\\]');
-    expect(rows.length).toBeGreaterThan(0);
+diff --git a/b.ts b/b.ts
+--- a/b.ts
++++ b/b.ts
+@@ -1,1 +1,1 @@
+-c
++d
+`;
+    render(<DiffRenderer content={multi} />);
+    const files = screen.getAllByTestId('file-diff');
+    expect(files.length).toBe(2);
+    expect(files[0]).toHaveAttribute('data-filename', 'a.ts');
+    expect(files[1]).toHaveAttribute('data-filename', 'b.ts');
   });
 });

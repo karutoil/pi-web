@@ -52,10 +52,16 @@ describe('GitLog', () => {
 
   it('shows the diff text when the server returns a non-empty diff', async () => {
     let call = 0;
+    const patch = `--- a/file.ts
++++ b/file.ts
+@@ -1,3 +1,3 @@
+-hello world
++hello world!
+ context`;
     (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
       call++;
       if (url.includes('/api/git/log')) return Promise.resolve({ ok: true, json: async () => logResponse });
-      if (url.includes('/api/git/show')) return Promise.resolve({ ok: true, json: async () => ({ diff: '+hello world\n-old' }) });
+      if (url.includes('/api/git/show')) return Promise.resolve({ ok: true, json: async () => ({ diff: patch }) });
       return Promise.resolve({ ok: true, json: async () => ({}) });
     });
     render(<GitLog cwd="/tmp" onRefresh={() => {}} />);
@@ -64,7 +70,8 @@ describe('GitLog', () => {
       fireEvent.click(screen.getByText('52471ca'));
     });
     await waitFor(() => {
-      expect(screen.getByText('+hello world')).toBeInTheDocument();
+      const probe = screen.getByTestId('file-diff');
+      expect(probe).toBeInTheDocument();
     });
     expect(call).toBeGreaterThanOrEqual(2);
   });

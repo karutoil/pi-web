@@ -5,6 +5,7 @@ import { GitLog } from "./GitLog";
 import { GitBlame } from "./GitBlame";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { GitBranchSelector } from "./GitBranchSelector";
+import { DiffRenderer } from "./DiffRenderer";
 import { useResizable } from "../hooks/useResizable";
 
 // ─── Types ───
@@ -67,8 +68,6 @@ function DiffViewer({ diff, path, onClose, showBlame, showComparePrev }: {
     return () => window.removeEventListener("keydown", handler);
   }, [onClose]);
 
-  const lines = diff.split("\n");
-
   return (
     <div className="git-diff-viewer">
       <div className="git-diff-toolbar shrink-0">
@@ -84,20 +83,8 @@ function DiffViewer({ diff, path, onClose, showBlame, showComparePrev }: {
         )}
         <button onClick={onClose} className="git-panel-section-action">Back</button>
       </div>
-      <div className="git-diff-content custom-scrollbar">
-        {lines.map((line, i) => {
-          let kind = "plain";
-          if (line.startsWith("+++ ") || line.startsWith("--- ") || line.startsWith("diff ")) kind = "meta";
-          else if (line.startsWith("@@")) kind = "hunk";
-          else if (line.startsWith("+") && !line.startsWith("++")) kind = "add";
-          else if (line.startsWith("-") && !line.startsWith("--")) kind = "remove";
-
-          return (
-            <div key={i} className="git-diff-line" data-kind={kind}>
-              <span>{line}</span>
-            </div>
-          );
-        })}
+      <div className="git-diff-content">
+        <DiffRenderer key={diff} content={diff} collapsible={false} disableFileHeader />
       </div>
     </div>
   );

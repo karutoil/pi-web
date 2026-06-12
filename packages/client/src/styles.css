@@ -4876,7 +4876,6 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
 
 .diff-renderer {
   margin: 0.5rem 0;
-  overflow: hidden;
   border: 1px solid var(--workspace-seam);
   border-radius: 0.9rem;
   background: var(--workspace-panel);
@@ -8234,6 +8233,43 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
 
 .files-editor-textarea:focus {
   outline: none;
+}
+
+.files-editor-content .cm-editor {
+  height: 100%;
+  background-color: var(--files-bg) !important;
+  color: var(--files-text) !important;
+}
+
+.files-editor-content .cm-gutters {
+  background-color: var(--files-bg) !important;
+  color: var(--files-text-muted) !important;
+  border-right-color: var(--files-border) !important;
+}
+
+.files-editor-content .cm-activeLine,
+.files-editor-content .cm-activeLineGutter {
+  background-color: var(--files-surface) !important;
+}
+
+.files-editor-content .cm-cursor {
+  border-left-color: var(--files-accent) !important;
+}
+
+.files-editor-content .cm-selectionBackground {
+  background-color: color-mix(in srgb, var(--files-accent) 15%, transparent) !important;
+}
+
+.files-editor-content .cm-focused .cm-selectionBackground {
+  background-color: color-mix(in srgb, var(--files-accent) 25%, var(--files-surface)) !important;
+}
+
+.files-editor-content .cm-scroller {
+  overflow: auto;
+}
+
+.files-editor-content .cm-lineNumbers .cm-gutterElement {
+  color: var(--files-text-muted) !important;
 }
 
 /* ─── Files: Diff Viewer ─── */

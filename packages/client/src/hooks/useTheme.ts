@@ -17,13 +17,48 @@ function apply(theme: Theme) {
   try { localStorage.setItem(STORAGE_KEY, theme); } catch {}
 }
 
-export function useTheme(): [Theme, () => void] {
-  const [theme, setTheme] = useState<Theme>(getStored);
+// Singleton theme state so every useTheme consumer updates together.
+let currentTheme: Theme = getStored();
+const listeners = new Set<(theme: Theme) => void>();
 
-  useLayoutEffect(() => { apply(theme); }, [theme]);
+function emit(theme: Theme) {
+  listeners.forEach((l) => l(theme));
+}
+
+apply(currentTheme);
+
+export function useTheme(): [Theme, () => void] {
+  const [theme, setTheme] = useState<Theme>(currentTheme);
+
+  useLayoutEffect(() => {
+    const update = (t: Theme) => setTheme(t);
+    listeners.add(update);
+    // Listen for changes from other tabs.
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== STORAGE_KEY) return;
+      const next = e.newValue;
+      if (next === "light" || next === "dark") {
+        currentTheme = next;
+        apply(next);
+        emit(next);
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      listeners.delete(update);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    apply(theme);
+  }, [theme]);
 
   const toggle = useCallback(() => {
-    setTheme(t => (t === "light" ? "dark" : "light"));
+    const next = currentTheme === "light" ? "dark" : "light";
+    currentTheme = next;
+    apply(next);
+    emit(next);
   }, []);
 
   return [theme, toggle];

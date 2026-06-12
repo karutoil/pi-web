@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Icon } from "./Icon";
+import { DiffRenderer, isDiffContent } from "./DiffRenderer";
 import { ContextMenuPortal, ContextMenuItem, ContextMenuDivider, useLongPress } from "./ContextMenu";
 
 // ─── Types ───
@@ -94,7 +95,7 @@ function CommitDiffViewer({ diff, hash, onClose }: { diff: string; hash: string;
     !diff ||
     diff.trim() === "" ||
     diff.trim() === "(no diff for this commit)";
-  const lines = isEmpty ? [] : diff.split("\n");
+  const isError = diff?.startsWith("Error:") || diff?.startsWith("Failed");
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -115,31 +116,18 @@ function CommitDiffViewer({ diff, hash, onClose }: { diff: string; hash: string;
         <span className="flex-1" />
         <button onClick={onClose} className="px-2.5 py-1 text-xs text-ink-400 hover:text-ink-200 bg-ink-800/40 hover:bg-ink-800/60 rounded transition-theme">Back</button>
       </div>
-      <div className="flex-1 overflow-y-auto overflow-x-auto custom-scrollbar font-mono text-xs leading-5 bg-ink-950">
+      <div className="flex-1 min-h-0 overflow-auto custom-scrollbar bg-ink-950">
         {isEmpty ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-6 py-12 gap-1">
-            <span className="text-ink-400 text-xs font-mono">{diff?.startsWith("Error:") || diff?.startsWith("Failed") ? diff : "No diff for this commit"}</span>
-            {!diff?.startsWith("Error:") && !diff?.startsWith("Failed") && (
+            <span className="text-ink-400 text-xs font-mono">{isError ? diff : "No diff for this commit"}</span>
+            {!isError && (
               <span className="text-ink-500 text-[0.65rem] font-mono">This commit has no file changes.</span>
             )}
           </div>
+        ) : isDiffContent(diff) ? (
+          <DiffRenderer key={diff} content={diff} collapsible={false} />
         ) : (
-          lines.map((line, i) => {
-            let cls = "text-ink-400";
-            if (line.startsWith("+++ ") || line.startsWith("--- ") || line.startsWith("diff ")) cls = "text-amber-500 font-bold";
-            else if (line.startsWith("@@")) cls = "text-sky-400/60";
-            else if (line.startsWith("+")) cls = "text-emerald-400";
-            else if (line.startsWith("-")) cls = "text-rose-400";
-            else if (line.startsWith("commit ")) cls = "text-amber-500/60";
-            else if (line.startsWith("Author: ")) cls = "text-ink-300";
-            else if (line.startsWith("Date: ")) cls = "text-ink-400";
-
-            return (
-              <div key={i} className={`px-3 whitespace-pre ${line.startsWith("+") && !line.startsWith("++") ? "bg-emerald-500/5" : line.startsWith("-") && !line.startsWith("--") ? "bg-rose-500/5" : ""}`}>
-                <span className={cls}>{line}</span>
-              </div>
-            );
-          })
+          <pre className="h-full overflow-auto custom-scrollbar p-3 text-ink-400 text-xs font-mono whitespace-pre-wrap">{diff}</pre>
         )}
       </div>
     </div>
