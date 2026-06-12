@@ -8,18 +8,20 @@
   ],
   "scripts": {
     "dev": "concurrently -n server,client -c blue,green \"bun run dev:server\" \"bun run dev:client\"",
-    "dev:server": "PORT=3069 bun run --cwd packages/server dev",
-    "dev:client": "CLIENT_PORT=3070 bun run --cwd packages/client dev",
+    "dev:server": "cross-env PORT=3069 bun run --cwd packages/server dev",
+    "dev:client": "cross-env CLIENT_PORT=3070 bun run --cwd packages/client dev",
     "build": "tsc -b && bun run --cwd packages/client build",
-    "start": "concurrently -n server,client -c blue,green \"PORT=3068 bun run dev:server\" \"SERVER_PORT=3068 CLIENT_PORT=3071 bun run dev:client\"",
+    "start": "concurrently -n server,client -c blue,green \"cross-env PORT=3068 bun run dev:server\" \"cross-env SERVER_PORT=3068 CLIENT_PORT=3071 bun run dev:client\"",
     "start:prod": "bun run --cwd packages/server start",
     "generate-icons": "bun run --cwd packages/client generate-icons",
     "docker:build": "docker build -t pi-web .",
-    "docker:start": "./scripts/docker-start.sh"
+    "docker:start": "./scripts/docker-start.sh",
+    "docker:start:win": "pwsh -ExecutionPolicy Bypass -File scripts/docker-start.ps1"
   },
   "devDependencies": {
     "@types/bun": "^1.2.0",
     "concurrently": "^9.2.1",
+    "cross-env": "^7.0.3",
     "typescript": "^5.7.0"
   }
 }

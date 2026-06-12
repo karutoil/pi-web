@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { gitShowCommit } from "./pi-git";
@@ -27,7 +27,7 @@ function makeRepo(): string {
   run(["config", "commit.gpgsign", "false"]);
   // Two commits so the second has a real diff
   execFileSync("git", ["commit", "--allow-empty", "-q", "-m", "init"], { cwd: dir });
-  execFileSync("sh", ["-c", "echo hello > file.txt"], { cwd: dir });
+  writeFileSync(join(dir, "file.txt"), "hello\n");
   run(["add", "file.txt"]);
   run(["commit", "-q", "-m", "add file"]);
   return dir;

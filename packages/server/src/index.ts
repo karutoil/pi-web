@@ -2,10 +2,10 @@ import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { createBunWebSocket } from "hono/bun";
 import type { ServerWebSocket } from "bun";
-import { join, basename, resolve, normalize } from "node:path";
+import { join, basename, resolve, normalize, relative, isAbsolute, delimiter } from "node:path";
 import { existsSync, statSync, lstatSync, readdirSync, realpathSync } from "node:fs";
 import { readdir, stat, readFile, writeFile, unlink, rename as renameFs } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, platform } from "node:os";
 
 import { addProject, removeProject, listProjects, getProject, touchProject, getLayout, saveLayout, deleteLayout } from "./db";
 import { listProjectSessions, getSessionDetail } from "./pi-sessions";
@@ -61,6 +61,14 @@ function getSessionRoots(projectPath?: string): string[] {
   return roots;
 }
 
+/** Returns true when `child` is inside `parent`, robust across platforms. */
+function isInside(parent: string, child: string): boolean {
+  const rel = relative(parent, child);
+  if (!rel) return true;
+  const first = rel.split(/[/\\]/)[0];
+  return first !== ".." && !isAbsolute(rel);
+}
+
 /**
  * Validates that a user-provided path resolves to a location inside one of
  * the allowed session roots. Returns the resolved safe path or throws.
@@ -81,7 +89,7 @@ function validateSessionPath(userPath: string, projectPath?: string): string {
   // Verify the real path is inside at least one allowed root
   const insideRoot = roots.some(root => {
     const realRoot = realpathSync(root);
-    return realPath.startsWith(realRoot + "/") || realPath === realRoot;
+    return isInside(realRoot, realPath) || realPath === realRoot;
   });
 
   if (!insideRoot) {
@@ -108,7 +116,7 @@ function validateBrowsePath(dir: string): string {
     // Path doesn't exist yet — still check the resolved path
     realDir = resolved;
   }
-  if (!realDir.startsWith(realHome + "/") && realDir !== realHome) {
+  if (!isInside(realHome, realDir) && realDir !== realHome) {
     throw new Error("Directory is outside allowed browse scope");
   }
   return resolved;
@@ -227,11 +235,11 @@ app.get("/api/projects", async (c) => {
 app.post("/api/projects", async (c) => {
   const body = await c.req.json();
   const { path, name } = body;
-  
+
   if (!path || typeof path !== "string") {
     return c.json({ error: "Path is required" }, 400);
   }
-  
+
   // Verify path exists and is a directory
   if (!existsSync(path)) {
     return c.json({ error: "Directory does not exist" }, 400);
@@ -239,7 +247,7 @@ app.post("/api/projects", async (c) => {
   if (!statSync(path).isDirectory()) {
     return c.json({ error: "Path is not a directory" }, 400);
   }
-  
+
   const dirName = name || basename(path);
   try {
     const project = addProject(dirName, path);
@@ -344,16 +352,17 @@ app.patch("/api/sessions/rename", async (c) => {
   }
 });
 
-// Browse filesystem directories (#42: validate against home dir)
+// Browse filesystem directories (used by directory pickers; not restricted to home)
 app.get("/api/fs/browse", async (c) => {
   let dir = c.req.query("dir") || homedir();
   // Expand ~ to home directory
-  if (dir.startsWith("~")) dir = homedir() + dir.slice(1);
+  if (dir.startsWith("~")) dir = join(homedir(), dir.slice(1));
 
-  try {
-    dir = validateBrowsePath(dir);
-  } catch (e: any) {
-    return c.json({ error: e.message }, 403);
+  dir = resolve(normalize(dir));
+
+  function parentOf(d: string): string | null {
+    const p = resolve(join(d, ".."));
+    return p === resolve(d) ? null : p;
   }
 
   try {
@@ -373,14 +382,14 @@ app.get("/api/fs/browse", async (c) => {
 
     return c.json({
       currentPath: dir,
-      parentPath: dir === "/" ? null : join(dir, ".."),
+      parentPath: parentOf(dir),
       items,
     });
   } catch (e: any) {
     // If we can't read the dir (permissions), return empty with error
     return c.json({
       currentPath: dir,
-      parentPath: dir === "/" ? null : join(dir, ".."),
+      parentPath: parentOf(dir),
       items: [],
       error: e.code === "EACCES" ? "Permission denied" : e.message,
     });
@@ -401,8 +410,8 @@ app.get("/api/fs/list", async (c) => {
     if (!project) return c.json({ error: "Project not found" }, 404);
     const projectBase = realpathSync(project.path);
 
-    const safeDir = validateBrowsePath(dir.startsWith("~") ? homedir() + dir.slice(1) : dir);
-    if (!safeDir.startsWith(projectBase + "/") && safeDir !== projectBase) {
+    const safeDir = validateBrowsePath(dir.startsWith("~") ? join(homedir(), dir.slice(1)) : dir);
+    if (!isInside(projectBase, safeDir)) {
       return c.json({ error: "Path is outside project directory" }, 403);
     }
 
@@ -460,8 +469,8 @@ app.get("/api/fs/read", async (c) => {
     if (!project) return c.json({ error: "Project not found" }, 404);
     const projectBase = realpathSync(project.path);
 
-    const safePath = validateBrowsePath(filePath.startsWith("~") ? homedir() + filePath.slice(1) : filePath);
-    if (!safePath.startsWith(projectBase + "/") && safePath !== projectBase) {
+    const safePath = validateBrowsePath(filePath.startsWith("~") ? join(homedir(), filePath.slice(1)) : filePath);
+    if (!isInside(projectBase, safePath)) {
       return c.json({ error: "Path is outside project directory" }, 403);
     }
     if (!existsSync(safePath)) return c.json({ error: "File not found" }, 404);
@@ -500,15 +509,15 @@ app.put("/api/fs/write", async (c) => {
 
     // Resolve robustly: relative paths are resolved under the project root;
     // absolute paths are resolved as-is.
-    const normalizedFilePath = filePath.startsWith("~") ? homedir() + filePath.slice(1) : filePath;
-    const targetResolved = filePath.startsWith("/")
+    const normalizedFilePath = filePath.startsWith("~") ? join(homedir(), filePath.slice(1)) : filePath;
+    const targetResolved = isAbsolute(filePath)
       ? resolve(normalize(normalizedFilePath))
       : resolve(projectBase, normalize(normalizedFilePath));
 
     // Harden against symlinks: when target exists, ensure its real path stays
     // inside the project. Whether it exists or not, its parent must be inside.
     const targetRealParent = realpathSync(join(targetResolved, ".."));
-    if (!targetRealParent.startsWith(projectBase + "/") && targetRealParent !== projectBase) {
+    if (!isInside(projectBase, targetRealParent)) {
       return c.json({ error: "Path is outside project directory" }, 403);
     }
 
@@ -520,7 +529,7 @@ app.put("/api/fs/write", async (c) => {
     try { targetLstat = lstatSync(targetResolved); } catch { targetLstat = null; }
     if (targetLstat) {
       const targetReal = realpathSync(targetResolved);
-      if (!targetReal.startsWith(projectBase + "/") && targetReal !== projectBase) {
+      if (!isInside(projectBase, targetReal)) {
         return c.json({ error: "Path resolves outside project directory" }, 403);
       }
       if (targetLstat.isDirectory()) return c.json({ error: "Cannot overwrite a directory" }, 400);
@@ -891,16 +900,17 @@ app.post("/api/git/generate-commit", async (c) => {
   if (model) args.push("--model", model);
   args.push(prompt);
 
-  const home = process.env.HOME || process.env.USERPROFILE || "/root";
+  const home = process.env.HOME || process.env.USERPROFILE || homedir();
   const envPath = [
     join(home, ".bun/bin"),
     join(home, ".nvm/versions/node/v22.22.2/bin"),
-    "/usr/local/bin", "/usr/bin", "/bin",
+    ...(platform() === "win32" ? [] : ["/usr/local/bin", "/usr/bin", "/bin"]),
     process.env.PATH || "",
-  ].join(":");
+  ].join(delimiter);
 
+  const piBin = platform() === "win32" ? "pi.cmd" : "pi";
   try {
-    const proc = Bun.spawn(["pi", ...args], {
+    const proc = Bun.spawn([piBin, ...args], {
       cwd,
       stdout: "pipe",
       stderr: "pipe",
@@ -951,13 +961,13 @@ app.get("/api/fs/search-files", (c) => {
   if (!dir) return c.json({ error: "dir query required" }, 400);
 
   try {
-    const safeDir = validateBrowsePath(dir.startsWith("~") ? homedir() + dir.slice(1) : dir);
+    const safeDir = validateBrowsePath(dir.startsWith("~") ? join(homedir(), dir.slice(1)) : dir);
   } catch (e: any) {
     return c.json({ error: e.message }, 403);
   }
 
   const safeDir = (() => {
-    try { return validateBrowsePath(dir.startsWith("~") ? homedir() + dir.slice(1) : dir); }
+    try { return validateBrowsePath(dir.startsWith("~") ? join(homedir(), dir.slice(1)) : dir); }
     catch (e: any) { return null; }
   })();
   if (!safeDir) return c.json({ error: "Directory not allowed" }, 403);

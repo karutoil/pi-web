@@ -84,7 +84,8 @@ export function createTerminal(id: string, projectId: string, cwd: string, name:
     return existing.info;
   }
 
-  const pty = spawn(process.env.SHELL || "/bin/bash", [], {
+  const shell = process.platform === "win32" ? (process.env.COMSPEC || "cmd.exe") : (process.env.SHELL || "/bin/bash");
+  const pty = spawn(shell, [], {
     name: "xterm-256color",
     cols: 80,
     rows: 24,

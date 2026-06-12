@@ -15,5 +15,6 @@
     { "path": "packages/server" },
     { "path": "packages/client" }
   ],
+  "include": [],
   "exclude": ["node_modules", "dist"]
 }

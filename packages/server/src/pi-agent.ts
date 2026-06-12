@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
+import { platform, homedir } from "node:os";
 import type { WSServerMessage } from "@pi-web/shared";
 import type { ServerWebSocket } from "bun";
 
@@ -326,17 +327,19 @@ class PIAgent {
     if (this.options.model) args.push("--model", this.options.model);
 
     // #88: Use process.env.HOME for envPath instead of hardcoded paths
-    const home = process.env.HOME || process.env.USERPROFILE || "/root";
+    const home = process.env.HOME || process.env.USERPROFILE || homedir();
     const envPath = [
       join(home, ".bun/bin"),
       join(home, ".nvm/versions/node/v22.22.2/bin"),
-      "/usr/local/bin", "/usr/bin", "/bin",
+      ...(platform() === "win32" ? [] : ["/usr/local/bin", "/usr/bin", "/bin"]),
       process.env.PATH || "",
-    ].join(":");
+    ].join(delimiter);
+
+    const piBin = platform() === "win32" ? "pi.cmd" : "pi";
 
     return new Promise<void>((resolve, reject) => {
       try {
-        this.proc = spawn("pi", args, {
+        this.proc = spawn(piBin, args, {
           cwd: this.options.cwd,
           stdio: ["pipe", "pipe", "pipe"],
           env: { ...process.env, PATH: envPath },

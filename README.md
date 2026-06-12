@@ -51,6 +51,15 @@ cd client && bun run build && cd ..
 bun run server/index.ts
 ```
 
+## Windows development notes
+
+The cross-platform source runs natively on Windows with Bun. A few host-side workflows remain Unix-oriented:
+
+- **`bun run build`, `bun run dev`, `bun run test` in `packages/server`** work directly on Windows.
+- **Git features** require Git for Windows (or WSL) so the `git` CLI is on `PATH`.
+- **`bun run docker:start`** runs a bash script; native Windows users should use **`bun run docker:start:win`** instead (PowerShell 7+, Docker Desktop).
+- **`test-all.sh`** is a bash integration test script; run it under WSL/Git Bash on Windows.
+
 ## Architecture
 
 ```

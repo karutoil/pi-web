@@ -1,6 +1,6 @@
 import { readdir, stat, readFile, writeFile, mkdir, rename } from "node:fs/promises";
 import { join, basename, resolve, normalize } from "node:path";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import type { SessionSummary, SessionDetail, SessionEntry, ChatMessage } from "@pi-web/shared";
 
 // ─── Index Cache ───
@@ -21,7 +21,7 @@ interface SessionIndex {
 const INDEX_VERSION = 1;
 
 function getIndexDir(): string {
-  const home = process.env.HOME || process.env.USERPROFILE || "/tmp";
+  const home = process.env.HOME || process.env.USERPROFILE || tmpdir();
   return join(home, ".pi-web", "indexes");
 }
 
@@ -59,7 +59,7 @@ async function saveIndex(projectPath: string, index: SessionIndex): Promise<void
 // ─── List Sessions (with index cache) ───
 
 export async function listProjectSessions(projectPath: string): Promise<SessionSummary[]> {
-  const home = process.env.HOME || process.env.USERPROFILE || "/tmp";
+  const home = process.env.HOME || process.env.USERPROFILE || tmpdir();
   const sanitized = sanitizePath(projectPath);
   const sessionDir = join(home, ".pi", "agent", "sessions", sanitized);
   const localSessionDir = join(projectPath, ".pi", "sessions");
@@ -338,7 +338,7 @@ function findSessionName(entries: any[]): string | null {
 function sanitizePath(p: string): string {
   // #86: Normalize to absolute path before sanitizing
   const abs = resolve(normalize(p));
-  let s = abs.replace(/^\//, "").replace(/\/$/, "");
-  s = s.replace(/\//g, "-");
+  let s = abs.replace(/^[\\/]/, "").replace(/[\\/]$/, "");
+  s = s.replace(/[\\/:]/g, "-");
   return `--${s || "root"}--`;
 }

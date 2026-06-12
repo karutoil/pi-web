@@ -19,7 +19,7 @@ import { execSync } from "node:child_process";
 import { join } from "node:path";
 import { readFile, writeFile, unlink } from "node:fs/promises";
 import { existsSync, statSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, platform } from "node:os";
 import treeKill from "tree-kill";
 import isPortReachable from "is-port-reachable";
 import getPort from "get-port";
@@ -109,24 +109,48 @@ function detectFramework(cwd: string): FrameworkConfig | null {
 
 // ─── Port scanning ───
 
+/** Platform-aware shell for running command strings. */
+function getPlatformShell(): { shell: string; flag: string } {
+  if (platform() === "win32") {
+    return { shell: process.env.COMSPEC || "cmd.exe", flag: "/c" };
+  }
+  return { shell: process.env.SHELL || "/bin/bash", flag: "-c" };
+}
+
 /**
  * Get all currently listening TCP ports (system-wide).
  * Used for before/after diffing to detect newly opened ports after process spawn.
  */
 function allListeningPorts(): Set<number> {
   const ports = new Set<number>();
+  const isWindows = platform() === "win32";
   try {
-    const out = execSync(`lsof -iTCP -sTCP:LISTEN -P -n 2>/dev/null || ss -tlnp 2>/dev/null || true`, {
-      encoding: "utf-8",
-      timeout: 3000,
-    });
+    let out = "";
+    if (isWindows) {
+      out = execSync("netstat -ano", { encoding: "utf-8", timeout: 5000 });
+    } else {
+      out = execSync(`lsof -iTCP -sTCP:LISTEN -P -n 2>/dev/null || ss -tlnp 2>/dev/null || true`, {
+        encoding: "utf-8",
+        timeout: 3000,
+      });
+    }
     const lines = out.trim().split("\n").filter(Boolean);
     for (const line of lines) {
-      // Match either lsof format (*:PORT) or ss format (IP:PORT)
-      const m = line.match(/:(\d+)(?:\s|$)/);
-      if (m) {
-        const p = parseInt(m[1], 10);
-        if (!isNaN(p) && p > 0 && p < 65536) ports.add(p);
+      if (isWindows) {
+        // netstat -ano: "TCP    0.0.0.0:135    0.0.0.0:0    LISTENING    892"
+        if (!line.toLowerCase().includes("listening")) continue;
+        const m = line.match(/:(\d+)(?:\s|$)/);
+        if (m) {
+          const p = parseInt(m[1], 10);
+          if (!isNaN(p) && p > 0 && p < 65536) ports.add(p);
+        }
+      } else {
+        // Match either lsof format (*:PORT) or ss format (IP:PORT)
+        const m = line.match(/:(\d+)(?:\s|$)/);
+        if (m) {
+          const p = parseInt(m[1], 10);
+          if (!isNaN(p) && p > 0 && p < 65536) ports.add(p);
+        }
       }
     }
   } catch { /* ignore */ }
@@ -272,9 +296,9 @@ export async function startPreview(opts: {
   const preSpawnPorts = allListeningPorts();
 
   // Spawn the dev server
-  const shell = process.env.SHELL || "/bin/bash";
+  const sh = getPlatformShell();
   const proc = spawn({
-    cmd: [shell, "-c", command],
+    cmd: [sh.shell, sh.flag, command],
     cwd: opts.cwd,
     env: { ...process.env, PORT: String(port) },
     stdout: "pipe",
