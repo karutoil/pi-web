@@ -20,5 +20,3 @@ scout-*.md
 .idea/
 *.swp
 Thumbs.db
-docker-compose.yml
-Dockerfile
