@@ -18,6 +18,11 @@ RUN bun install
 # Copy full source (includes scripts/docker-entrypoint.sh)
 COPY . .
 
+# Remove any workspace-level node_modules copied from the host.
+# Bun installs all dependencies into the root node_modules and resolves them
+# from there; stale per-package symlinks cause ENOENT on some Bun versions.
+RUN rm -rf packages/*/node_modules
+
 # Build shared types and client dist
 RUN bun run build
 
