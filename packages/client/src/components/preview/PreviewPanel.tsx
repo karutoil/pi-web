@@ -218,6 +218,7 @@ export function PreviewPanel({
   const isDetecting = preview?.status === "detecting";
   const isSelecting = preview?.status === "selecting";
   const isStarting = preview?.status === "starting";
+  const showPortSelector = isDetecting || isSelecting || (starting && !preview);
 
   return (
     <div
@@ -303,7 +304,7 @@ export function PreviewPanel({
         {/* ── Idle / Detecting state (also shown when stopped) ── */}
         {(!preview || preview.status === "stopped" || isDetecting || isSelecting) && (
           <div className="preview-empty-state">
-            {!isDetecting ? (
+            {!showPortSelector ? (
               /* ── Truly idle: show Start button + manual port/URL input ── */
               <>
                 <div className="flex flex-col items-center gap-3">
