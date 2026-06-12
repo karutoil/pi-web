@@ -256,6 +256,27 @@ export function listeningPortsForPids(pids: number[]): Set<number> {
   }
 }
 
+function parseProcNetTcp(path: string): Set<number> {
+  const ports = new Set<number>();
+  try {
+    for (const line of readFileSync(path, "utf-8").split("\n")) {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length < 4 || parts[0] === "sl") continue;
+      // state 0x0A = TCP_LISTEN
+      const state = parseInt(parts[3], 16);
+      if (state !== 0x0a) continue;
+      const local = parts[1];
+      const colon = local.lastIndexOf(":");
+      if (colon === -1) continue;
+      const port = parseInt(local.slice(colon + 1), 16);
+      if (!isNaN(port) && port > 0 && port < 65536) ports.add(port);
+    }
+  } catch {
+    // ignore read/parse errors
+  }
+  return ports;
+}
+
 /**
  * Returns all listening TCP ports on the system. Used for snapshot-diff
  * fallback when process-tree scanning misses a port.
@@ -274,20 +295,27 @@ export function allListeningPorts(): Set<number> {
       ).toString();
       return parseLsofPorts(out);
     } catch {
-      const out = execFileSync("ss", ["-tln"], {
-        encoding: "utf-8",
-        timeout: 3000,
-        stdio: ["pipe", "pipe", "pipe"],
-      }).toString();
-      const ports = new Set<number>();
-      for (const line of out.split("\n")) {
-        const m = line.match(/:(\d+)(?:\s|$)/);
-        if (m) {
-          const p = parseInt(m[1], 10);
-          if (!isNaN(p) && p > 0 && p < 65536) ports.add(p);
+      try {
+        const out = execFileSync("ss", ["-tln"], {
+          encoding: "utf-8",
+          timeout: 3000,
+          stdio: ["pipe", "pipe", "pipe"],
+        }).toString();
+        const ports = new Set<number>();
+        for (const line of out.split("\n")) {
+          const m = line.match(/:(\d+)(?:\s|$)/);
+          if (m) {
+            const p = parseInt(m[1], 10);
+            if (!isNaN(p) && p > 0 && p < 65536) ports.add(p);
+          }
         }
+        return ports;
+      } catch {
+        // Last resort: parse /proc/net/tcp and /proc/net/tcp6 directly.
+        const ports = parseProcNetTcp("/proc/net/tcp");
+        for (const p of parseProcNetTcp("/proc/net/tcp6")) ports.add(p);
+        return ports;
       }
-      return ports;
     }
   } catch {
     return new Set<number>();
