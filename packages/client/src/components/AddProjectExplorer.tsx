@@ -35,7 +35,7 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
   const listRef = useRef<HTMLDivElement>(null);
   const pathInputRef = useRef<HTMLInputElement>(null);
 
-  const browse = useCallback(async (dir: string) => {
+  const browse = useCallback(async (dir: string, opts?: { select?: boolean }) => {
     setLoading(true);
     setError(null);
     setSelectedPath(null);
@@ -52,6 +52,12 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
         setCurrentPath(data.currentPath);
         setPathInput(data.currentPath);
         setParentPath(data.parentPath);
+        if (opts?.select) {
+          const name = data.currentPath.split(/[\\/]/).filter(Boolean).pop() || "";
+          setSelectedPath(data.currentPath);
+          setSelectedName(name);
+          setDisplayName(prev => prev || name);
+        }
       }
     } catch {
       setError("Failed to browse directory");
@@ -89,7 +95,7 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
     e.preventDefault();
     const trimmed = pathInput.trim();
     if (trimmed) {
-      browse(trimmed);
+      browse(trimmed, { select: true });
     }
   }, [pathInput, browse]);
 
