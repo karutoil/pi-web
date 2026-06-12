@@ -395,7 +395,7 @@ export interface SaveLayoutRequest {
 
 // ─── Preview types ───
 
-export type PreviewStatus = "detecting" | "starting" | "running" | "crashed" | "stopped";
+export type PreviewStatus = "detecting" | "selecting" | "starting" | "running" | "crashed" | "stopped";
 
 export interface PreviewInfo {
   id: string;

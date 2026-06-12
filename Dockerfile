@@ -1,7 +1,7 @@
 FROM oven/bun:1.2
 
 # Install git and bash for pi agents and terminals
-RUN apt-get update && apt-get install -y git bash && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y git bash lsof procps iproute2 && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

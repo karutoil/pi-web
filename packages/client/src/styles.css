@@ -6031,6 +6031,12 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   color: var(--workspace-brass);
 }
 
+.preview-status-badge[data-status="selecting"] {
+  border-color: color-mix(in srgb, var(--workspace-blueprint) 30%, transparent);
+  background: color-mix(in srgb, var(--workspace-blueprint) 9%, transparent);
+  color: var(--workspace-blueprint);
+}
+
 .preview-status-badge[data-status="crashed"] {
   border-color: color-mix(in srgb, var(--workspace-rust) 30%, transparent);
   background: color-mix(in srgb, var(--workspace-rust) 9%, transparent);

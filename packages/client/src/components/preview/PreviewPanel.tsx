@@ -215,8 +215,9 @@ export function PreviewPanel({
   }
 
   const isRunning = preview?.status === "running";
-  const isDetecting = preview?.status === "detecting" || (starting && !preview);
-  const isStarting = preview?.status === "starting" || (starting && preview?.status === "detecting");
+  const isDetecting = preview?.status === "detecting";
+  const isSelecting = preview?.status === "selecting";
+  const isStarting = preview?.status === "starting";
 
   return (
     <div
@@ -269,6 +270,12 @@ export function PreviewPanel({
                 Starting
               </span>
             )}
+            {isSelecting && (
+              <span className="preview-status-badge" data-status="selecting">
+                <span className="preview-status-dot" />
+                Select Port
+              </span>
+            )}
             {preview?.status === "crashed" && (
               <span className="preview-status-badge" data-status="crashed">
                 <span className="preview-status-dot" />
@@ -294,7 +301,7 @@ export function PreviewPanel({
       <div className="preview-panel-content">
 
         {/* ── Idle / Detecting state (also shown when stopped) ── */}
-        {(!preview || preview.status === "stopped" || isDetecting) && (
+        {(!preview || preview.status === "stopped" || isDetecting || isSelecting) && (
           <div className="preview-empty-state">
             {!isDetecting ? (
               /* ── Truly idle: show Start button + manual port/URL input ── */
@@ -404,17 +411,21 @@ export function PreviewPanel({
                 )}
               </>
             ) : (
-              /* ── Detecting: spinner + detected ports ── */
+              /* ── Detecting / selecting: spinner + detected ports ── */
               <>
-                <div className="preview-start-spinner" />
+                {isDetecting && <div className="preview-start-spinner" />}
                 <p className="preview-empty-copy">
-                  {preview?.detectedPorts && preview.detectedPorts.length > 0
+                  {isDetecting && preview?.detectedPorts && preview.detectedPorts.length === 0
+                    ? "Detecting ports…"
+                    : preview?.detectedPorts && preview.detectedPorts.length > 0
                     ? "Select a port"
+                    : isSelecting
+                    ? "No listening ports detected"
                     : "Detecting ports…"}
                 </p>
 
                 {/* Port chips */}
-                {preview?.detectedPorts && preview.detectedPorts.length > 0 && (
+                {preview?.detectedPorts && preview.detectedPorts.length > 0 ? (
                   <div className="preview-port-grid">
                     <p className="preview-found-label">Found</p>
                     <div className="preview-port-chips">
@@ -431,7 +442,27 @@ export function PreviewPanel({
                       ))}
                     </div>
                   </div>
-                )}
+                ) : isSelecting ? (
+                  <div className="preview-form-row">
+                    <input
+                      type="number"
+                      value={manualPort}
+                      onChange={(e) => setManualPort(e.target.value)}
+                      placeholder="Enter port"
+                      className="preview-field"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const p = parseInt(manualPort, 10);
+                        if (p > 0 && p < 65536) selectPort(p);
+                      }}
+                      className="preview-button preview-button--primary"
+                    >
+                      Use Port
+                    </button>
+                  </div>
+                ) : null}
 
                 {/* Logs during detection */}
                 {preview?.logs && preview.logs.length > 0 && (
