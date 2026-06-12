@@ -2657,40 +2657,6 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   background: var(--workspace-brass);
 }
 
-.terminal-tabs--embedded {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: 1.6rem;
-  padding: 0;
-  border-bottom: 0;
-  background: transparent;
-}
-
-.terminal-tabs--embedded .terminal-tab-scroller {
-  gap: 0.2rem;
-}
-
-.terminal-tabs--embedded .terminal-tab {
-  min-height: 1.55rem;
-  max-width: 10rem;
-  padding: 0.2rem 0.35rem;
-  border-radius: 0.45rem;
-  font-size: 0.58rem;
-}
-
-.terminal-tabs--embedded .terminal-actions {
-  padding-left: 0;
-}
-
-.terminal-tabs--embedded .terminal-icon-button {
-  min-width: 1.35rem;
-  min-height: 1.35rem;
-  border-radius: 0.4rem;
-}
-
 .terminal-tabs {
   display: flex;
   flex: 0 0 auto;
@@ -2700,6 +2666,39 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   padding: 0.45rem 0.55rem 0.35rem;
   border-bottom: 1px solid var(--workspace-seam);
   background: color-mix(in srgb, var(--workspace-panel-strong) 30%, transparent);
+}
+
+.terminal-tabs.terminal-tabs--embedded {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  min-height: 1.6rem;
+  padding: 0;
+  border-bottom: 0;
+  background: transparent;
+}
+
+.terminal-tabs.terminal-tabs--embedded .terminal-tab-scroller {
+  gap: 0.2rem;
+}
+
+.terminal-tabs.terminal-tabs--embedded .terminal-tab {
+  min-height: 1.55rem;
+  max-width: 10rem;
+  padding: 0.2rem 0.35rem;
+  border-radius: 0.45rem;
+  font-size: 0.58rem;
+}
+
+.terminal-tabs.terminal-tabs--embedded .terminal-actions {
+  padding-left: 0;
+}
+
+.terminal-tabs.terminal-tabs--embedded .terminal-icon-button {
+  min-width: 1.35rem;
+  min-height: 1.35rem;
+  border-radius: 0.4rem;
 }
 
 .terminal-tab-scroller {
