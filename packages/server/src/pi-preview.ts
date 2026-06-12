@@ -519,13 +519,23 @@ export async function startPreview(opts: {
     set.add(opts.onLog);
   }
 
-  // Scan process tree for ports, then wait for the user to select one.
+  // If the user (or framework detection) targeted a specific port, start a
+  // health check on that port directly. Otherwise scan the process tree for
+  // all ports and let the user pick one.
   (async () => {
     const rootPid = proc.pid;
     if (!rootPid) {
       info.status = "selecting";
       info.logs.push("[system] Could not read process PID — please enter a port manually.");
       await persistPreviews();
+      return;
+    }
+
+    if (requestedPort) {
+      info.status = "starting";
+      info.logs.push(`[system] Starting dev server on port ${requestedPort}...`);
+      await persistPreviews();
+      startHealthCheck(k);
       return;
     }
 
