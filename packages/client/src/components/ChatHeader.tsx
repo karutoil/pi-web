@@ -219,6 +219,28 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar,
             <Icon name="file" size={14} />
           </button>
         )}
+        {onTogglePreview && (
+          <button
+            type="button"
+            onClick={onTogglePreview}
+            className={`conversation-toolbar-pill ${previewOpen ? "conversation-toolbar-pill-active" : ""}`}
+            aria-label="Toggle preview"
+            title="Preview"
+          >
+            <span className="text-xs leading-none">◧</span>
+          </button>
+        )}
+        {onToggleGit && (
+          <button
+            type="button"
+            onClick={onToggleGit}
+            className={`conversation-toolbar-pill ${gitOpen ? "conversation-toolbar-pill-active" : ""}`}
+            aria-label="Toggle git"
+            title="Git"
+          >
+            <Icon name="git" size={14} />
+          </button>
+        )}
       </div>
     </div>
   );
