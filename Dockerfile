@@ -18,6 +18,10 @@ RUN bun install
 # Copy full source (includes scripts/docker-entrypoint.sh)
 COPY . .
 
+# Dockerfile/docker-compose.yml are excluded from context but tracked in git.
+# Mark them assumed-unchanged so git status doesn't report them as deleted.
+RUN git update-index --assume-unchanged Dockerfile docker-compose.yml || true
+
 # Bake version metadata so the image can report its git sync state without
 # shipping the entire .git directory in the final layer.
 RUN bun run scripts/bake-version.ts
