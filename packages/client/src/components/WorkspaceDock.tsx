@@ -110,7 +110,7 @@ function splitAxis(region: WorkspaceRegionId) {
 
 function closedPanelEdge(panelId: WorkspacePanelKind): WorkspaceRegionId | null {
   if (panelId === "channels") return "left";
-  if (panelId === "preview" || panelId === "git") return "right";
+  if (panelId === "preview" || panelId === "git" || panelId === "files") return "right";
   if (panelId === "terminal") return "bottom";
   return null;
 }

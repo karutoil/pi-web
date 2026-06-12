@@ -3,8 +3,8 @@ import { serveStatic } from "hono/bun";
 import { createBunWebSocket } from "hono/bun";
 import type { ServerWebSocket } from "bun";
 import { join, basename, resolve, normalize } from "node:path";
-import { existsSync, statSync, readdirSync, realpathSync } from "node:fs";
-import { readFile, writeFile, unlink, rename as renameFs } from "node:fs/promises";
+import { existsSync, statSync, lstatSync, readdirSync, realpathSync } from "node:fs";
+import { readdir, stat, readFile, writeFile, unlink, rename as renameFs } from "node:fs/promises";
 import { homedir } from "node:os";
 
 import { addProject, removeProject, listProjects, getProject, touchProject, getLayout, saveLayout, deleteLayout } from "./db";
@@ -18,6 +18,31 @@ import { startPreview, stopPreview, getPreview, listPreviews, addLogListener, st
 import { handlePreviewRequest, parsePreviewPath } from "./pi-preview-proxy";
 import { getOverlayJS, getOverlayCSS } from "./pi-preview-overlay";
 import type { WSClientMessage, WSServerMessage, WorkspaceLayout } from "@pi-web/shared";
+
+// ─── Rate limiting for file writes ─────────────────────────────
+
+const WRITE_RATE_LIMIT = { max: 30, windowMs: 60_000 };
+const writeRateLimitBuckets = new Map<string, { tokens: number; lastRefill: number }>();
+
+function checkWriteRateLimit(projectId: string): boolean {
+  const now = Date.now();
+  let bucket = writeRateLimitBuckets.get(projectId);
+  if (!bucket) {
+    bucket = { tokens: WRITE_RATE_LIMIT.max, lastRefill: now };
+    writeRateLimitBuckets.set(projectId, bucket);
+  }
+  const tokensToAdd = Math.floor((now - bucket.lastRefill) / WRITE_RATE_LIMIT.windowMs) * WRITE_RATE_LIMIT.max;
+  if (tokensToAdd > 0) {
+    bucket.tokens = Math.min(WRITE_RATE_LIMIT.max, bucket.tokens + tokensToAdd);
+    bucket.lastRefill = now;
+  }
+  if (bucket.tokens > 0) {
+    bucket.tokens--;
+    return true;
+  }
+  return false;
+}
+
 
 const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>();
 
@@ -122,17 +147,18 @@ const DEFAULT_WORKSPACE_LAYOUT: WorkspaceLayout = {
     { id: "terminal", region: "bottom", order: 0, size: 100 },
     { id: "preview", region: "right", order: 0, size: 100 },
     { id: "git", region: "right", order: 1, size: 100 },
+    { id: "files", region: "right", order: 2, size: 100 },
   ],
   updatedAt: null,
 };
 
-const WORKSPACE_PANEL_IDS = new Set(["channels", "chat", "terminal", "preview", "git", "rail"]);
+const WORKSPACE_PANEL_IDS = new Set(["channels", "chat", "terminal", "preview", "git", "files", "rail"]);
 const WORKSPACE_REGION_IDS = new Set(["left", "center", "right", "top", "bottom"]);
 
 function normalizeLayout(input: unknown): WorkspaceLayout {
   const source = input as Partial<WorkspaceLayout> | null;
   const regionIds = ["left", "center", "right", "top", "bottom"] as const;
-  const panelIds = ["channels", "chat", "terminal", "preview", "git", "rail"] as const;
+  const panelIds = ["channels", "chat", "terminal", "preview", "git", "files", "rail"] as const;
   const seenPanels = new Set<string>();
 
   const normalizedRegions = regionIds.map((id, index) => {
@@ -358,6 +384,154 @@ app.get("/api/fs/browse", async (c) => {
       items: [],
       error: e.code === "EACCES" ? "Permission denied" : e.message,
     });
+  }
+});
+
+// ── File Explorer API ──
+
+// List files in a project directory (recursive, for tree view)
+app.get("/api/fs/list", async (c) => {
+  const dir = c.req.query("dir");
+  const projectId = c.req.query("projectId");
+  if (!dir) return c.json({ error: "dir required" }, 400);
+  if (!projectId) return c.json({ error: "projectId required" }, 400);
+
+  try {
+    const project = getProject(projectId);
+    if (!project) return c.json({ error: "Project not found" }, 404);
+    const projectBase = realpathSync(project.path);
+
+    const safeDir = validateBrowsePath(dir.startsWith("~") ? homedir() + dir.slice(1) : dir);
+    if (!safeDir.startsWith(projectBase + "/") && safeDir !== projectBase) {
+      return c.json({ error: "Path is outside project directory" }, 403);
+    }
+
+    const dirStat = await stat(safeDir).catch(() => null);
+    if (!dirStat?.isDirectory()) {
+      return c.json({ error: "Not a directory" }, 400);
+    }
+
+    const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build", ".next", "target", "__pycache__", ".pi", ".cache", ".bun", ".turbo", ".vercel"]);
+    const MAX_DEPTH = 8;
+    const paths: string[] = [];
+
+    async function walk(currentDir: string, depth: number) {
+      if (depth > MAX_DEPTH) return;
+      let entries;
+      try { entries = await readdir(currentDir, { withFileTypes: true }); } catch { return; }
+
+      // Sort: dirs first, then files, alphabetical
+      const dirs: typeof entries = [];
+      const files: typeof entries = [];
+      for (const entry of entries) {
+        if (entry.name.startsWith(".")) continue;
+        if (entry.isDirectory() && SKIP_DIRS.has(entry.name)) continue;
+        if (entry.isSymbolicLink()) continue; // avoid symlink traversal in tree
+        if (entry.isDirectory()) dirs.push(entry); else if (entry.isFile()) files.push(entry);
+      }
+
+      dirs.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+      files.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+
+      for (const entry of [...dirs, ...files]) {
+        const fullPath = join(currentDir, entry.name);
+        const relativePath = fullPath.slice(safeDir.length + 1);
+        paths.push(relativePath + (entry.isDirectory() ? "/" : ""));
+        if (entry.isDirectory()) await walk(fullPath, depth + 1);
+      }
+    }
+
+    await walk(safeDir, 0);
+    return c.json({ paths });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 403);
+  }
+});
+
+// Read a file's contents
+app.get("/api/fs/read", async (c) => {
+  const filePath = c.req.query("path");
+  const projectId = c.req.query("projectId");
+  if (!filePath) return c.json({ error: "path required" }, 400);
+  if (!projectId) return c.json({ error: "projectId required" }, 400);
+
+  try {
+    const project = getProject(projectId);
+    if (!project) return c.json({ error: "Project not found" }, 404);
+    const projectBase = realpathSync(project.path);
+
+    const safePath = validateBrowsePath(filePath.startsWith("~") ? homedir() + filePath.slice(1) : filePath);
+    if (!safePath.startsWith(projectBase + "/") && safePath !== projectBase) {
+      return c.json({ error: "Path is outside project directory" }, 403);
+    }
+    if (!existsSync(safePath)) return c.json({ error: "File not found" }, 404);
+    const stat = statSync(safePath);
+    if (stat.isDirectory()) return c.json({ error: "Path is a directory" }, 400);
+    // Limit file size to 2MB
+    if (stat.size > 2 * 1024 * 1024) return c.json({ error: "File too large (max 2MB)" }, 400);
+
+    const buffer = await readFile(safePath);
+    if (buffer.includes(0)) {
+      return c.json({ error: "Binary files cannot be edited", binary: true, size: stat.size }, 415);
+    }
+    const content = buffer.toString("utf-8");
+    return c.json({ content, size: stat.size });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 403);
+  }
+});
+
+// Write/save a file
+app.put("/api/fs/write", async (c) => {
+  const { path: filePath, content, projectId, overwrite } = await c.req.json();
+  if (typeof filePath !== "string" || typeof content !== "string") return c.json({ error: "path and content required" }, 400);
+  if (!projectId || typeof projectId !== "string") return c.json({ error: "projectId required" }, 400);
+  // Body size limit (~10 MB)
+  if (Buffer.byteLength(content, "utf8") > 10 * 1024 * 1024) return c.json({ error: "content too large (max 10MB)" }, 400);
+
+  if (!checkWriteRateLimit(projectId)) {
+    return c.json({ error: "Write rate limit exceeded. Try again later." }, 429);
+  }
+
+  try {
+    const project = getProject(projectId);
+    if (!project) return c.json({ error: "Project not found" }, 404);
+    const projectBase = realpathSync(project.path);
+
+    // Resolve robustly: relative paths are resolved under the project root;
+    // absolute paths are resolved as-is.
+    const normalizedFilePath = filePath.startsWith("~") ? homedir() + filePath.slice(1) : filePath;
+    const targetResolved = filePath.startsWith("/")
+      ? resolve(normalize(normalizedFilePath))
+      : resolve(projectBase, normalize(normalizedFilePath));
+
+    // Harden against symlinks: when target exists, ensure its real path stays
+    // inside the project. Whether it exists or not, its parent must be inside.
+    const targetRealParent = realpathSync(join(targetResolved, ".."));
+    if (!targetRealParent.startsWith(projectBase + "/") && targetRealParent !== projectBase) {
+      return c.json({ error: "Path is outside project directory" }, 403);
+    }
+
+    let finalTarget = targetResolved;
+    // If the target path (or a symlink leading to it) exists, verify the real
+    // resolved target stays inside the project. Broken symlinks are caught with
+    // lstat so they cannot be used to create files outside the project.
+    let targetLstat;
+    try { targetLstat = lstatSync(targetResolved); } catch { targetLstat = null; }
+    if (targetLstat) {
+      const targetReal = realpathSync(targetResolved);
+      if (!targetReal.startsWith(projectBase + "/") && targetReal !== projectBase) {
+        return c.json({ error: "Path resolves outside project directory" }, 403);
+      }
+      if (targetLstat.isDirectory()) return c.json({ error: "Cannot overwrite a directory" }, 400);
+      if (!overwrite) return c.json({ error: "File already exists; set overwrite: true to replace" }, 409);
+      finalTarget = targetReal;
+    }
+
+    await writeFile(finalTarget, content, "utf-8");
+    return c.json({ success: true });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 403);
   }
 });
 

@@ -654,6 +654,21 @@ const SVG_PATHS = {
     ),
   },
 
+  // ── File / document ──────────────────────────────────────
+  file: {
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.5",
+    ...ROUND,
+    children: (
+      <>
+        <path d="M4 2 L9 2 L13 6 L13 14 Q13 14.5 12.5 14.5 L3.5 14.5 Q3 14.5 3 14 L3 2.5 Q3 2 3.5 2 Z" />
+        <path d="M9 2 L9 5.5 Q9 6 9.5 6 L13 6" />
+      </>
+    ),
+  },
+
 } as const satisfies Record<string, IconDef>;
 
 /* ─── Component ─── */

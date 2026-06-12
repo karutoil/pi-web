@@ -22,9 +22,12 @@ interface Props {
   /** Git panel toggle */
   onToggleGit?: () => void;
   gitOpen?: boolean;
+  /** Files panel toggle */
+  onToggleFiles?: () => void;
+  filesOpen?: boolean;
 }
 
-export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar, onSessionActions, onToggleTerminal, showTerminal, onBack, onTogglePreview, previewOpen, onToggleGit, gitOpen }: Props) {
+export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar, onSessionActions, onToggleTerminal, showTerminal, onBack, onTogglePreview, previewOpen, onToggleGit, gitOpen, onToggleFiles, filesOpen }: Props) {
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(sessionName || "");
   const isMobile = useIsMobile();
@@ -59,7 +62,7 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar,
       <div className="conversation-mobile-header shrink-0 max-h-[35vh] overflow-y-auto">
         <div className="conversation-mobile-title-row">
           {onBack && (
-            <button onClick={onBack} className="p-1.5 -ml-1 rounded-md hover:bg-ink-800 text-ink-400" aria-label="Back" title="Back">
+            <button type="button" onClick={onBack} className="p-1.5 -ml-1 rounded-md hover:bg-ink-800 text-ink-400" aria-label="Back" title="Back">
               <Icon name="chevron-left" size={18} />
             </button>
           )}
@@ -74,6 +77,7 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar,
             />
           ) : (
             <button
+              type="button"
               onClick={() => { setNameInput(sessionName || ""); setEditingName(true); }}
               className="conversation-mobile-title"
               title="Tap to rename"
@@ -98,22 +102,27 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar,
 
           <div className="flex items-center gap-0.5 ml-auto">
             {onToggleTerminal && (
-              <button onClick={onToggleTerminal} className={`p-1.5 rounded-md ${showTerminal ? 'text-amber-500 bg-amber-500/10' : 'text-ink-400 hover:bg-ink-800'}`} aria-label="Terminal" title="Terminal">
+              <button type="button" onClick={onToggleTerminal} className={`p-1.5 rounded-md ${showTerminal ? 'text-amber-500 bg-amber-500/10' : 'text-ink-400 hover:bg-ink-800'}`} aria-label="Terminal" title="Terminal">
                 <Icon name="terminal" size={14} />
               </button>
             )}
             {onTogglePreview && (
-              <button onClick={onTogglePreview} className={`p-1.5 rounded-md ${previewOpen ? 'text-amber-500 bg-amber-500/10' : 'text-ink-400 hover:bg-ink-800'}`} aria-label="Preview" title="Preview">
+              <button type="button" onClick={onTogglePreview} className={`p-1.5 rounded-md ${previewOpen ? 'text-amber-500 bg-amber-500/10' : 'text-ink-400 hover:bg-ink-800'}`} aria-label="Preview" title="Preview">
                 <span className="text-xs leading-none">◧</span>
               </button>
             )}
             {onToggleGit && (
-              <button onClick={onToggleGit} className={`p-1.5 rounded-md ${gitOpen ? 'text-amber-500 bg-amber-500/10' : 'text-ink-400 hover:bg-ink-800'}`} aria-label="Git" title="Git">
+              <button type="button" onClick={onToggleGit} className={`p-1.5 rounded-md ${gitOpen ? 'text-amber-500 bg-amber-500/10' : 'text-ink-400 hover:bg-ink-800'}`} aria-label="Git" title="Git">
                 <Icon name="git" size={14} />
               </button>
             )}
+            {onToggleFiles && (
+              <button type="button" onClick={onToggleFiles} className={`p-1.5 rounded-md ${filesOpen ? 'text-amber-500 bg-amber-500/10' : 'text-ink-400 hover:bg-ink-800'}`} aria-label="Files" title="Files">
+                <Icon name="file" size={14} />
+              </button>
+            )}
             {onSessionActions && (
-              <button onClick={onSessionActions} className="p-1.5 rounded-md text-ink-400 hover:bg-ink-800" aria-label="Session actions" title="Session actions">
+              <button type="button" onClick={onSessionActions} className="p-1.5 rounded-md text-ink-400 hover:bg-ink-800" aria-label="Session actions" title="Session actions">
                 <Icon name="more" size={14} />
               </button>
             )}
@@ -128,7 +137,7 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar,
       <div className="conversation-header-copy">
         <div className="conversation-header-row">
           {onToggleSidebar && !showSidebar && (
-            <button onClick={onToggleSidebar} className="conversation-toolbar-pill" aria-label="Show sidebar" title="Show sidebar (⌘B)">
+            <button type="button" onClick={onToggleSidebar} className="conversation-toolbar-pill" aria-label="Show sidebar" title="Show sidebar (⌘B)">
               <Icon name="chevron-right" size={16} />
             </button>
           )}
@@ -144,6 +153,7 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar,
             />
           ) : (
             <button
+              type="button"
               onClick={() => { setNameInput(sessionName || ""); setEditingName(true); }}
               className="conversation-title"
               title="Click to rename"
@@ -182,19 +192,31 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar,
         )}
 
         {onSessionActions && (
-          <button onClick={onSessionActions} className="conversation-toolbar-pill" aria-label="Session actions" title="Export, clone, compact…">
+          <button type="button" onClick={onSessionActions} className="conversation-toolbar-pill" aria-label="Session actions" title="Export, clone, compact…">
             <Icon name="more" size={14} />
           </button>
         )}
 
         {onToggleTerminal && (
           <button
+            type="button"
             onClick={onToggleTerminal}
             className={`conversation-toolbar-pill ${showTerminal ? "conversation-toolbar-pill-active" : ""}`}
             aria-label="Toggle terminal"
             title="Terminal"
           >
             <Icon name="terminal" size={14} />
+          </button>
+        )}
+        {onToggleFiles && (
+          <button
+            type="button"
+            onClick={onToggleFiles}
+            className={`conversation-toolbar-pill ${filesOpen ? "conversation-toolbar-pill-active" : ""}`}
+            aria-label="Toggle files"
+            title="Files"
+          >
+            <Icon name="file" size={14} />
           </button>
         )}
       </div>

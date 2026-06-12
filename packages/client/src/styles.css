@@ -7926,3 +7926,326 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   }
 
 }
+
+/* ─── Files Panel ─── */
+
+.files-panel {
+  --files-bg: var(--color-ink-950);
+  --files-surface: var(--color-ink-900);
+  --files-border: var(--color-ink-800);
+  --files-text: var(--color-ink-200);
+  --files-text-muted: var(--color-ink-500);
+  --files-accent: var(--color-amber-500);
+  background: var(--files-bg);
+}
+
+.files-panel-header {
+  padding: 8px 10px 6px;
+  border-bottom: 1px solid var(--files-border);
+}
+
+.files-panel-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.files-panel-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--files-text);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.files-panel-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  color: var(--files-text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.files-panel-icon-button:hover {
+  color: var(--files-text);
+  background: var(--files-surface);
+}
+
+.files-panel-search {
+  position: relative;
+}
+
+.files-panel-search-input {
+  width: 100%;
+  height: 28px;
+  padding: 0 24px 0 8px;
+  border-radius: 5px;
+  border: 1px solid var(--files-border);
+  background: var(--files-surface);
+  color: var(--files-text);
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.files-panel-search-input:focus {
+  border-color: var(--files-accent);
+}
+
+.files-panel-search-input::placeholder {
+  color: var(--files-text-muted);
+}
+
+.files-panel-search-clear {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  color: var(--files-text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.files-panel-search-clear:hover {
+  color: var(--files-text);
+}
+
+.files-panel-tree {
+  /* Tree scroll container */
+}
+
+.files-panel-tree file-tree-container {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 200px;
+}
+
+.files-panel-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px 16px;
+  color: var(--files-text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.files-panel-loading-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--files-border);
+  border-top-color: var(--files-accent);
+  border-radius: 50%;
+  animation: files-spin 0.6s linear infinite;
+}
+
+@keyframes files-spin {
+  to { transform: rotate(360deg); }
+}
+
+.files-panel-retry {
+  padding: 4px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--files-border);
+  background: var(--files-surface);
+  color: var(--files-text);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.files-panel-retry:hover {
+  border-color: var(--files-accent);
+}
+
+.files-panel-footer {
+  padding: 4px 10px;
+  border-top: 1px solid var(--files-border);
+}
+
+.files-panel-footer-text {
+  font-size: 10px;
+  color: var(--files-text-muted);
+}
+
+/* ─── Files: Code Editor ─── */
+
+.files-editor {
+  background: var(--files-bg);
+}
+
+.files-editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--files-border);
+  min-height: 34px;
+}
+
+.files-editor-path {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--files-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.files-editor-dirty {
+  color: var(--files-accent);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.files-editor-lines {
+  font-size: 10px;
+  color: var(--files-text-muted);
+  margin-right: 4px;
+}
+
+.files-editor-save {
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--files-border);
+  background: var(--files-surface);
+  color: var(--files-text-muted);
+  font-size: 11px;
+  cursor: default;
+  transition: all 0.15s;
+}
+
+.files-editor-save-active {
+  color: var(--files-accent);
+  border-color: var(--files-accent);
+  cursor: pointer;
+}
+
+.files-editor-save-active:hover {
+  background: color-mix(in srgb, var(--files-accent) 15%, transparent);
+}
+
+.files-editor-content {
+  background: var(--files-bg);
+}
+
+.files-editor-textarea {
+  width: 100%;
+  height: 100%;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  color: var(--files-text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  tab-size: 2;
+  resize: none;
+  outline: none;
+  white-space: pre;
+  overflow: auto;
+}
+
+.files-editor-textarea:focus {
+  outline: none;
+}
+
+/* ─── Files: Diff Viewer ─── */
+
+.files-diff-viewer {
+  background: var(--files-bg);
+}
+
+.files-diff-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--files-accent) 15%, transparent);
+  color: var(--files-accent);
+  font-weight: 500;
+}
+
+.files-diff-content {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.files-diff-line {
+  padding: 0 12px;
+  min-height: 20px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.files-diff-line-plain {
+  color: var(--files-text-muted);
+}
+
+.files-diff-line-meta {
+  color: var(--files-accent);
+  font-weight: 500;
+}
+
+.files-diff-line-hunk {
+  color: color-mix(in srgb, var(--files-accent) 60%, var(--files-text-muted));
+  background: color-mix(in srgb, var(--files-accent) 5%, transparent);
+}
+
+.files-diff-line-add {
+  color: var(--color-teal-500);
+  background: color-mix(in srgb, var(--color-teal-500) 8%, transparent);
+}
+
+.files-diff-line-remove {
+  color: var(--color-rose-500);
+  background: color-mix(in srgb, var(--color-rose-500) 8%, transparent);
+}
+
+/* ─── Files: Context Menu ─── */
+
+.files-context-menu {
+  z-index: 50;
+  background: var(--color-ink-900);
+  border: 1px solid var(--color-ink-800);
+  border-radius: 6px;
+  padding: 4px;
+  min-width: 140px;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--color-ink-950) 50%, transparent);
+}
+
+.files-context-menu-item {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  color: var(--color-ink-200);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.files-context-menu-item:hover {
+  background: var(--color-ink-800);
+}
+

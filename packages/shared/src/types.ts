@@ -359,7 +359,7 @@ export interface APIProjectsResponse {
 
 // ─── Workspace layout ───
 
-export type WorkspacePanelKind = "chat" | "preview" | "git" | "terminal" | "rail" | "channels";
+export type WorkspacePanelKind = "chat" | "preview" | "git" | "terminal" | "rail" | "channels" | "files";
 export type WorkspaceRegionId = "left" | "center" | "right" | "top" | "bottom";
 export type WorkspaceRegionMode = "tabs" | "split";
 
