@@ -44,8 +44,9 @@ if ($Detach) { $composeArgs += '-d' }
 & docker @composeArgs
 if ($LASTEXITCODE -ne 0) { throw "docker compose up failed with exit code $LASTEXITCODE" }
 
+# docker-compose.yml pins the host port to 33647 (maps 33647 -> 3069).
 $portOutput = docker compose port pi-web 3069
 if ($LASTEXITCODE -ne 0 -or -not $portOutput) { throw "Could not determine published port" }
 
-$RandomPort = ($portOutput -split ':')[-1]
-Write-Host "PI Web running at http://localhost:$RandomPort"
+$PublishedPort = ($portOutput -split ':')[-1]
+Write-Host "PI Web running at http://localhost:$PublishedPort"

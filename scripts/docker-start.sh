@@ -22,5 +22,6 @@ mkdir -p "${HOME}/.pi-web"
 
 docker compose up --build -d
 
-RANDOM_PORT=$(docker compose port pi-web 3069 | cut -d: -f2)
-echo "PI Web running at http://localhost:${RANDOM_PORT}"
+# docker-compose.yml pins the host port to 33647 (maps 33647 -> 3069).
+HOST_PORT=$(docker compose port pi-web 3069 | cut -d: -f2)
+echo "PI Web running at http://localhost:${HOST_PORT}"
