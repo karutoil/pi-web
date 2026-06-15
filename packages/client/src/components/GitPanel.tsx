@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { Icon } from "./Icon";
 import { GitStash } from "./GitStash";
 import { GitLog } from "./GitLog";
@@ -53,10 +54,11 @@ const STATUS_LABELS: Record<string, string> = {
 
 // ─── Diff Viewer ───
 
-function DiffViewer({ diff, path, onClose, showBlame, showComparePrev }: {
+function DiffViewer({ diff, path, onClose, onOpenModal, showBlame, showComparePrev }: {
   diff: string;
   path: string;
   onClose: () => void;
+  onOpenModal?: () => void;
   showBlame?: (path: string) => void;
   showComparePrev?: (path: string) => void;
 }) {
@@ -74,7 +76,12 @@ function DiffViewer({ diff, path, onClose, showBlame, showComparePrev }: {
         <button onClick={onClose} className="git-panel-icon-button" aria-label="Back">
           <Icon name="chevron-left" size={12} />
         </button>
-        <span className="git-diff-path">{path}</span>
+        <span className="git-diff-path flex-1">{path}</span>
+        {onOpenModal && (
+          <button onClick={onOpenModal} className="git-panel-section-action" aria-label="Open diff in modal" title="Open diff in modal">
+            Pop out
+          </button>
+        )}
         {showBlame && (
           <button onClick={() => showBlame(path)} className="git-panel-section-action">Blame</button>
         )}
@@ -91,6 +98,67 @@ function DiffViewer({ diff, path, onClose, showBlame, showComparePrev }: {
 }
 
 // ─── Conflict Resolution Banner ───
+
+function DiffStyleToggle({ value, onChange }: { value: "unified" | "split"; onChange: (v: "unified" | "split") => void }) {
+  return (
+    <div className="flex items-center gap-0.5 bg-ink-800/40 rounded-md p-0.5">
+      {(["unified", "split"] as const).map((style) => (
+        <button
+          key={style}
+          type="button"
+          onClick={() => onChange(style)}
+          className={`px-1.5 py-px text-[0.6rem] font-mono rounded transition-theme ${
+            value === style
+              ? "bg-ink-700 text-amber-400"
+              : "text-ink-500 hover:text-ink-300"
+          }`}
+          aria-pressed={value === style}
+        >
+          {style === "unified" ? "Unified" : "Split"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function DiffModalViewer({ diff, path, onClose, showBlame, showComparePrev }: {
+  diff: string;
+  path: string;
+  onClose: () => void;
+  showBlame?: (path: string) => void;
+  showComparePrev?: (path: string) => void;
+}) {
+  const [diffStyle, setDiffStyle] = useState<"unified" | "split">("unified");
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-ink-800/60 bg-ink-900/30 shrink-0">
+        <button onClick={onClose} className="p-1 text-ink-400 hover:text-ink-300 hover:bg-ink-800/50 rounded transition-theme" aria-label="Close diff">
+          <Icon name="chevron-left" size={12} />
+        </button>
+        <span className="text-ink-200 text-xs font-mono truncate flex-1">{path}</span>
+        <DiffStyleToggle value={diffStyle} onChange={setDiffStyle} />
+        {showBlame && (
+          <button onClick={() => showBlame(path)} className="git-panel-section-action">Blame</button>
+        )}
+        {showComparePrev && (
+          <button onClick={() => showComparePrev(path)} className="git-panel-section-action">Prev</button>
+        )}
+        <button onClick={onClose} className="git-panel-section-action">Close</button>
+      </div>
+      <div className="flex-1 min-h-0 overflow-auto custom-scrollbar bg-ink-950">
+        <DiffRenderer content={diff} collapsible={false} disableFileHeader diffStyle={diffStyle} />
+      </div>
+    </div>
+  );
+}
 
 function ConflictBanner({ path, onResolve }: { path: string; onResolve: (strategy: "ours" | "theirs" | "both") => void }) {
   return (
@@ -124,6 +192,7 @@ export function GitPanel({ cwd, visible, onClose, embedded = false, width, proje
   const [commitMsg, setCommitMsg] = useState("");
   const [amend, setAmend] = useState(false);
   const [diffView, setDiffView] = useState<{ path: string; staged: boolean; diff: string } | null>(null);
+  const [modalDiff, setModalDiff] = useState<{ path: string; diff: string } | null>(null);
   const [blameView, setBlameView] = useState<string | null>(null);
   const [compareRef, setCompareRef] = useState<string | null>(null);
   const [expandedStaged, setExpandedStaged] = useState(true);
@@ -338,11 +407,11 @@ export function GitPanel({ cwd, visible, onClose, embedded = false, width, proje
   useEffect(() => {
     if (!visible) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !diffView && !blameView) onClose();
+      if (e.key === "Escape" && !diffView && !modalDiff && !blameView) onClose();
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [visible, onClose, diffView, blameView]);
+  }, [visible, onClose, diffView, modalDiff, blameView]);
 
   if (!visible || !cwd) return null;
 
@@ -382,6 +451,8 @@ export function GitPanel({ cwd, visible, onClose, embedded = false, width, proje
         committing={committing}
         diffView={diffView}
         setDiffView={setDiffView}
+        modalDiff={modalDiff}
+        setModalDiff={setModalDiff}
         blameView={blameView}
         setBlameView={setBlameView}
         expandedStaged={expandedStaged}
@@ -424,7 +495,8 @@ export function GitPanel({ cwd, visible, onClose, embedded = false, width, proje
 function GitPanelContent({
   cwd, status, loading, error, view, setView,
   commitMsg, setCommitMsg, amend, setAmend, committing,
-  diffView, setDiffView, blameView, setBlameView,
+  diffView, setDiffView, modalDiff, setModalDiff,
+  blameView, setBlameView,
   expandedStaged, expandedChanges, selectedFiles, diffStats,
   totalChanges, hasConflicts,
   onToggleStaged, onToggleChanges,
@@ -448,6 +520,8 @@ function GitPanelContent({
   committing: boolean;
   diffView: { path: string; staged: boolean; diff: string } | null;
   setDiffView: (v: { path: string; staged: boolean; diff: string } | null) => void;
+  modalDiff: { path: string; diff: string } | null;
+  setModalDiff: (v: { path: string; diff: string } | null) => void;
   blameView: string | null;
   setBlameView: (v: string | null) => void;
   expandedStaged: boolean;
@@ -589,6 +663,7 @@ function GitPanelContent({
             diff={diffView.diff}
             path={diffView.path}
             onClose={() => setDiffView(null)}
+            onOpenModal={() => setModalDiff({ path: diffView.path, diff: diffView.diff })}
             showBlame={onBlame}
             showComparePrev={onComparePrev}
           />
@@ -618,6 +693,25 @@ function GitPanelContent({
           <GitLog cwd={cwd} onRefresh={onRefresh} />
         )}
       </div>
+
+      {/* ── Diff modal ── */}
+      {modalDiff && createPortal(
+        <div
+          className="git-diff-modal-backdrop"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setModalDiff(null); }}
+        >
+          <div className="git-diff-modal" onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="File diff">
+            <DiffModalViewer
+              diff={modalDiff.diff}
+              path={modalDiff.path}
+              onClose={() => setModalDiff(null)}
+              showBlame={onBlame}
+              showComparePrev={onComparePrev}
+            />
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* ── Stash section ── */}
       {view === "changes" && status && (

@@ -120,9 +120,9 @@ describe('MessageBubble', () => {
     expect(screen.getByText('Hello, PI!')).toBeInTheDocument();
   });
 
-  it('renders user bubble with amber styling', () => {
+  it('renders user bubble with styling', () => {
     const { container } = render(<MessageBubble message={userMessage} {...defaultProps} />);
-    const bubble = container.querySelector('.bg-amber-500\\/12');
+    const bubble = container.querySelector('.conversation-user-bubble');
     expect(bubble).toBeInTheDocument();
   });
 
@@ -135,7 +135,7 @@ describe('MessageBubble', () => {
 
   it('renders assistant avatar', () => {
     const { container } = render(<MessageBubble message={assistantMessage} {...defaultProps} />);
-    expect(container.querySelector('.bg-amber-500\\/20')).toBeInTheDocument();
+    expect(container.querySelector('.conversation-avatar')).toBeInTheDocument();
   });
 
   it('shows model name and token count', () => {

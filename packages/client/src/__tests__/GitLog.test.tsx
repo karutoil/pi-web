@@ -67,7 +67,7 @@ describe('GitLog', () => {
     render(<GitLog cwd="/tmp" onRefresh={() => {}} />);
     await waitFor(() => expect(screen.getByText('52471ca')).toBeInTheDocument());
     await act(async () => {
-      fireEvent.click(screen.getByText('52471ca'));
+      fireEvent.click(screen.getByRole('button', { name: /view diff/i }));
     });
     await waitFor(() => {
       const probe = screen.getByTestId('file-diff');
@@ -85,7 +85,7 @@ describe('GitLog', () => {
     render(<GitLog cwd="/tmp" onRefresh={() => {}} />);
     await waitFor(() => expect(screen.getByText('52471ca')).toBeInTheDocument());
     await act(async () => {
-      fireEvent.click(screen.getByText('52471ca'));
+      fireEvent.click(screen.getByRole('button', { name: /view diff/i }));
     });
     // The spinner must clear, the diff panel must show the empty state.
     await waitFor(() => {
@@ -103,7 +103,7 @@ describe('GitLog', () => {
     render(<GitLog cwd="/tmp" onRefresh={() => {}} />);
     await waitFor(() => expect(screen.getByText('52471ca')).toBeInTheDocument());
     await act(async () => {
-      fireEvent.click(screen.getByText('52471ca'));
+      fireEvent.click(screen.getByRole('button', { name: /view diff/i }));
     });
     await waitFor(() => {
       expect(screen.getByText(/invalid commit hash/i)).toBeInTheDocument();
@@ -142,15 +142,17 @@ describe('GitLog', () => {
     await waitFor(() => expect(screen.getByText('52471ca')).toBeInTheDocument());
     await waitFor(() => expect(screen.getByText('a07ef84')).toBeInTheDocument());
 
+    const viewDiffButtons = screen.getAllByRole('button', { name: /view diff/i });
+
     // Click A — starts a hung request, spinner appears
     await act(async () => {
-      fireEvent.click(screen.getByText('52471ca'));
+      fireEvent.click(viewDiffButtons[0]);
     });
     expect(screen.getByText(/loading diff/i)).toBeInTheDocument();
 
     // Click B — fast request
     await act(async () => {
-      fireEvent.click(screen.getByText('a07ef84'));
+      fireEvent.click(viewDiffButtons[1]);
     });
 
     // Spinner for A must clear, even though A's response is still pending

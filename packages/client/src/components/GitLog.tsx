@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Icon } from "./Icon";
 import { DiffRenderer, isDiffContent } from "./DiffRenderer";
 import { ContextMenuPortal, ContextMenuItem, ContextMenuDivider, useLongPress } from "./ContextMenu";
@@ -85,9 +86,32 @@ function RefBadges({ refs }: { refs: RefBadge[] }) {
   );
 }
 
-// ─── Diff Viewer (shared style with GitPanel) ───
+// ─── Diff Viewer ───
+
+function DiffStyleToggle({ value, onChange }: { value: "unified" | "split"; onChange: (v: "unified" | "split") => void }) {
+  return (
+    <div className="flex items-center gap-0.5 bg-ink-800/40 rounded-md p-0.5">
+      {(["unified", "split"] as const).map((style) => (
+        <button
+          key={style}
+          type="button"
+          onClick={() => onChange(style)}
+          className={`px-1.5 py-px text-[0.6rem] font-mono rounded transition-theme ${
+            value === style
+              ? "bg-ink-700 text-amber-400"
+              : "text-ink-500 hover:text-ink-300"
+          }`}
+          aria-pressed={value === style}
+        >
+          {style === "unified" ? "Unified" : "Split"}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function CommitDiffViewer({ diff, hash, onClose }: { diff: string; hash: string; onClose: () => void }) {
+  const [diffStyle, setDiffStyle] = useState<"unified" | "split">("unified");
   // Treat empty diffs and the "(no diff for this commit)" sentinel as a
   // distinct empty state so the user gets visible feedback that the
   // request succeeded but git had nothing to show (#161).
@@ -113,6 +137,7 @@ function CommitDiffViewer({ diff, hash, onClose }: { diff: string; hash: string;
         </button>
         <span className="text-amber-500/80 text-xs font-mono">{hash.slice(0, 7)}</span>
         <span className="text-ink-500 text-[0.6rem] font-mono">commit diff</span>
+        <DiffStyleToggle value={diffStyle} onChange={setDiffStyle} />
         <span className="flex-1" />
         <button onClick={onClose} className="px-2.5 py-1 text-xs text-ink-400 hover:text-ink-200 bg-ink-800/40 hover:bg-ink-800/60 rounded transition-theme">Back</button>
       </div>
@@ -125,7 +150,7 @@ function CommitDiffViewer({ diff, hash, onClose }: { diff: string; hash: string;
             )}
           </div>
         ) : isDiffContent(diff) ? (
-          <DiffRenderer key={diff} content={diff} collapsible={false} />
+          <DiffRenderer key={diff} content={diff} collapsible={false} diffStyle={diffStyle} />
         ) : (
           <pre className="h-full overflow-auto custom-scrollbar p-3 text-ink-400 text-xs font-mono whitespace-pre-wrap">{diff}</pre>
         )}
@@ -138,13 +163,11 @@ function CommitDiffViewer({ diff, hash, onClose }: { diff: string; hash: string;
 
 function CommitRow({
   entry,
-  expanded,
-  onToggle,
+  onViewDiff,
   onContextMenu,
 }: {
   entry: GitLogEntry;
-  expanded: boolean;
-  onToggle: () => void;
+  onViewDiff: () => void;
   onContextMenu: (e: React.MouseEvent, entry: GitLogEntry) => void;
 }) {
   const { message, refs: rawRefs } = splitMessageRefs(entry.message);
@@ -153,10 +176,7 @@ function CommitRow({
 
   return (
     <div
-      className={`border-b border-ink-800/20 transition-theme cursor-pointer min-h-[44px] ${
-        expanded ? "bg-ink-900/40" : "hover:bg-ink-900/30"
-      }`}
-      onClick={onToggle}
+      className="border-b border-ink-800/20 transition-theme min-h-[44px] hover:bg-ink-900/30"
       onContextMenu={e => onContextMenu(e, entry)}
       {...longPress}
     >
@@ -165,6 +185,15 @@ function CommitRow({
           <span className="text-amber-500/70 text-[0.65rem] font-mono shrink-0">{entry.shortHash}</span>
           <span className="text-ink-200 text-xs truncate flex-1">{message}</span>
           <RefBadges refs={refBadges} />
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onViewDiff(); }}
+            className="p-1 text-ink-500 hover:text-ink-200 hover:bg-ink-800/40 rounded transition-theme shrink-0"
+            title="View diff"
+            aria-label="View diff"
+          >
+            <Icon name="file" size={12} />
+          </button>
         </div>
         <div className="flex items-center gap-2 mt-0.5">
           <span className="text-ink-500 text-[0.65rem] font-mono">{entry.author}</span>
@@ -187,7 +216,7 @@ export function GitLog({ cwd, onRefresh }: GitLogProps) {
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searching, setSearching] = useState(false);
-  const [expandedHash, setExpandedHash] = useState<string | null>(null);
+  const [selectedHash, setSelectedHash] = useState<string | null>(null);
   const [commitDiff, setCommitDiff] = useState<string | null>(null);
   const [diffLoading, setDiffLoading] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; entry: GitLogEntry } | null>(null);
@@ -226,34 +255,23 @@ export function GitLog({ cwd, onRefresh }: GitLogProps) {
     return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
   }, [searchQuery, cwd]);
 
-  // Expand commit → fetch diff (with race protection)
-  //
-  // Race protection: when the user clicks commit A then quickly clicks
-  // commit B, the in-flight A response must NOT clobber B's UI. We track
-  // the currently-expanded hash in a ref and discard stale responses
-  // for `setCommitDiff`. The loading flag, however, is *not* gated on
-  // the ref: the spinner must always clear when the request finishes,
-  // otherwise a quick second click can leave the overlay stuck forever
-  // (regression: #161).
-  const expandedHashRef = useRef<string | null>(null);
+  // Open commit diff in modal (with race protection)
+  const selectedHashRef = useRef<string | null>(null);
   const requestSeq = useRef(0);
-  useEffect(() => { expandedHashRef.current = expandedHash; }, [expandedHash]);
+  useEffect(() => { selectedHashRef.current = selectedHash; }, [selectedHash]);
 
-  const handleExpand = useCallback(async (entry: GitLogEntry) => {
-    if (expandedHash === entry.hash) {
-      setExpandedHash(null);
-      setCommitDiff(null);
-      return;
-    }
+  const handleViewDiff = useCallback(async (entry: GitLogEntry) => {
     const seq = ++requestSeq.current;
-    setExpandedHash(entry.hash);
+    selectedHashRef.current = entry.hash;
+    setSelectedHash(entry.hash);
     setDiffLoading(true);
     setCommitDiff(null);
     try {
       const r = await fetch(`/api/git/show?cwd=${encodeURIComponent(cwd)}&hash=${encodeURIComponent(entry.hash)}`);
       const d = await r.json();
-      // Only apply if this is still the most recent request
+      // Only apply if this is still the most recent request and the modal is still open for this commit
       if (seq !== requestSeq.current) return;
+      if (selectedHashRef.current !== entry.hash) return;
       if (d.error) {
         setCommitDiff(`Error: ${d.error}`);
       } else if (d.diff && d.diff.length > 0) {
@@ -263,6 +281,7 @@ export function GitLog({ cwd, onRefresh }: GitLogProps) {
       }
     } catch (e: any) {
       if (seq !== requestSeq.current) return;
+      if (selectedHashRef.current !== entry.hash) return;
       setCommitDiff(`Failed to load diff: ${e?.message || "network error"}`);
     } finally {
       // Always clear the spinner when the request finishes. A newer
@@ -271,24 +290,32 @@ export function GitLog({ cwd, onRefresh }: GitLogProps) {
       // remains correct either way (#161).
       setDiffLoading(false);
     }
-  }, [cwd, expandedHash]);
+  }, [cwd]);
 
-  // Close expanded
   const handleCloseDiff = useCallback(() => {
-    setExpandedHash(null);
+    setSelectedHash(null);
     setCommitDiff(null);
+    setDiffLoading(false);
   }, []);
 
-  // Escape to close
+  // Escape to close modal
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && expandedHash) {
+      if (e.key === "Escape" && selectedHash) {
         handleCloseDiff();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [expandedHash, handleCloseDiff]);
+  }, [selectedHash, handleCloseDiff]);
+
+  // Lock body scroll while modal is open
+  useEffect(() => {
+    if (!selectedHash) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, [selectedHash]);
 
   // Context menu actions
   const handleCherryPick = useCallback(async (entry: GitLogEntry) => {
@@ -334,16 +361,20 @@ export function GitLog({ cwd, onRefresh }: GitLogProps) {
   // Keyboard shortcut: / to focus search
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "/" && !expandedHash && document.activeElement?.tagName !== "INPUT" && document.activeElement?.tagName !== "TEXTAREA" && !(document.activeElement as HTMLElement)?.isContentEditable) {
+      if (e.key === "/" && !selectedHash && document.activeElement?.tagName !== "INPUT" && document.activeElement?.tagName !== "TEXTAREA" && !(document.activeElement as HTMLElement)?.isContentEditable) {
         e.preventDefault();
         searchInputRef.current?.focus();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [expandedHash]);
+  }, [selectedHash]);
 
-  const expandedEntry = expandedHash ? log.find(e => e.hash === expandedHash) : null;
+  const selectedEntry = selectedHash ? log.find(e => e.hash === selectedHash) : null;
+
+  const handleBackdropClick = useCallback((e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) handleCloseDiff();
+  }, [handleCloseDiff]);
 
   return (
     <div className="flex flex-col h-full">
@@ -367,7 +398,7 @@ export function GitLog({ cwd, onRefresh }: GitLogProps) {
               onClick={() => setSearchQuery("")}
               className="text-ink-500 hover:text-ink-300 transition-theme shrink-0"
             >
-              <Icon name="close" size={10} />
+              <Icon name="close-thick" size={10} />
             </button>
           )}
         </div>
@@ -383,16 +414,14 @@ export function GitLog({ cwd, onRefresh }: GitLogProps) {
           <div className="w-2.5 h-2.5 border-2 border-amber-700 border-t-amber-400 rounded-full animate-spin" />
           {actionStatus}
           <button onClick={() => setActionStatus(null)} className="ml-auto text-ink-500 hover:text-ink-300 transition-theme">
-            <Icon name="close" size={10} />
+            <Icon name="close-thick" size={10} />
           </button>
         </div>
       )}
 
-      {/* ── Commit list / Diff view ── */}
+      {/* ── Commit list ── */}
       <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
-        {commitDiff && expandedEntry ? (
-          <CommitDiffViewer diff={commitDiff} hash={expandedEntry.hash} onClose={handleCloseDiff} />
-        ) : loading ? (
+        {loading ? (
           <div className="flex items-center justify-center py-12 gap-2">
             <div className="w-3 h-3 border-2 border-ink-700 border-t-amber-500 rounded-full animate-spin" />
             <span className="text-ink-500 text-xs font-mono">Loading…</span>
@@ -406,22 +435,38 @@ export function GitLog({ cwd, onRefresh }: GitLogProps) {
             <CommitRow
               key={entry.hash}
               entry={entry}
-              expanded={expandedHash === entry.hash}
-              onToggle={() => handleExpand(entry)}
+              onViewDiff={() => handleViewDiff(entry)}
               onContextMenu={handleContextMenu}
             />
           ))
         )}
       </div>
 
-      {/* ── Diff loading overlay ── */}
-      {diffLoading && !commitDiff && (
-        <div className="absolute inset-0 flex items-center justify-center bg-ink-950/60 z-10">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 border-2 border-ink-700 border-t-amber-500 rounded-full animate-spin" />
-            <span className="text-ink-400 text-xs font-mono">Loading diff…</span>
+      {/* ── Diff modal ── */}
+      {selectedHash && createPortal(
+        <div className="git-diff-modal-backdrop" onMouseDown={handleBackdropClick}>
+          <div className="git-diff-modal" onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Commit diff">
+            {diffLoading || !selectedEntry ? (
+              <div className="flex flex-col h-full">
+                <div className="flex items-center gap-2 px-3 py-2 border-b border-ink-800/60 bg-ink-900/30 shrink-0">
+                  <button onClick={handleCloseDiff} className="p-1 text-ink-400 hover:text-ink-300 hover:bg-ink-800/50 rounded transition-theme" aria-label="Close diff">
+                    <Icon name="chevron-left" size={12} />
+                  </button>
+                  <span className="text-amber-500/80 text-xs font-mono">{selectedEntry?.shortHash ?? selectedHash.slice(0, 7)}</span>
+                  <span className="text-ink-500 text-[0.6rem] font-mono">commit diff</span>
+                  <span className="flex-1" />
+                </div>
+                <div className="flex-1 flex items-center justify-center gap-2">
+                  <div className="w-3 h-3 border-2 border-ink-700 border-t-amber-500 rounded-full animate-spin" />
+                  <span className="text-ink-400 text-xs font-mono">Loading diff…</span>
+                </div>
+              </div>
+            ) : (
+              <CommitDiffViewer diff={commitDiff ?? ""} hash={selectedEntry.hash} onClose={handleCloseDiff} />
+            )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── Context menu ── */}

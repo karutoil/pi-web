@@ -12,6 +12,7 @@ interface Props {
   content: string;
   collapsible?: boolean;
   disableFileHeader?: boolean;
+  diffStyle?: "unified" | "split";
   className?: string;
   style?: React.CSSProperties;
 }
@@ -20,6 +21,7 @@ export function DiffRenderer({
   content,
   collapsible = true,
   disableFileHeader = false,
+  diffStyle = "unified",
   className = "",
   style,
 }: Props) {
@@ -45,7 +47,7 @@ export function DiffRenderer({
   const options = useMemo(
     () => ({
       theme: theme === "dark" ? "pi-web-diff-dark" : "pi-web-diff-light",
-      diffStyle: "unified" as const,
+      diffStyle,
       hunkSeparators: "line-info" as const,
       disableFileHeader,
       overflow: "wrap" as const,
@@ -60,7 +62,7 @@ export function DiffRenderer({
         }
       },
     }),
-    [disableFileHeader, theme]
+    [disableFileHeader, diffStyle, theme]
   );
 
   // Host `<diffs-container>` is inline by default; make it block so

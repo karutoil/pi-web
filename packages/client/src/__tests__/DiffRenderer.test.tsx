@@ -73,6 +73,12 @@ describe('DiffRenderer', () => {
     expect(options.diffStyle).toBe('unified');
   });
 
+  it('can render in split diff style', () => {
+    render(<DiffRenderer content={SAMPLE_DIFF} diffStyle="split" />);
+    const options = JSON.parse(getFileDiff().getAttribute('data-options') || '{}');
+    expect(options.diffStyle).toBe('split');
+  });
+
   it('can disable the file header', () => {
     render(<DiffRenderer content={SAMPLE_DIFF} disableFileHeader />);
     const options = JSON.parse(getFileDiff().getAttribute('data-options') || '{}');

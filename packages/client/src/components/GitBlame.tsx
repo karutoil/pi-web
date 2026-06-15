@@ -1,6 +1,13 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Icon } from "./Icon";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { useTheme } from "../hooks/useTheme";
+import { codeToHtml, getFiletypeFromFileName, registerCustomTheme } from "@pierre/diffs";
+import { piDiffDark, piDiffLight } from "../themes/piDiffTheme";
+
+// Register PI diff themes so the highlighter can use them.
+registerCustomTheme("pi-web-diff-dark", () => Promise.resolve(piDiffDark));
+registerCustomTheme("pi-web-diff-light", () => Promise.resolve(piDiffLight));
 
 // ─── Types ───
 
@@ -22,7 +29,7 @@ interface GitBlameProps {
 
 /** Format ISO date to short readable form (e.g. "2024-03-15") */
 function shortDate(iso: string): string {
-  if (!iso || iso === 'null') return "";
+  if (!iso || iso === "null") return "";
   try {
     const d = new Date(iso);
     return d.toISOString().slice(0, 10);
@@ -37,13 +44,39 @@ function isNewGroup(lines: GitBlameLine[], index: number): boolean {
   return lines[index].hash !== lines[index - 1].hash;
 }
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+/**
+ * Generate a consistent, subtle background color for a blame group from its hash.
+ * We use hue from the hash and keep low saturation so it stays theme-agnostic.
+ */
+function groupColor(hash: string, dark: boolean): string {
+  let hue = 0;
+  for (let i = 0; i < hash.length; i++) {
+    hue = (hue + hash.charCodeAt(i) * 37) % 360;
+  }
+  return dark
+    ? `hsla(${hue}, 55%, 30%, 0.18)`
+    : `hsla(${hue}, 60%, 82%, 0.35)`;
+}
+
 // ─── Component ───
 
 export function GitBlame({ cwd, path, onClose }: GitBlameProps) {
   const [lines, setLines] = useState<GitBlameLine[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [highlights, setHighlights] = useState<Map<number, string>>(new Map());
+  const [theme] = useTheme();
   const isMobile = useIsMobile();
+  const isDark = theme === "dark";
 
   // Fetch blame data
   useEffect(() => {
@@ -64,6 +97,41 @@ export function GitBlame({ cwd, path, onClose }: GitBlameProps) {
       });
   }, [cwd, path]);
 
+  // Syntax-highlight the full file, then split into per-line HTML.
+  useEffect(() => {
+    setHighlights(new Map());
+    if (lines.length === 0) return;
+
+    let canceled = false;
+    const contents = lines.map(l => l.content).join("\n");
+    const lang = getFiletypeFromFileName(path) ?? "text";
+
+    (async () => {
+      try {
+        const html = await codeToHtml(contents, {
+          lang,
+          theme: isDark ? "pi-web-diff-dark" : "pi-web-diff-light",
+          structure: "classic",
+        });
+        if (canceled) return;
+        const doc = new DOMParser().parseFromString(html, "text/html");
+        const spans = doc.querySelectorAll("code > .line");
+        const map = new Map<number, string>();
+        spans.forEach((el, i) => {
+          const lineNum = lines[i]?.line ?? i + 1;
+          map.set(lineNum, el.innerHTML);
+        });
+        setHighlights(map);
+      } catch {
+        const fallback = new Map<number, string>();
+        lines.forEach(l => fallback.set(l.line, escapeHtml(l.content)));
+        setHighlights(fallback);
+      }
+    })();
+
+    return () => { canceled = true; };
+  }, [lines, path, isDark]);
+
   // Escape key to close
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -72,6 +140,16 @@ export function GitBlame({ cwd, path, onClose }: GitBlameProps) {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [onClose]);
+
+  const groupIndexMap = useMemo(() => {
+    const map = new Map<number, number>();
+    let group = -1;
+    lines.forEach((line, i) => {
+      if (isNewGroup(lines, i)) group++;
+      map.set(line.line, group);
+    });
+    return map;
+  }, [lines]);
 
   // ── Render ──
 
@@ -112,27 +190,30 @@ export function GitBlame({ cwd, path, onClose }: GitBlameProps) {
           <p className="text-ink-500 text-xs font-mono">No blame data</p>
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto overflow-x-auto custom-scrollbar font-mono text-xs leading-5 bg-ink-950">
+        <div className="flex-1 overflow-auto custom-scrollbar font-mono text-sm leading-5 bg-ink-950">
           {lines.map((bl, i) => {
             const first = isNewGroup(lines, i);
+            const group = groupIndexMap.get(bl.line) ?? 0;
+            const groupBg = groupColor(bl.hash, isDark);
             return (
               <div
-                key={i}
-                className="flex border-b border-ink-800/30 hover:bg-ink-800/20 transition-theme"
+                key={bl.line}
+                className="flex border-b border-ink-800/30 hover:brightness-110 transition-theme"
+                style={{ backgroundColor: groupBg }}
               >
                 {/* Left column: blame metadata — hidden on mobile to save space */}
                 {!isMobile && (
-                <div className="w-[120px] shrink-0 border-r border-ink-800/40 px-2 py-px select-none">
-                  {first ? (
-                    <div className="flex flex-col gap-px">
-                      <span className="text-amber-400 font-medium truncate">{bl.hash}</span>
-                      <span className="text-ink-400 truncate">{bl.author}</span>
-                      <span className="text-ink-500">{shortDate(bl.date)}</span>
-                    </div>
-                  ) : (
-                    <span className="text-ink-500">│</span>
-                  )}
-                </div>
+                  <div className="w-[132px] shrink-0 border-r border-ink-800/40 px-2 py-px select-none">
+                    {first ? (
+                      <div className="flex flex-col gap-px">
+                        <span className="text-amber-400 font-medium truncate text-xs">{bl.hash}</span>
+                        <span className="text-ink-300 truncate text-xs">{bl.author}</span>
+                        <span className="text-ink-500 text-xs">{shortDate(bl.date)}</span>
+                      </div>
+                    ) : (
+                      <span className="text-ink-600 text-xs">│</span>
+                    )}
+                  </div>
                 )}
 
                 {/* Mobile: compact inline metadata */}
@@ -144,14 +225,15 @@ export function GitBlame({ cwd, path, onClose }: GitBlameProps) {
                 )}
 
                 {/* Line number */}
-                <div className="w-8 shrink-0 text-right pr-2 py-px select-none text-ink-500">
+                <div className="w-10 shrink-0 text-right pr-2 py-px select-none text-ink-500 text-xs">
                   {bl.line}
                 </div>
 
                 {/* Line content */}
-                <div className="flex-1 py-px whitespace-pre-wrap break-words text-ink-200 min-w-0 text-xs sm:text-sm">
-                  {bl.content}
-                </div>
+                <div
+                  className="flex-1 py-px whitespace-pre-wrap break-words text-ink-200 min-w-0"
+                  dangerouslySetInnerHTML={{ __html: highlights.get(bl.line) ?? escapeHtml(bl.content) }}
+                />
               </div>
             );
           })}
