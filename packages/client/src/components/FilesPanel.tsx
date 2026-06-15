@@ -8,6 +8,7 @@ import { LanguageDescription } from "@codemirror/language";
 import type { Extension } from "@codemirror/state";
 import { languages } from "@codemirror/language-data";
 import { useTheme } from "../hooks/useTheme";
+import { useIsMobile } from "../hooks/useIsMobile";
 import { Icon } from "./Icon";
 
 // ─── Types ───
@@ -214,6 +215,7 @@ function DiffViewer({ diff, path, onClose }: {
 // ─── Main Panel ───
 
 export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: FilesPanelProps) {
+  const isMobile = useIsMobile();
   const panelRef = useRef<HTMLDivElement>(null);
   const [paths, setPaths] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -400,15 +402,19 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
     ["--trees-status-ignored-override" as string]: "var(--files-text-muted)",
   } as React.CSSProperties), []);
 
+  const showEditor = selectedFile && fileContent !== null;
+  const showDiff = diffContent !== null && diffPath;
+  const showMobileOverlay = isMobile && (showEditor || showDiff);
+
   if (!visible) return null;
 
   return (
-    <div ref={panelRef} className="files-panel flex flex-col h-full outline-none" tabIndex={-1} onKeyDown={handlePanelKeyDown}>
+    <div ref={panelRef} className="files-panel relative flex flex-col h-full outline-none" tabIndex={-1} onKeyDown={handlePanelKeyDown}>
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* File tree */}
         <div
-          className="shrink-0 min-w-[160px] max-w-[60%] flex flex-col border-r border-ink-800"
-          style={{ width: explorerWidth }}
+          className={isMobile ? "flex-1 min-w-0 flex flex-col border-r border-ink-800" : "shrink-0 min-w-[160px] max-w-[60%] flex flex-col border-r border-ink-800"}
+          style={isMobile ? undefined : { width: explorerWidth }}
         >
           <div className="files-panel-header shrink-0">
             <div className="files-panel-title-row">
@@ -522,7 +528,7 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
         </div>
 
         {/* Resizer */}
-        <div
+        {!isMobile && <div
           className="w-1.5 shrink-0 cursor-col-resize touch-none bg-ink-900 hover:bg-ink-700 active:bg-ink-600 transition-colors z-10"
           onPointerDown={(e) => {
             const target = e.currentTarget;
@@ -553,11 +559,11 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
               localStorage.setItem("files-panel-explorer-width", String(explorerWidthRef.current));
             } catch {}
           }}
-        />
+        />}
 
         {/* Editor / diff */}
-        <div className="flex-1 min-w-0 relative flex flex-col overflow-hidden">
-          {selectedFile && fileContent !== null ? (
+        <div className={showMobileOverlay ? "absolute inset-0 z-20 flex flex-col overflow-hidden bg-ink-950" : isMobile ? "hidden" : "flex-1 min-w-0 relative flex flex-col overflow-hidden"}>
+          {showEditor ? (
             <CodeEditor
               key={selectedFile}
               filePath={selectedFile}
@@ -566,7 +572,7 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
               onClose={() => { setSelectedFile(null); setFileContent(null); setSaveError(null); }}
               saveError={saveError}
             />
-          ) : (
+          ) : showDiff ? null : (
             <div className="flex-1 flex flex-col items-center justify-center text-ink-500 text-xs select-none">
               <Icon name="file" size={24} />
               <span className="mt-2">Select a file to edit</span>
