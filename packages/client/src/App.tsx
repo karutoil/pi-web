@@ -85,8 +85,9 @@ export default function App() {
 
   // WebSocket pool — multiple concurrent connections, agents keep streaming when navigating away.
   // Each (project, session) tuple gets its own pool entry so PI processes for background
-  // sessions are not torn down when the user switches project/session. The server-side 5-minute
-  // idle timeout cleans up abandoned sessions.
+  // sessions are not torn down when the user switches project/session. The server keeps an
+  // agent alive while it is actively streaming or has running tools, and only starts the 5-minute
+  // idle timeout after the run goes idle with no clients attached.
   const wsPool = useWebSocketPool();
   // Only attach a WS when we're actually viewing a chat. In sessions/projects views we don't
   // need (or want) a PI process running. Switching projects or sessions leaves the previous

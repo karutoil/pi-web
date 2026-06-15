@@ -10,11 +10,26 @@ import type { ServerWebSocket } from "bun";
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
+export interface IPIAgent {
+  setHandler(handler: (msg: WSServerMessage) => void): void;
+  setExitHandler(handler: (code: number | null) => void): void;
+  start(): Promise<void>;
+  stop(): Promise<void>;
+  getOptions(): PIAgentOptions;
+  getState(): void;
+  doSend(msg: unknown): void;
+}
+
 export class PooledAgent {
-  private agent: PIAgent;
+  private agent: IPIAgent;
+  private createAgent: (options: PIAgentOptions) => IPIAgent;
   private clients = new Set<ServerWebSocket>();
   private idleTimer: Timer | null = null;
   private agentKey: string;
+  private streaming = false;
+  private runningTools = new Set<string>();
+  private lastActivityAt = Date.now();
+  private idleTimeoutMs: number;
 
   /** Get the current pool key for this agent. */
   getKey(): string {
@@ -29,12 +44,16 @@ export class PooledAgent {
   constructor(
     agentKey: string,
     options: PIAgentOptions,
+    createAgent: (options: PIAgentOptions) => IPIAgent = (opts) => new PIAgent(opts),
+    idleTimeoutMs = IDLE_TIMEOUT_MS,
   ) {
     this.agentKey = agentKey;
-    this.agent = new PIAgent(options);
+    this.idleTimeoutMs = idleTimeoutMs;
+    this.createAgent = createAgent;
+    this.agent = createAgent(options);
 
-    // Broadcast all agent messages to attached clients
-    this.agent.setHandler((msg) => this.broadcast(msg));
+    // Forward agent messages to clients and track activity for keepalive
+    this.agent.setHandler((msg) => this.handleAgentMessage(msg));
 
     // Handle unexpected PI exit
     this.agent.setExitHandler((code) => {
@@ -59,12 +78,10 @@ export class PooledAgent {
     setTimeout(() => this.agent.getState(), 100);
   }
 
-  /** Detach a WebSocket client. Starts idle timer if no clients remain. */
+  /** Detach a WebSocket client. Starts idle timer only when no clients remain and agent is idle. */
   detach(ws: ServerWebSocket) {
     this.clients.delete(ws);
-    if (this.clients.size === 0) {
-      this.startIdleTimer();
-    }
+    this.maybeStartIdleTimer();
   }
 
   /** Get number of attached clients */
@@ -80,13 +97,13 @@ export class PooledAgent {
     this.cancelIdleTimer();
     await this.agent.stop();
     const opts = this.agent.getOptions();
-    this.agent = new PIAgent({
+    this.agent = this.createAgent({
       cwd: opts.cwd,
       sessionPath,
       provider: opts.provider,
       model: opts.model,
     });
-    this.agent.setHandler((msg) => this.broadcast(msg));
+    this.agent.setHandler((msg) => this.handleAgentMessage(msg));
     this.agent.setExitHandler((code) => {
       console.log(`[pool] agent ${this.agentKey} exited (code ${code})`);
       this.broadcast({ type: "error", message: `PI agent exited (code ${code}).` });
@@ -140,16 +157,51 @@ export class PooledAgent {
     }
   }
 
-  private startIdleTimer() {
+  private handleAgentMessage(msg: WSServerMessage) {
+    this.noteActivity(msg);
+    this.broadcast(msg);
+  }
+
+  private noteActivity(msg: WSServerMessage) {
+    this.lastActivityAt = Date.now();
+    if (msg.type === "agent_start") {
+      this.streaming = true;
+    } else if (msg.type === "agent_end") {
+      this.streaming = false;
+      this.runningTools.clear();
+      this.maybeStartIdleTimer();
+    } else if (msg.type === "tool_start") {
+      this.runningTools.add(msg.toolCallId);
+    } else if (msg.type === "tool_end") {
+      this.runningTools.delete(msg.toolCallId);
+      this.maybeStartIdleTimer();
+    } else if (msg.type === "state" && "isStreaming" in msg.data) {
+      this.streaming = msg.data.isStreaming || false;
+      if (!this.streaming) this.runningTools.clear();
+      this.maybeStartIdleTimer();
+    }
+  }
+
+  private isActive(): boolean {
+    return this.streaming || this.runningTools.size > 0;
+  }
+
+  private maybeStartIdleTimer() {
     this.cancelIdleTimer();
-    console.log(`[pool] agent ${this.agentKey} idle, starting ${IDLE_TIMEOUT_MS / 1000}s timeout`);
+    if (this.clients.size > 0 || this.isActive()) return;
+    console.log(`[pool] agent ${this.agentKey} idle, starting ${this.idleTimeoutMs / 1000}s timeout`);
     this.idleTimer = setTimeout(async () => {
-      if (this.clients.size === 0) {
-        console.log(`[pool] agent ${this.agentKey} idle timeout, stopping`);
-        await this.agent.stop();
+      try {
+        if (this.clients.size === 0 && !this.isActive()) {
+          console.log(`[pool] agent ${this.agentKey} idle timeout, stopping`);
+          await this.agent.stop();
+          agentPool.delete(this.agentKey);
+        }
+      } catch (err: any) {
+        console.error(`[pool] idle stop error for ${this.agentKey}:`, err.message);
         agentPool.delete(this.agentKey);
       }
-    }, IDLE_TIMEOUT_MS);
+    }, this.idleTimeoutMs);
   }
 
   private cancelIdleTimer() {

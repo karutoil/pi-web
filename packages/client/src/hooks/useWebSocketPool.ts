@@ -95,8 +95,14 @@ function createConnection(
       data.messages = [];
       data.liveMessages = new Map();
       notify();
-      // Request current state and commands on connect
-      setTimeout(() => { send({ type: "get_state" }); send({ type: "get_available_models" }); send({ type: "get_commands" }); }, 200);
+      // Request current state, message history, and commands on connect
+      setTimeout(() => {
+        send({ type: "get_state" });
+        send({ type: "get_messages" });
+        send({ type: "get_last_assistant_text" });
+        send({ type: "get_available_models" });
+        send({ type: "get_commands" });
+      }, 200);
     };
     ws.onclose = () => {
       data.isConnected = false;
@@ -129,6 +135,7 @@ function createConnection(
         if (msg.data) {
           data.state = msg.data as AgentState;
           data.isStreaming = (msg.data as AgentState).isStreaming;
+          data.isActive = data.isStreaming;
           if (pendingNewSession) {
             pendingNewSession = false;
             // Session state arrived after new_session — emit session_loaded for App
@@ -294,11 +301,24 @@ function createConnection(
         data.cloneResult = { cancelled: msg.cancelled || false, sessionPath: msg.sessionPath };
         if (onSessionEventRef.current) onSessionEventRef.current(msg as any);
         break;
-      case "messages_result":
-      case "last_assistant_text_result":
+      case "messages_result": {
+        // Restore history after reconnect so the user sees everything that
+        // happened while the WebSocket was away.
+        const restored = (msg.messages || []).filter((m) => m.role === "user" || m.role === "assistant" || m.role === "toolResult");
+        messagesRef = restored;
+        data.messages = [...messagesRef];
+        break;
+      }
+      case "last_assistant_text_result": {
         // These result types are forwarded to session event listeners
         if (onSessionEventRef.current) onSessionEventRef.current(msg as any);
+        // Also populate the live assistant message bubble so reconnect feels continuous
+        if (msg.text) {
+          data.liveMessages = new Map(data.liveMessages);
+          data.liveMessages.set("current", { role: "assistant", content: msg.text, timestamp: new Date().toISOString() });
+        }
         break;
+      }
     }
     notify();
   }

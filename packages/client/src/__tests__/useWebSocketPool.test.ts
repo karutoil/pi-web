@@ -20,6 +20,10 @@ type FakeWS = {
 const allWS: FakeWS[] = [];
 
 class FakeWebSocket {
+  static CONNECTING = 0;
+  static OPEN = 1;
+  static CLOSING = 2;
+  static CLOSED = 3;
   url: string;
   readyState = 0; // CONNECTING
   sent: string[] = [];
@@ -230,5 +234,122 @@ describe("useWebSocketPool — multi-session regression (the user's bug)", () =>
     const connB = result.current.pool.get("p1::/B.json::")!;
     expect(connB.isStreaming).toBe(true);
     expect(connB.state?.sessionId).toBe("sessB");
+  });
+});
+
+describe("useWebSocketPool — reconnect / keepalive client behavior", () => {
+  it("requests history and last assistant text after opening", async () => {
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useWebSocketPool());
+    act(() => { result.current.getOrConnect("p1", "/A.json", null); });
+    const ws = allWS[0]!;
+    act(() => { ws._open(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(250); });
+
+    const types = ws.sent.map((s) => {
+      try { return JSON.parse(s).type; } catch { return null; }
+    });
+    expect(types).toContain("get_state");
+    expect(types).toContain("get_messages");
+    expect(types).toContain("get_last_assistant_text");
+    expect(types).toContain("get_available_models");
+    expect(types).toContain("get_commands");
+
+    act(() => { result.current.disconnect("p1::/A.json::"); });
+    vi.useRealTimers();
+  });
+
+  it("restores messages from messages_result", () => {
+    const { result } = renderHook(() => useWebSocketPool());
+    let conn: any;
+    act(() => { conn = result.current.getOrConnect("p1", "/A.json", null); });
+    const ws = allWS[0]!;
+    act(() => { ws._open(); });
+    act(() => {
+      ws._receive({
+        type: "messages_result",
+        messages: [
+          { role: "user", content: "hi", timestamp: "2024-01-01T00:00:00Z" },
+          { role: "assistant", content: "hello", timestamp: "2024-01-01T00:00:01Z" },
+          { role: "system", content: "ignored", timestamp: "2024-01-01T00:00:02Z" },
+        ],
+      });
+    });
+
+    expect(conn.messages).toHaveLength(2);
+    expect(conn.messages[0].role).toBe("user");
+    expect(conn.messages[1].role).toBe("assistant");
+    act(() => { result.current.disconnect(conn.key); });
+  });
+
+  it("populates the live message from last_assistant_text_result", () => {
+    const { result } = renderHook(() => useWebSocketPool());
+    let conn: any;
+    act(() => { conn = result.current.getOrConnect("p1", "/A.json", null); });
+    const ws = allWS[0]!;
+    act(() => { ws._open(); });
+    act(() => { ws._receive({ type: "last_assistant_text_result", text: "draft response" }); });
+
+    expect(conn.liveMessages.get("current")).toEqual({
+      role: "assistant",
+      content: "draft response",
+      timestamp: expect.any(String),
+    });
+    act(() => { result.current.disconnect(conn.key); });
+  });
+
+  it("sets isActive from state.isStreaming on reconnect", () => {
+    const { result } = renderHook(() => useWebSocketPool());
+    let conn: any;
+    act(() => { conn = result.current.getOrConnect("p1", "/A.json", null); });
+    const ws = allWS[0]!;
+    act(() => { ws._open(); });
+
+    act(() => {
+      ws._receive({
+        type: "state",
+        data: { isStreaming: true, isCompacting: false, sessionFile: "/A.json", sessionId: "sessA", sessionName: null, model: null, thinkingLevel: "off", messageCount: 0, pendingMessageCount: 0, steering: [], followUp: [] },
+      });
+    });
+    expect(conn.isActive).toBe(true);
+    expect(conn.isStreaming).toBe(true);
+
+    act(() => {
+      ws._receive({
+        type: "state",
+        data: { isStreaming: false, isCompacting: false, sessionFile: "/A.json", sessionId: "sessA", sessionName: null, model: null, thinkingLevel: "off", messageCount: 0, pendingMessageCount: 0, steering: [], followUp: [] },
+      });
+    });
+    expect(conn.isActive).toBe(false);
+    expect(conn.isStreaming).toBe(false);
+    act(() => { result.current.disconnect(conn.key); });
+  });
+
+  it("auto-reconnects and requests history again", async () => {
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useWebSocketPool());
+    let conn: any;
+    act(() => { conn = result.current.getOrConnect("p1", "/A.json", null); });
+    const ws1 = allWS[0]!;
+    act(() => { ws1._open(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(250); });
+    ws1.sent.length = 0;
+
+    act(() => { ws1._close(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1200); });
+
+    expect(allWS.length).toBe(2);
+    const ws2 = allWS[1]!;
+    act(() => { ws2._open(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(250); });
+
+    const types = ws2.sent.map((s) => {
+      try { return JSON.parse(s).type; } catch { return null; }
+    });
+    expect(types).toContain("get_messages");
+    expect(types).toContain("get_last_assistant_text");
+
+    act(() => { result.current.disconnect(conn.key); });
+    vi.useRealTimers();
   });
 });
