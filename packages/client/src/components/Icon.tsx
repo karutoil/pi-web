@@ -654,6 +654,49 @@ const SVG_PATHS = {
     ),
   },
 
+  // ── Arrow up (popularity) ──────────────────────────────
+  "arrow-up": {
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.5",
+    ...ROUND,
+    children: (
+      <>
+        <path d="M8 13 L8 3 M4 7 L8 3 L12 7" />
+      </>
+    ),
+  },
+
+  // ── Clock (recency) ─────────────────────────────────────
+  "clock": {
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.5",
+    ...ROUND,
+    children: (
+      <>
+        <circle cx="8" cy="8" r="6" />
+        <path d="M8 4.5 L8 8 L10.5 9.5" />
+      </>
+    ),
+  },
+
+  // ── Puzzle piece / extensions ────────────────────────────
+  "puzzle": {
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.5",
+    ...ROUND,
+    children: (
+      <>
+        <path d="M5.5 14 L2 14 Q1.5 14 1.5 13.5 L1.5 10 Q1.5 9.5 2 9.5 L3 9.5 Q4 9.5 4 8.5 Q4 7.5 3 7.5 L2 7.5 Q1.5 7.5 1.5 7 L1.5 3.5 Q1.5 3 2 3 L5.5 3 Q6 3 6 3.5 L6 4 Q6 5 7 5 Q8 5 8 4 L8 3.5 Q8 3 8.5 3 L13.5 3 Q14 3 14 3.5 L14 7 Q14 7.5 13.5 7.5 L12.5 7.5 Q11.5 7.5 11.5 8.5 Q11.5 9.5 12.5 9.5 L13.5 9.5 Q14 9.5 14 10 L14 13.5 Q14 14 13.5 14 L10 14 Q9.5 14 9.5 13.5 L9.5 12.5 Q9.5 11.5 8.5 11.5 Q7.5 11.5 7.5 12.5 L7.5 13.5 Q7.5 14 7 14 Z" />
+      </>
+    ),
+  },
+
   // ── File / document ──────────────────────────────────────
   file: {
     viewBox: "0 0 16 16",

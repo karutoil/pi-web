@@ -2,13 +2,14 @@ import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { createBunWebSocket } from "hono/bun";
 import type { ServerWebSocket } from "bun";
-import { join, basename, resolve, normalize, relative, isAbsolute, delimiter } from "node:path";
+import { join, basename, resolve, normalize, relative, isAbsolute, delimiter, dirname } from "node:path";
 import { existsSync, statSync, lstatSync, readdirSync, realpathSync } from "node:fs";
-import { readdir, stat, readFile, writeFile, unlink, rename as renameFs } from "node:fs/promises";
+import { readdir, stat, readFile, writeFile, unlink, rename as renameFs, mkdir } from "node:fs/promises";
 import { homedir, platform } from "node:os";
 
 import { addProject, removeProject, listProjects, getProject, touchProject, getLayout, saveLayout, deleteLayout } from "./db";
 import { listProjectSessions, getSessionDetail } from "./pi-sessions";
+import { buildSessionHtmlPretty } from "./sessionExportPretty";
 import { getOrCreateAgent, stopAllAgents, getPoolStats, lookupAgent, detachFromAgent, deleteFromPool, rekeyAgent } from "./pi-agent";
 import { createTerminal, getTerminal, listTerminals, killTerminal } from "./pi-terminal";
 import { getGitStatus, getGitDiff, getGitDiffForCommit, gitStage, gitUnstage, gitCommit, gitLog, gitCheckout, gitDiscard, gitBranches, gitPush, gitPull, gitFetch, gitCreateBranch, gitDeleteBranch, gitRenameBranch, gitTags, gitCreateTag, gitDeleteTag, gitStashList, gitStashShow, gitStashPush, gitStashPop, gitStashApply, gitStashDrop, gitAmend, gitCherryPick, gitRevert, gitResolveConflict, getGitDiffStats, gitDiffWithRef, gitShowCommit, gitLogSearch, gitBlame, gitRemotes, gitUnstageAll } from "./pi-git";
@@ -156,17 +157,18 @@ const DEFAULT_WORKSPACE_LAYOUT: WorkspaceLayout = {
     { id: "preview", region: "right", order: 0, size: 100 },
     { id: "git", region: "right", order: 1, size: 100 },
     { id: "files", region: "right", order: 2, size: 100 },
+    { id: "extensions", region: "right", order: 3, size: 100 },
   ],
   updatedAt: null,
 };
 
-const WORKSPACE_PANEL_IDS = new Set(["channels", "chat", "terminal", "preview", "git", "files", "rail"]);
+const WORKSPACE_PANEL_IDS = new Set(["channels", "chat", "terminal", "preview", "git", "files", "rail", "extensions"]);
 const WORKSPACE_REGION_IDS = new Set(["left", "center", "right", "top", "bottom"]);
 
 function normalizeLayout(input: unknown): WorkspaceLayout {
   const source = input as Partial<WorkspaceLayout> | null;
   const regionIds = ["left", "center", "right", "top", "bottom"] as const;
-  const panelIds = ["channels", "chat", "terminal", "preview", "git", "files", "rail"] as const;
+  const panelIds = ["channels", "chat", "terminal", "preview", "git", "files", "rail", "extensions"] as const;
   const seenPanels = new Set<string>();
 
   const normalizedRegions = regionIds.map((id, index) => {
@@ -278,7 +280,7 @@ app.delete("/api/projects/:id", (c) => {
 app.get("/api/layout", (c) => {
   const key = c.req.query("key") || "workspace";
   const saved = getLayout(key);
-  return c.json({ layout: saved || DEFAULT_WORKSPACE_LAYOUT });
+  return c.json({ layout: saved ? normalizeLayout(saved) : DEFAULT_WORKSPACE_LAYOUT });
 });
 
 app.put("/api/layout", async (c) => {
@@ -954,6 +956,34 @@ app.post("/api/sessions/export-html", async (c) => {
   }
 });
 
+// Pretty export — matches the live PI web-chat styling
+app.post("/api/sessions/export-html-pretty", async (c) => {
+  const { sessionPath } = await c.req.json();
+  if (!sessionPath) return c.json({ error: "sessionPath required" }, 400);
+  try {
+    const safePath = validateSessionPath(sessionPath);
+    const detail = await getSessionDetail(safePath);
+    if (!detail) return c.json({ error: "Session not found" }, 404);
+    const html = await buildSessionHtmlPretty(detail);
+    return c.json({ html });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 403);
+  }
+});
+
+// Export raw session JSONL file
+app.post("/api/sessions/export-jsonl", async (c) => {
+  const { sessionPath } = await c.req.json();
+  if (!sessionPath) return c.json({ error: "sessionPath required" }, 400);
+  try {
+    const safePath = validateSessionPath(sessionPath);
+    const jsonl = await readFile(safePath, "utf-8");
+    return c.json({ jsonl });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 403);
+  }
+});
+
 // Search files in a project directory for @ mentions
 app.get("/api/fs/search-files", (c) => {
   const dir = c.req.query("dir");
@@ -1073,6 +1103,733 @@ app.get("/api/fs/search-files", (c) => {
 
 // Health
 app.get("/api/health", (c) => c.json({ status: "ok", time: Date.now(), pool: getPoolStats(), port: server.port }));
+
+// ==================== Extensions API ====================
+
+const PI_SETTINGS_PATH = join(HOME, ".pi", "agent", "settings.json");
+const PI_EXTENSIONS_DIR = join(HOME, ".pi", "agent", "extensions");
+
+interface PiPackageEntry {
+  source: string;
+  extensions?: string[];
+  skills?: string[];
+  prompts?: string[];
+  themes?: string[];
+}
+
+interface PiSettings {
+  packages?: (string | PiPackageEntry)[];
+  extensions?: string[];
+  skills?: string[];
+  [key: string]: unknown;
+}
+
+async function readPiSettings(): Promise<PiSettings> {
+  try {
+    const raw = await readFile(PI_SETTINGS_PATH, "utf-8");
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+async function writePiSettings(settings: PiSettings): Promise<void> {
+  const raw = JSON.stringify(settings, null, 2) + "\n";
+  await mkdir(dirname(PI_SETTINGS_PATH), { recursive: true });
+  await writeFile(PI_SETTINGS_PATH, raw, "utf-8");
+}
+
+const MAX_README_LENGTH = 256_000;
+const REGISTRY_FETCH_TIMEOUT_MS = 15_000;
+const EXTENSION_CACHE_MAX_ENTRIES = 20;
+
+/** Validate an npm package name or scoped npm package name. */
+function isValidNpmPackageName(name: string): boolean {
+  if (!name || typeof name !== "string") return false;
+  if (name.length > 214) return false;
+  if (name.startsWith(".") || name.startsWith("_")) return false;
+  if (name.trim().toLowerCase() === "node_modules") return false;
+  if (name.includes("/")) {
+    const [scope, pkg, ...rest] = name.split("/");
+    if (rest.length > 0) return false;
+    if (!scope || !pkg) return false;
+    if (!scope.startsWith("@")) return false;
+    const scopeBody = scope.slice(1);
+    return /^[a-zA-Z0-9_.-]+$/.test(scopeBody) && /^[a-zA-Z0-9_.~-]+$/.test(pkg);
+  }
+  return /^[a-zA-Z0-9_.~-]+$/.test(name);
+}
+
+/** Validate `npm:<pkg>` or just package name. */
+function parseNpmSource(source: string): { ok: true; name: string } | { ok: false } {
+  const name = source.startsWith("npm:") ? source.slice(4) : source;
+  if (isValidNpmPackageName(name)) return { ok: true, name };
+  return { ok: false };
+}
+
+/** Ensure a local extension path resolves inside PI_EXTENSIONS_DIR. */
+function safeLocalExtensionPath(inputPath: string): string | null {
+  let cleaned = inputPath;
+  // Strip optional leading +/- prefix
+  cleaned = cleaned.replace(/^[+-]/, "");
+  // Strip optional legacy extensions/ prefix
+  cleaned = cleaned.replace(/^extensions\//, "");
+  // Reject absolute paths or traversal attempts
+  if (isAbsolute(cleaned)) return null;
+  if (/\.\.(\/|\\|$)/.test(cleaned) || cleaned.includes("/../")) return null;
+  const resolved = resolve(join(PI_EXTENSIONS_DIR, cleaned));
+  const base = resolve(PI_EXTENSIONS_DIR);
+  const rel = relative(base, resolved);
+  if (rel.startsWith("..") || isAbsolute(rel)) return null;
+  return resolved;
+}
+
+function normalizeLicense(input: unknown): string | null {
+  if (typeof input === "string") return input || null;
+  if (input && typeof input === "object" && "type" in input && typeof (input as any).type === "string") {
+    return (input as any).type || null;
+  }
+  return null;
+}
+
+const ALLOWED_URL_SCHEMES = new Set(["http", "https", "git", "git+https", "git+ssh"]);
+
+function normalizeUrl(input: unknown): string | null {
+  let url: string | null = null;
+  if (typeof input === "string" && input.trim()) {
+    url = input.trim();
+  } else if (input && typeof input === "object" && "url" in input && typeof (input as any).url === "string") {
+    url = (input as any).url.trim();
+  }
+  if (!url) return null;
+  const colon = url.indexOf(":");
+  if (colon < 0) return null;
+  const scheme = url.slice(0, colon).toLowerCase();
+  if (!ALLOWED_URL_SCHEMES.has(scheme)) return null;
+  return url.replace(/^git\+/, "");
+}
+
+function normalizeRepository(input: unknown): { type: string; url: string } | null {
+  const url = normalizeUrl(input);
+  if (!url) return null;
+  const type = (input && typeof input === "object" && typeof (input as any).type === "string")
+    ? (input as any).type
+    : "git";
+  return { type, url };
+}
+
+function normalizeAuthor(input: unknown): { name: string; email?: string; url?: string } | null {
+  if (!input) return null;
+  if (typeof input === "string") {
+    const match = input.match(/^([^<(]+)/);
+    const name = match ? match[1].trim() : input.trim();
+    if (!name) return null;
+    const emailMatch = input.match(/<([^>]+)>/);
+    const urlMatch = input.match(/\(([^)]+)\)/);
+    return { name, email: emailMatch?.[1], url: urlMatch?.[1] };
+  }
+  if (typeof input === "object" && "name" in input && typeof (input as any).name === "string") {
+    return {
+      name: (input as any).name,
+      email: typeof (input as any).email === "string" ? (input as any).email : undefined,
+      url: typeof (input as any).url === "string" ? (input as any).url : undefined,
+    };
+  }
+  return null;
+}
+
+interface InstalledExtension {
+  id: string;
+  name: string;
+  source: string;
+  type: "package" | "local";
+  enabled: boolean;
+  version?: string;
+  description?: string;
+  path?: string;
+  extensions?: string[];
+  skills?: string[];
+  prompts?: string[];
+  themes?: string[];
+}
+
+// List installed extensions
+app.get("/api/extensions", async (c) => {
+  const settings = await readPiSettings();
+  const extensions: InstalledExtension[] = [];
+
+  // Parse packages from settings
+  const packages = settings.packages || [];
+  for (const entry of packages) {
+    const source = typeof entry === "string" ? entry : entry.source;
+    const filters = typeof entry === "string" ? {} : { extensions: entry.extensions, skills: entry.skills, prompts: entry.prompts, themes: entry.themes };
+    const name = source.startsWith("npm:") ? source.slice(4) : source;
+
+    // Reject malformed package sources to prevent path traversal
+    if (!isValidNpmPackageName(name)) continue;
+
+    // Check if any extensions are disabled (prefixed with -)
+    const extFilters = filters.extensions || [];
+    const hasDisabled = extFilters.some((f: string) => f.startsWith("-"));
+    const hasEnabled = extFilters.some((f: string) => f.startsWith("+"));
+
+    // Try to read package.json from the npm install dir
+    let version: string | undefined;
+    let description: string | undefined;
+    let pkgPath: string | undefined;
+    try {
+      const pkgName = name.includes("/") ? name : name;
+      // Resolve the actual installed path
+      const possiblePaths = [
+        join(HOME, ".pi", "agent", "npm", "node_modules", pkgName, "package.json"),
+      ];
+      for (const pp of possiblePaths) {
+        if (existsSync(pp)) {
+          const pkgJson = JSON.parse(await readFile(pp, "utf-8"));
+          version = pkgJson.version;
+          description = pkgJson.description;
+          pkgPath = join(pp, "..");
+          break;
+        }
+      }
+    } catch {}
+
+    extensions.push({
+      id: source,
+      name,
+      source,
+      type: "package",
+      enabled: !hasDisabled || hasEnabled,
+      version,
+      description,
+      path: pkgPath,
+      extensions: filters.extensions,
+      skills: filters.skills,
+      prompts: filters.prompts,
+      themes: filters.themes,
+    });
+  }
+
+  // Parse local extensions from settings.extensions
+  const localExts = settings.extensions || [];
+  for (const ext of localExts) {
+    const isDisabled = ext.startsWith("-");
+    const isEnabled = ext.startsWith("+");
+    const cleanPath = ext.replace(/^[+-]/, "");
+    const safePath = safeLocalExtensionPath(cleanPath);
+    if (!safePath) continue;
+    const name = cleanPath.split("/").pop() || cleanPath;
+
+    extensions.push({
+      id: `local:${cleanPath}`,
+      name,
+      source: cleanPath,
+      type: "local",
+      enabled: isEnabled || !isDisabled,
+      path: safePath,
+    });
+  }
+
+  // Also scan local extensions directory for auto-discovered extensions
+  try {
+    if (existsSync(PI_EXTENSIONS_DIR)) {
+      const entries = readdirSync(PI_EXTENSIONS_DIR, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.name.startsWith(".") || entry.name === "__tests__") continue;
+        const extPath = entry.isDirectory()
+          ? join(PI_EXTENSIONS_DIR, entry.name, "index.ts")
+          : join(PI_EXTENSIONS_DIR, entry.name);
+        if (!entry.isDirectory() && !entry.name.endsWith(".ts") && !entry.name.endsWith(".js")) continue;
+        const localId = `local:${entry.isDirectory() ? `extensions/${entry.name}` : `extensions/${entry.name}`}`;
+        // Skip if already listed from settings
+        if (extensions.some(e => e.id === localId || e.path === extPath || e.path === join(PI_EXTENSIONS_DIR, entry.name))) continue;
+
+        let description: string | undefined;
+        let version: string | undefined;
+        try {
+          const pkgJsonPath = join(PI_EXTENSIONS_DIR, entry.name, "package.json");
+          if (existsSync(pkgJsonPath)) {
+            const pkgJson = JSON.parse(await readFile(pkgJsonPath, "utf-8"));
+            description = pkgJson.description;
+            version = pkgJson.version;
+          }
+        } catch {}
+
+        extensions.push({
+          id: localId,
+          name: entry.name.replace(/\.(ts|js)$/, ""),
+          source: entry.isDirectory() ? `extensions/${entry.name}` : `extensions/${entry.name}`,
+          type: "local",
+          enabled: true, // auto-discovered = enabled by default
+          version,
+          description,
+          path: join(PI_EXTENSIONS_DIR, entry.name),
+        });
+      }
+    }
+  } catch {}
+
+  return c.json({ extensions });
+});
+
+// Toggle extension enabled/disabled
+app.patch("/api/extensions/:id/toggle", async (c) => {
+  let body: { enabled?: unknown };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+  if (typeof body?.enabled !== "boolean") {
+    return c.json({ error: "enabled boolean is required" }, 400);
+  }
+  const rawId = decodeURIComponent(c.req.param("id"));
+  const { enabled } = body;
+  const settings = await readPiSettings();
+
+  // Handle package entries (validate npm source shape when matched)
+  if (!rawId.startsWith("local:")) {
+    const parsed = parseNpmSource(rawId);
+    if (!parsed.ok) return c.json({ error: "Invalid extension id" }, 400);
+    const packages = settings.packages || [];
+    let found = false;
+    const updated = packages.map(entry => {
+      const source = typeof entry === "string" ? entry : entry.source;
+      if (source === rawId) {
+        found = true;
+        if (typeof entry === "string") {
+          // Convert to object form with filter
+          return { source, extensions: enabled ? ["+index.ts"] : ["-index.ts"] };
+        } else {
+          const extFilters = entry.extensions || [];
+          if (enabled) {
+            // Replace - with + or add +
+            const hasAny = extFilters.length > 0;
+            return { ...entry, extensions: hasAny ? extFilters.map((f: string) => f.startsWith("-") ? `+${f.slice(1)}` : f) : ["+index.ts"] };
+          } else {
+            const hasAny = extFilters.length > 0;
+            return { ...entry, extensions: hasAny ? extFilters.map((f: string) => f.startsWith("+") ? `-${f.slice(1)}` : f.startsWith("-") ? f : `-${f}`) : ["-index.ts"] };
+          }
+        }
+      }
+      return entry;
+    });
+
+    if (found) {
+      settings.packages = updated;
+      await writePiSettings(settings);
+      return c.json({ success: true, restartRequired: true });
+    }
+  }
+
+  // Handle local extension entries
+  if (rawId.startsWith("local:")) {
+    const extPath = rawId.slice(6);
+    if (!safeLocalExtensionPath(extPath)) {
+      return c.json({ error: "Invalid local extension path" }, 400);
+    }
+    const localExts = settings.extensions || [];
+    const existingIndex = localExts.findIndex((e: string) => {
+      const clean = e.replace(/^[+-]/, "");
+      return clean === extPath;
+    });
+
+    if (existingIndex >= 0) {
+      localExts[existingIndex] = enabled ? `+${extPath}` : `-${extPath}`;
+    } else {
+      localExts.push(enabled ? `+${extPath}` : `-${extPath}`);
+    }
+    settings.extensions = localExts;
+    await writePiSettings(settings);
+    return c.json({ success: true, restartRequired: true });
+  }
+
+  return c.json({ error: "Extension not found" }, 404);
+});
+
+// Install an extension via pi install
+app.post("/api/extensions/install", async (c) => {
+  let body: { source?: unknown };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+  const { source } = body;
+  if (!source || typeof source !== "string" || !source.startsWith("npm:")) {
+    return c.json({ error: "source is required and must be npm:<package-name>" }, 400);
+  }
+  const parsed = parseNpmSource(source);
+  if (!parsed.ok) {
+    return c.json({ error: "Invalid npm package name" }, 400);
+  }
+
+  const home = process.env.HOME || process.env.USERPROFILE || homedir();
+  const envPath = [
+    join(home, ".bun/bin"),
+    join(home, ".nvm/versions/node/v22.22.2/bin"),
+    ...(platform() === "win32" ? [] : ["/usr/local/bin", "/usr/bin", "/bin"]),
+    process.env.PATH || "",
+  ].join(delimiter);
+
+  const piBin = platform() === "win32" ? "pi.cmd" : "pi";
+  try {
+    const proc = Bun.spawn([piBin, "install", source], {
+      cwd: HOME,
+      stdout: "pipe",
+      stderr: "pipe",
+      env: { ...process.env, PATH: envPath },
+    });
+
+    const timeoutMs = 60_000;
+    const exitCode = await Promise.race([
+      proc.exited,
+      new Promise<null>((_, reject) =>
+        setTimeout(() => { proc.kill(); reject(new Error("Installation timed out")); }, timeoutMs)
+      ),
+    ]);
+
+    const stderr = await new Response(proc.stderr).text();
+    if (exitCode !== 0) {
+      return c.json({ error: stderr.trim() || `pi install exited with code ${exitCode}` }, 500);
+    }
+
+    return c.json({ success: true, restartRequired: true });
+  } catch (err: any) {
+    console.warn("[extensions] pi install failed", err);
+    return c.json({ error: err.message || "Failed to install extension" }, 500);
+  }
+});
+
+// Uninstall an extension via pi remove
+app.post("/api/extensions/uninstall", async (c) => {
+  let body: { source?: unknown };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+  const { source } = body;
+  if (!source || typeof source !== "string" || !source.startsWith("npm:")) {
+    return c.json({ error: "source is required and must be npm:<package-name>" }, 400);
+  }
+  const parsed = parseNpmSource(source);
+  if (!parsed.ok) {
+    return c.json({ error: "Invalid npm package name" }, 400);
+  }
+
+  const home = process.env.HOME || process.env.USERPROFILE || homedir();
+  const envPath = [
+    join(home, ".bun/bin"),
+    join(home, ".nvm/versions/node/v22.22.2/bin"),
+    ...(platform() === "win32" ? [] : ["/usr/local/bin", "/usr/bin", "/bin"]),
+    process.env.PATH || "",
+  ].join(delimiter);
+
+  const piBin = platform() === "win32" ? "pi.cmd" : "pi";
+  try {
+    const proc = Bun.spawn([piBin, "remove", source], {
+      cwd: HOME,
+      stdout: "pipe",
+      stderr: "pipe",
+      env: { ...process.env, PATH: envPath },
+    });
+
+    const timeoutMs = 30_000;
+    const exitCode = await Promise.race([
+      proc.exited,
+      new Promise<null>((_, reject) =>
+        setTimeout(() => { proc.kill(); reject(new Error("Removal timed out")); }, timeoutMs)
+      ),
+    ]);
+
+    const stderr = await new Response(proc.stderr).text();
+    if (exitCode !== 0) {
+      return c.json({ error: stderr.trim() || `pi remove exited with code ${exitCode}` }, 500);
+    }
+
+    return c.json({ success: true, restartRequired: true });
+  } catch (err: any) {
+    console.warn("[extensions] pi remove failed", err);
+    return c.json({ error: err.message || "Failed to remove extension" }, 500);
+  }
+});
+
+// Restart all running PI agent processes (and any external `pi` CLI instances).
+app.post("/api/extensions/restart", async (c) => {
+  try {
+    // Stop agents managed by this PI Web instance
+    await stopAllAgents();
+    // Kill any other `pi` processes spawned elsewhere on the machine
+    await killExternalPiProcesses();
+    return c.json({ success: true });
+  } catch (err: any) {
+    return c.json({ error: err.message || "Failed to restart PI instances" }, 500);
+  }
+});
+
+/**
+ * Best-effort kill of external `pi` CLI processes across platforms.
+ * NOTE: This intentionally kills any process named `pi` on the machine,
+ * matching the user-approved restart behavior. Hardening to exclude the
+ * current process would require tracking child PIDs, which is not available.
+ */
+async function killExternalPiProcesses(): Promise<void> {
+  const isWin = platform() === "win32";
+  const commands: string[][] = isWin
+    ? [["taskkill", "/F", "/IM", "pi.cmd"], ["taskkill", "/F", "/IM", "pi.exe"]]
+    : [["pkill", "-x", "pi"]];
+
+  await Promise.all(commands.map((args) => new Promise<void>((resolve) => {
+    try {
+      const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
+      const timeout = setTimeout(() => { try { proc.kill(); } catch {} resolve(); }, 3000);
+      proc.exited.then(() => { clearTimeout(timeout); resolve(); }).catch(() => resolve());
+    } catch {
+      resolve();
+    }
+  })));
+}
+
+// Search npm for pi-compatible extensions
+// ── Extension search cache ──────────────────────────────────
+// Caches npm search + download data so sort changes don't re-hit npm APIs.
+// Keyed by search query; TTL = 5 minutes.
+interface SearchCacheEntry {
+  packages: Array<{
+    name: string;
+    version: string;
+    description: string;
+    keywords: string[];
+    date?: string;
+    publisher?: string;
+    links: Record<string, string>;
+    pi?: Record<string, unknown>;
+    downloads: number;
+    weeklyDownloads: number;
+  }>;
+  fetchedAt: number;
+  version: number;
+}
+const extensionSearchCache = new Map<string, SearchCacheEntry>();
+const EXTENSION_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const EXTENSION_CACHE_VERSION = 2; // bump when download-count semantics change
+
+async function fetchExtensionSearchResults(query: string): Promise<SearchCacheEntry["packages"]> {
+  const cacheKey = query || "__default__";
+  const cached = extensionSearchCache.get(cacheKey);
+  const hasStaleData = cached && (
+    cached.version !== EXTENSION_CACHE_VERSION ||
+    !cached.packages.every(p => typeof p.weeklyDownloads === "number" && typeof p.downloads === "number")
+  );
+  if (cached && !hasStaleData && Date.now() - cached.fetchedAt < EXTENSION_CACHE_TTL_MS) {
+    return cached.packages;
+  }
+
+  // Query the npm registry search API directly so we can retrieve more than
+  // the ~50 results the `npm search` CLI is capped at. We search both the
+  // pi-package and pi-extension keywords and merge/dedupe the results.
+  const rawQuery = query.trim();
+  const buildUrl = (keyword: string) => {
+    const text = rawQuery ? `keywords:${keyword}+${encodeURIComponent(rawQuery)}` : `keywords:${keyword}`;
+    return `https://registry.npmjs.org/-/v1/search?text=${text}&size=250`;
+  };
+
+  const searchRes = await Promise.all([
+    fetch(buildUrl("pi-package"), { signal: AbortSignal.timeout(REGISTRY_FETCH_TIMEOUT_MS) }),
+    fetch(buildUrl("pi-extension"), { signal: AbortSignal.timeout(REGISTRY_FETCH_TIMEOUT_MS) }),
+  ]);
+
+  const seenResults = new Set<string>();
+  const filtered: Array<{ package: any; downloads?: { monthly?: number; weekly?: number } }> = [];
+  for (const res of searchRes) {
+    if (!res.ok) {
+      console.warn(`[extensions] registry search failed: ${res.status} ${res.statusText}`);
+      continue;
+    }
+    const data = await res.json() as { objects?: Array<{ package: any; downloads?: { monthly?: number; weekly?: number } }> };
+    for (const obj of data.objects || []) {
+      const pkg = obj.package;
+      if (!pkg || seenResults.has(pkg.name)) continue;
+      if (!pkg.keywords?.includes("pi-package") && !pkg.keywords?.includes("pi-extension")) continue;
+      seenResults.add(pkg.name);
+      filtered.push({ package: pkg, downloads: obj.downloads });
+    }
+  }
+
+  // If a free-text query was supplied, keep only results whose name or a
+  // keyword contains the query. This keeps broad registry matches (e.g.
+  // descriptions) from overwhelming exact package-name searches.
+  const q = query.trim().toLowerCase();
+  if (q) {
+    const kept = filtered.filter(({ package: pkg }: any) => {
+      const name = String(pkg.name || "").toLowerCase();
+      if (name.includes(q)) return true;
+      const keywords: string[] = pkg.keywords || [];
+      return keywords.some((k: string) => k.toLowerCase().includes(q));
+    });
+    filtered.length = 0;
+    filtered.push(...kept);
+  }
+
+  // Use the download counts already returned by the npm registry search API
+  // (monthly / weekly). This avoids the npm downloads API rate limits that
+  // hit when we bulk/individual fetch hundreds of packages.
+  const packages = filtered.map(({ package: pkg, downloads }) => ({
+    name: pkg.name,
+    version: pkg.version,
+    description: pkg.description || "",
+    keywords: (pkg.keywords || []).filter((k: string) => k !== "pi-package" && k !== "pi-extension"),
+    date: pkg.date,
+    publisher: pkg.publisher?.username,
+    links: pkg.links || {},
+    pi: pkg.pi || undefined,
+    downloads: downloads?.monthly ?? 0,
+    weeklyDownloads: downloads?.weekly ?? 0,
+  }));
+
+  // Store in cache, capping the total number of cached queries
+  if (extensionSearchCache.size >= EXTENSION_CACHE_MAX_ENTRIES) {
+    let oldestKey: string | null = null;
+    let oldestAt = Infinity;
+    for (const [key, entry] of extensionSearchCache) {
+      if (entry.fetchedAt < oldestAt) {
+        oldestAt = entry.fetchedAt;
+        oldestKey = key;
+      }
+    }
+    if (oldestKey) extensionSearchCache.delete(oldestKey);
+  }
+  extensionSearchCache.set(cacheKey, { packages, fetchedAt: Date.now(), version: EXTENSION_CACHE_VERSION });
+
+  return packages;
+}
+
+// Most downloaded = monthly npm downloads
+// Recently uploaded = package publish date (newest first)
+
+app.get("/api/extensions/search", async (c) => {
+  const query = c.req.query("q") || "";
+  const sort = c.req.query("sort") || "mostDownloaded"; // mostDownloaded | recentlyUploaded | name
+  try {
+    // Fetch (or read from cache) — heavy npm API calls only happen once per query per 5 min
+    const packages = await fetchExtensionSearchResults(query);
+
+    // Sort a copy so the cache stays pristine
+    const sorted = [...packages];
+    switch (sort) {
+      case "mostDownloaded":
+      case "popular":
+        sorted.sort((a, b) => b.downloads - a.downloads);
+        break;
+      case "recentlyUploaded":
+      case "newest":
+        sorted.sort((a, b) => {
+          const da = a.date ? new Date(a.date).getTime() : 0;
+          const db = b.date ? new Date(b.date).getTime() : 0;
+          return db - da;
+        });
+        break;
+      case "name":
+        sorted.sort((a, b) => a.name.localeCompare(b.name));
+        break;
+      case "trending":
+      default:
+        sorted.sort((a, b) => (b.weeklyDownloads || 0) - (a.weeklyDownloads || 0));
+        break;
+    }
+
+    return c.json({ packages: sorted });
+  } catch (err: any) {
+    return c.json({ error: err.message || "Search failed" }, 500);
+  }
+});
+
+// ── Extension package detail ──────────────────────────────
+app.get("/api/extensions/detail", async (c) => {
+  const name = c.req.query("name");
+  if (!name) return c.json({ error: "name query required" }, 400);
+
+  try {
+    const registryUrl = `https://registry.npmjs.org/${encodeURIComponent(name)}`;
+    const res = await fetch(registryUrl, { signal: AbortSignal.timeout(REGISTRY_FETCH_TIMEOUT_MS) });
+    if (!res.ok) {
+      if (res.status === 404) return c.json({ error: "Package not found" }, 404);
+      return c.json({ error: `Registry returned ${res.status}` }, 502);
+    }
+
+    const data = await res.json() as any;
+    if (data.error) return c.json({ error: data.error }, 404);
+
+    const latestVersion = data["dist-tags"]?.latest;
+    const latest = latestVersion ? data.versions?.[latestVersion] : null;
+
+    // Build version history from time map (skip created/modified entries)
+    const timeMap = data.time || {};
+    const versions: Array<{ version: string; date: string }> = [];
+    for (const [ver, date] of Object.entries(timeMap)) {
+      if (ver === "created" || ver === "modified") continue;
+      versions.push({ version: ver, date: date as string });
+    }
+    versions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    const detail = {
+      name: data.name,
+      description: data.description || latest?.description || "",
+      latestVersion,
+      license: normalizeLicense(latest?.license) || normalizeLicense(data.license),
+      homepage: normalizeUrl(latest?.homepage) || normalizeUrl(data.homepage),
+      repository: normalizeRepository(latest?.repository) || normalizeRepository(data.repository),
+      author: normalizeAuthor(latest?.author) || normalizeAuthor(data.author),
+      maintainers: (data.maintainers || []).map((m: any) => ({
+        name: m.name,
+        email: m.email || null,
+      })),
+      keywords: latest?.keywords || data.keywords || [],
+      pi: latest?.pi || null,
+      dependencies: latest?.dependencies ? Object.keys(latest.dependencies) : [],
+      peerDependencies: latest?.peerDependencies ? Object.keys(latest.peerDependencies) : [],
+      readme: typeof data.readme === "string" && data.readme.length <= MAX_README_LENGTH
+        ? data.readme
+        : (typeof data.readme === "string" ? data.readme.slice(0, MAX_README_LENGTH) : null),
+      versions: versions.slice(0, 20),
+      created: timeMap.created || null,
+      modified: timeMap.modified || null,
+      downloads: 0 as number,
+      weeklyDownloads: 0 as number,
+    };
+
+    // Enrich with download counts
+    try {
+      const [dlRes, wkRes] = await Promise.all([
+        fetch(`https://api.npmjs.org/downloads/point/last-year/${encodeURIComponent(name)}`, { signal: AbortSignal.timeout(REGISTRY_FETCH_TIMEOUT_MS) }),
+        fetch(`https://api.npmjs.org/downloads/point/last-week/${encodeURIComponent(name)}`, { signal: AbortSignal.timeout(REGISTRY_FETCH_TIMEOUT_MS) }),
+      ]);
+      if (dlRes.ok) {
+        const dlData = await dlRes.json() as { downloads?: number; package?: string } | Record<string, { downloads: number }>;
+        if ("downloads" in dlData && typeof dlData.downloads === "number") {
+          detail.downloads = dlData.downloads;
+        } else {
+          const entry = (dlData as Record<string, { downloads: number }>)[name];
+          if (entry?.downloads !== undefined) detail.downloads = entry.downloads;
+        }
+      }
+      if (wkRes.ok) {
+        const wkData = await wkRes.json() as { downloads?: number; package?: string } | Record<string, { downloads: number }>;
+        if ("downloads" in wkData && typeof wkData.downloads === "number") {
+          detail.weeklyDownloads = wkData.downloads;
+        } else {
+          const entry = (wkData as Record<string, { downloads: number }>)[name];
+          if (entry?.downloads !== undefined) detail.weeklyDownloads = entry.downloads;
+        }
+      }
+    } catch {}
+
+    return c.json({ detail });
+  } catch (err: any) {
+    return c.json({ error: err.message || "Failed to fetch package detail" }, 500);
+  }
+});
 
 // ==================== Preview API ====================
 

@@ -19,6 +19,7 @@ import { usePreviewStore } from "./hooks/usePreviewStore";
 import { useRightPanelStore } from "./hooks/useRightPanelStore";
 import { useWorkspaceLayout } from "./hooks/useWorkspaceLayout";
 import { useIsMobile } from "./hooks/useIsMobile";
+import { ExtensionsPanel } from "./components/ExtensionsPanel";
 import { WorkspaceDock } from "./components/WorkspaceDock";
 import { MobileShell } from "./components/MobileShell";
 import { Icon } from "./components/Icon";
@@ -248,6 +249,7 @@ export default function App() {
   const rightPanel = useRightPanelStore();
   const gitOpen = rightPanel.isOpen("git");
   const filesOpen = rightPanel.isOpen("files");
+  const extensionsOpen = rightPanel.isOpen("extensions");
 
   // Sync preview store → right panel store
   useEffect(() => {
@@ -285,19 +287,26 @@ export default function App() {
       icon: <Icon name="file" size={10} />,
       children: null,
     }] : []),
+    ...(!extensionsOpen ? [{
+      id: "extensions" as const,
+      title: "Extensions",
+      icon: <Icon name="puzzle" size={10} />,
+      children: null,
+    }] : []),
     ...(!terminalOpen ? [{
       id: "terminal" as const,
       title: "Terminal",
       icon: <Icon name="terminal" size={10} />,
       children: null,
     }] : []),
-  ], [gitOpen, rightPanel, selectedProject, sidebarOpen, terminalOpen, filesOpen]);
+  ], [gitOpen, rightPanel, selectedProject, sidebarOpen, terminalOpen, filesOpen, extensionsOpen]);
 
   const reopenPanel = useCallback((panelId: WorkspacePanelKind) => {
     if (panelId === "channels") setSidebarOpen(true);
     if (panelId === "preview") rightPanel.open("preview");
     if (panelId === "git") rightPanel.open("git");
     if (panelId === "files") rightPanel.open("files");
+    if (panelId === "extensions") rightPanel.open("extensions");
     if (panelId === "terminal") setTerminalOpen(true);
   }, [rightPanel]);
 
@@ -648,10 +657,12 @@ export default function App() {
               onTogglePreview={() => { const wasOpen = rightPanel.isOpen("preview"); rightPanel.toggle("preview"); if (!wasOpen && isMobile) setActiveMobilePanel("preview"); }}
               onToggleGit={() => { const wasOpen = gitOpen; rightPanel.toggle("git"); if (!wasOpen && isMobile) setActiveMobilePanel("git"); }}
               onToggleFiles={() => { const wasOpen = filesOpen; rightPanel.toggle("files"); if (!wasOpen && isMobile) setActiveMobilePanel("files"); }}
+              onToggleExtensions={() => { const wasOpen = extensionsOpen; rightPanel.toggle("extensions"); if (!wasOpen && isMobile) setActiveMobilePanel("extensions"); }}
               terminalOpen={terminalOpen}
               previewOpen={rightPanel.isOpen("preview")}
               gitOpen={gitOpen}
               filesOpen={filesOpen}
+              extensionsOpen={extensionsOpen}
             />
           ) : view === "sessions" ? (
             <SessionWelcome
@@ -721,6 +732,19 @@ export default function App() {
       ),
       onClose: () => rightPanel.close("files"),
     }] : []),
+    ...(extensionsOpen ? [{
+      id: "extensions" as const,
+      title: "Extensions",
+      icon: <Icon name="puzzle" size={12} />,
+      children: (
+        <ExtensionsPanel
+          visible={true}
+          onClose={() => rightPanel.close("extensions")}
+          embedded
+        />
+      ),
+      onClose: () => rightPanel.close("extensions"),
+    }] : []),
     ...(terminalOpen ? [{
       id: "terminal" as const,
       title: "Terminal",
@@ -747,7 +771,7 @@ export default function App() {
       ),
       onClose: () => setTerminalOpen(false),
     }] : []),
-  ], [activePreview, addTerminal, channelSearch, filesOpen, gitOpen, handleDeleteProject, handleDeleteSession, handleElementSelected, handleForkSession, handleRefreshSessions, handleRenameSession, handleSelectProject, handleSelectSession, isAddingProject, projects, removeTerminal, renameTerminal, rightPanel, selectedProject, sessionDetail, sessions, sidebarOpen, streamingProjectIds, streamingSessionIds, terminalActiveTabId, terminalTabs, terminalOpen, theme, toggleTheme, view, ws]);
+  ], [activePreview, addTerminal, channelSearch, extensionsOpen, filesOpen, gitOpen, handleDeleteProject, handleDeleteSession, handleElementSelected, handleForkSession, handleRefreshSessions, handleRenameSession, handleSelectProject, handleSelectSession, isAddingProject, projects, removeTerminal, renameTerminal, rightPanel, selectedProject, sessionDetail, sessions, sidebarOpen, streamingProjectIds, streamingSessionIds, terminalActiveTabId, terminalTabs, terminalOpen, theme, toggleTheme, view, ws]);
 
   // Reset active mobile tab when the panel it points to is closed
   useEffect(() => {

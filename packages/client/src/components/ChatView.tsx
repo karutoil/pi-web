@@ -45,10 +45,12 @@ interface ChatViewProps {
   onTogglePreview?: () => void;
   onToggleGit?: () => void;
   onToggleFiles?: () => void;
+  onToggleExtensions?: () => void;
   terminalOpen?: boolean;
   previewOpen?: boolean;
   gitOpen?: boolean;
   filesOpen?: boolean;
+  extensionsOpen?: boolean;
 }
 
 function extractMsgText(msg: ChatMessage): string {
@@ -63,7 +65,7 @@ function extractMsgText(msg: ChatMessage): string {
   return "";
 }
 
-export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar, showSidebar, onBack, onToggleTerminal, onTogglePreview, onToggleGit, onToggleFiles, terminalOpen, previewOpen, gitOpen, filesOpen }: ChatViewProps) {
+export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar, showSidebar, onBack, onToggleTerminal, onTogglePreview, onToggleGit, onToggleFiles, onToggleExtensions, terminalOpen, previewOpen, gitOpen, filesOpen, extensionsOpen }: ChatViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showThinking, setShowThinking] = useState(true);
   const [srAnnouncement, setSrAnnouncement] = useState('');
@@ -139,9 +141,9 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
   }, []);
 
   const sessionName = ws.state?.sessionName || session?.name || session?.lastMessage || null;
-  const downloadSessionHtml = useCallback(async (sessionPath: string) => {
+  const downloadSessionHtml = useCallback(async (sessionPath: string, endpoint = "/api/sessions/export-html", statusMessage = "HTML export downloaded.") => {
     try {
-      const response = await fetch("/api/sessions/export-html", {
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionPath }),
@@ -158,7 +160,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
-      showSessionActionStatus("HTML export downloaded.");
+      showSessionActionStatus(statusMessage);
     } catch (error: any) {
       showSessionActionStatus(`Export failed: ${error.message || "unknown error"}`);
     }
@@ -238,6 +240,53 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
     showSessionActionStatus("Preparing HTML export…");
     downloadSessionHtml(exportSessionPath);
   }, [downloadSessionHtml, session?.filePath, showSessionActionStatus, ws.state?.sessionFile]);
+
+  const handleExportHtmlPretty = useCallback(() => {
+    const exportSessionPath = ws.state?.sessionFile || session?.filePath;
+    if (!exportSessionPath) {
+      showSessionActionStatus("No session file is available to export yet.");
+      return;
+    }
+    lastExportPathRef.current = exportSessionPath;
+    showSessionActionStatus("Preparing pretty HTML export…");
+    downloadSessionHtml(exportSessionPath, "/api/sessions/export-html-pretty", "Pretty HTML export downloaded.");
+  }, [downloadSessionHtml, session?.filePath, showSessionActionStatus, ws.state?.sessionFile]);
+
+  const downloadSessionJsonl = useCallback(async (sessionPath: string) => {
+    try {
+      const response = await fetch("/api/sessions/export-jsonl", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionPath }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.error) throw new Error(data.error || "Export failed");
+      const blob = new Blob([data.jsonl || ""], { type: "application/jsonl+json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const safeName = (sessionName || "session").replace(/[^\w.-]+/g, "_").replace(/^_+|_+$/g, "");
+      link.href = url;
+      link.download = `${safeName || "session"}.jsonl`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      showSessionActionStatus("JSONL export downloaded.");
+    } catch (error: any) {
+      showSessionActionStatus(`Export failed: ${error.message || "unknown error"}`);
+    }
+  }, [sessionName, showSessionActionStatus]);
+
+  const handleExportJsonl = useCallback(() => {
+    const exportSessionPath = ws.state?.sessionFile || session?.filePath;
+    if (!exportSessionPath) {
+      showSessionActionStatus("No session file is available to export yet.");
+      return;
+    }
+    lastExportPathRef.current = exportSessionPath;
+    showSessionActionStatus("Preparing JSONL export…");
+    downloadSessionJsonl(exportSessionPath);
+  }, [downloadSessionJsonl, session?.filePath, showSessionActionStatus, ws.state?.sessionFile]);
   const handleClone = useCallback(() => {
     showSessionActionStatus("Cloning session…");
     ws.clone();
@@ -377,7 +426,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
 
   return (
     <div className="conversation-shell">
-      <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} onToggleSidebar={onToggleSidebar} showSidebar={showSidebar} onSessionActions={() => setShowSessionActions(true)} onBack={onBack} onToggleTerminal={onToggleTerminal} onTogglePreview={onTogglePreview} onToggleGit={onToggleGit} onToggleFiles={onToggleFiles} showTerminal={terminalOpen} previewOpen={previewOpen} gitOpen={gitOpen} filesOpen={filesOpen} />
+      <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} onToggleSidebar={onToggleSidebar} showSidebar={showSidebar} onSessionActions={() => setShowSessionActions(true)} onBack={onBack} onToggleTerminal={onToggleTerminal} onTogglePreview={onTogglePreview} onToggleGit={onToggleGit} onToggleFiles={onToggleFiles} onToggleExtensions={onToggleExtensions} showTerminal={terminalOpen} previewOpen={previewOpen} gitOpen={gitOpen} filesOpen={filesOpen} extensionsOpen={extensionsOpen} />
 
       <div aria-live="polite" className="sr-only">{srAnnouncement}</div>
 
@@ -599,6 +648,8 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
             ws.compact(instr);
           }}
           onExportHtml={handleExportHtml}
+          onExportHtmlPretty={handleExportHtmlPretty}
+          onExportJsonl={handleExportJsonl}
           onClone={handleClone}
           onSetAutoCompaction={handleSetAutoCompaction}
           onClose={() => setShowSessionActions(false)}

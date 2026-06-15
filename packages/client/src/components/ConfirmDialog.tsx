@@ -6,6 +6,7 @@ interface ConfirmDialogProps {
   title: string;
   message: string;
   confirmLabel?: string;
+  destructiveHint?: string | false;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -15,6 +16,7 @@ export function ConfirmDialog({
   title,
   message,
   confirmLabel = "Delete",
+  destructiveHint = "This cannot be undone.",
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -56,9 +58,11 @@ export function ConfirmDialog({
             <p className="text-ink-300 text-xs leading-relaxed mb-1">
               {message}
             </p>
-            <p className="text-ink-500 text-[0.65rem] italic">
-              This cannot be undone.
-            </p>
+            {destructiveHint && (
+              <p className="text-ink-500 text-[0.65rem] italic">
+                {destructiveHint}
+              </p>
+            )}
           </div>
           <div className="modal-footer modal-footer--justify-end">
             <button

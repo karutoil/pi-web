@@ -25,9 +25,12 @@ interface Props {
   /** Files panel toggle */
   onToggleFiles?: () => void;
   filesOpen?: boolean;
+  /** Extensions panel toggle */
+  onToggleExtensions?: () => void;
+  extensionsOpen?: boolean;
 }
 
-export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar, onSessionActions, onToggleTerminal, showTerminal, onBack, onTogglePreview, previewOpen, onToggleGit, gitOpen, onToggleFiles, filesOpen }: Props) {
+export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar, onSessionActions, onToggleTerminal, showTerminal, onBack, onTogglePreview, previewOpen, onToggleGit, gitOpen, onToggleFiles, filesOpen, onToggleExtensions, extensionsOpen }: Props) {
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(sessionName || "");
   const isMobile = useIsMobile();
@@ -119,6 +122,11 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar,
             {onToggleFiles && (
               <button type="button" onClick={onToggleFiles} className={`p-1.5 rounded-md ${filesOpen ? 'text-amber-500 bg-amber-500/10' : 'text-ink-400 hover:bg-ink-800'}`} aria-label="Files" title="Files">
                 <Icon name="file" size={14} />
+              </button>
+            )}
+            {onToggleExtensions && (
+              <button type="button" onClick={onToggleExtensions} className={`p-1.5 rounded-md ${extensionsOpen ? 'text-amber-500 bg-amber-500/10' : 'text-ink-400 hover:bg-ink-800'}`} aria-label="Extensions" title="Extensions">
+                <Icon name="puzzle" size={14} />
               </button>
             )}
             {onSessionActions && (
@@ -239,6 +247,17 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar,
             title="Git"
           >
             <Icon name="git" size={14} />
+          </button>
+        )}
+        {onToggleExtensions && (
+          <button
+            type="button"
+            onClick={onToggleExtensions}
+            className={`conversation-toolbar-pill ${extensionsOpen ? "conversation-toolbar-pill-active" : ""}`}
+            aria-label="Toggle extensions"
+            title="Extensions"
+          >
+            <Icon name="puzzle" size={14} />
           </button>
         )}
       </div>

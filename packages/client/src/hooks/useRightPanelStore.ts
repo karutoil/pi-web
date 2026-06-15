@@ -2,13 +2,13 @@
  * Zustand store for right-side panel management.
  *
  * Coordinates which panel is active on the right side of the layout.
- * Only one panel can be primary at a time (preview, git, terminal, files),
+ * Only one panel can be primary at a time (preview, git, terminal, files, extensions),
  * but multiple can be open in a stacked/tabbed arrangement.
  */
 
 import { create } from "zustand";
 
-export type RightPanelKind = "preview" | "git" | "terminal" | "files";
+export type RightPanelKind = "preview" | "git" | "terminal" | "files" | "extensions";
 
 export interface RightPanelState {
   /** Which panel kind is currently active */

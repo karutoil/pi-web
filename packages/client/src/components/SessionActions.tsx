@@ -4,12 +4,14 @@ import { Icon } from "./Icon";
 interface SessionActionsProps {
   onCompact: (customInstructions?: string) => void;
   onExportHtml: () => void;
+  onExportHtmlPretty: () => void;
+  onExportJsonl: () => void;
   onClone: () => void;
   onSetAutoCompaction: (enabled: boolean) => void;
   onClose: () => void;
 }
 
-export function SessionActions({ onCompact, onExportHtml, onClone, onSetAutoCompaction, onClose }: SessionActionsProps) {
+export function SessionActions({ onCompact, onExportHtml, onExportHtmlPretty, onExportJsonl, onClone, onSetAutoCompaction, onClose }: SessionActionsProps) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -24,6 +26,8 @@ export function SessionActions({ onCompact, onExportHtml, onClone, onSetAutoComp
     { label: "Enable auto-compaction", icon: "auto-compact" as const, action: () => onSetAutoCompaction(true) },
     { label: "Disable auto-compaction", icon: "auto-compact" as const, action: () => onSetAutoCompaction(false) },
     { label: "Export HTML", icon: "export" as const, action: onExportHtml },
+    { label: "Export HTML (Pretty)", icon: "export" as const, action: onExportHtmlPretty },
+    { label: "Export JSONL", icon: "export" as const, action: onExportJsonl },
     { label: "Clone session", icon: "clone" as const, action: onClone },
   ];
 

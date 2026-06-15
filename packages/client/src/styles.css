@@ -8353,3 +8353,1072 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   background: var(--color-ink-800);
 }
 
+/* ─── Extensions Panel ─── */
+
+.extensions-panel {
+  background: var(--color-ink-950);
+}
+
+.extensions-panel-header {
+  background: color-mix(in srgb, var(--color-ink-900) 60%, transparent);
+}
+
+.extensions-panel-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  color: var(--color-ink-500);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s, transform 0.15s, opacity 0.15s;
+}
+
+.extensions-panel-icon-btn:hover {
+  color: var(--color-ink-200);
+  background: var(--color-ink-800);
+}
+
+/* Restart Banner */
+.extensions-panel-restart-banner {
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--color-amber-500) 8%, var(--color-ink-950));
+  border-bottom: 1px solid color-mix(in srgb, var(--color-amber-500) 20%, var(--color-ink-800));
+}
+
+.extensions-panel-restart-btn {
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--color-amber-500) 40%, transparent);
+  background: color-mix(in srgb, var(--color-amber-500) 15%, transparent);
+  color: var(--color-amber-300);
+  font-size: 0.65rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s, transform 0.15s, opacity 0.15s;
+  white-space: nowrap;
+}
+
+.extensions-panel-restart-btn:hover {
+  background: color-mix(in srgb, var(--color-amber-500) 25%, transparent);
+  border-color: var(--color-amber-500);
+}
+
+.extensions-panel-dismiss-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  color: var(--color-ink-500);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s, transform 0.15s, opacity 0.15s;
+}
+
+.extensions-panel-dismiss-btn:hover {
+  color: var(--color-ink-300);
+  background: var(--color-ink-800);
+}
+
+/* Tabs */
+.extensions-panel-tabs {
+  background: color-mix(in srgb, var(--color-ink-900) 40%, transparent);
+}
+
+.extensions-panel-tab {
+  padding: 6px 12px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--color-ink-500);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s, transform 0.15s, opacity 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.extensions-panel-tab:hover {
+  color: var(--color-ink-300);
+}
+
+.extensions-panel-tab.active {
+  color: var(--color-amber-300);
+  border-bottom-color: var(--color-amber-500);
+}
+
+.extensions-panel-tab-count {
+  font-size: 0.6rem;
+  padding: 0 4px;
+  border-radius: 6px;
+  background: var(--color-ink-800);
+  color: var(--color-ink-500);
+  font-weight: 400;
+}
+
+.extensions-panel-tab.active .extensions-panel-tab-count {
+  background: color-mix(in srgb, var(--color-amber-500) 20%, var(--color-ink-800));
+  color: var(--color-amber-300);
+}
+
+/* List */
+.extensions-panel-list {
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Empty state */
+.extensions-panel-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.extensions-panel-retry-btn {
+  padding: 4px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--color-ink-800);
+  background: var(--color-ink-900);
+  color: var(--color-ink-300);
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s, transform 0.15s, opacity 0.15s;
+}
+
+.extensions-panel-retry-btn:hover {
+  border-color: var(--color-amber-500);
+  color: var(--color-amber-300);
+}
+
+/* Extension Card */
+.extensions-panel-card {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--color-ink-900);
+  border: 1px solid var(--color-ink-800);
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s, transform 0.15s, opacity 0.15s;
+}
+
+.extensions-panel-card:hover {
+  border-color: var(--color-ink-750);
+}
+
+.extensions-panel-card.disabled {
+  opacity: 0.6;
+  background: color-mix(in srgb, var(--color-ink-900) 50%, var(--color-ink-950));
+}
+
+/* Toggle Switch */
+.extensions-panel-toggle {
+  position: relative;
+  width: 28px;
+  height: 16px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, transform 0.2s, opacity 0.2s;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.extensions-panel-toggle.on {
+  background: color-mix(in srgb, var(--color-amber-500) 40%, var(--color-ink-800));
+}
+
+.extensions-panel-toggle.off {
+  background: var(--color-ink-800);
+}
+
+.extensions-panel-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, transform 0.2s, opacity 0.2s;
+}
+
+.extensions-panel-toggle.on .extensions-panel-toggle-thumb {
+  left: 14px;
+  background: var(--color-amber-300);
+}
+
+.extensions-panel-toggle.off .extensions-panel-toggle-thumb {
+  left: 2px;
+  background: var(--color-ink-500);
+}
+
+.extensions-panel-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.extensions-panel-toggle:focus-visible {
+  outline: 2px solid var(--color-amber-500);
+  outline-offset: 2px;
+}
+
+/* Type Badge */
+.extensions-panel-type-badge {
+  font-size: 0.55rem;
+  padding: 0px 4px;
+  border-radius: 3px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.extensions-panel-type-badge.package {
+  background: color-mix(in srgb, var(--color-teal-500) 15%, transparent);
+  color: var(--color-teal-400);
+}
+
+.extensions-panel-type-badge.local {
+  background: color-mix(in srgb, var(--color-ink-300) 10%, transparent);
+  color: var(--color-ink-500);
+}
+
+/* Resource Tags */
+.extensions-panel-resource-tag {
+  font-size: 0.55rem;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--color-ink-800);
+  color: var(--color-ink-500);
+}
+
+/* Action Button */
+.extensions-panel-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  color: var(--color-ink-600);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s, transform 0.15s, opacity 0.15s;
+}
+
+.extensions-panel-action-btn:hover {
+  color: var(--color-rose-400);
+  background: color-mix(in srgb, var(--color-rose-400) 10%, transparent);
+}
+
+.extensions-panel-action-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+/* Spinners */
+.extensions-panel-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--color-ink-800);
+  border-top-color: var(--color-amber-500);
+  border-radius: 50%;
+  animation: ext-spin 0.6s linear infinite;
+}
+
+.extensions-panel-spinner-sm {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--color-ink-800);
+  border-top-color: var(--color-amber-500);
+  border-radius: 50%;
+  animation: ext-spin 0.6s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes ext-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Search */
+.extensions-panel-search-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--color-ink-800);
+  background: var(--color-ink-900);
+  transition: border-color 0.15s;
+}
+
+.extensions-panel-search-input-wrap:focus-within {
+  border-color: color-mix(in srgb, var(--color-amber-500) 50%, var(--color-ink-700));
+}
+
+.extensions-panel-search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--color-ink-200);
+  font-size: 12px;
+  font-family: inherit;
+  min-width: 0;
+}
+
+.extensions-panel-search-input::placeholder {
+  color: var(--color-ink-600);
+}
+
+/* Search Card */
+.extensions-panel-search-card {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--color-ink-900);
+  border: 1px solid var(--color-ink-800);
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s, transform 0.15s, opacity 0.15s;
+}
+
+.extensions-panel-search-card:hover {
+  border-color: var(--color-ink-750);
+}
+
+/* Install Button */
+.extensions-panel-install-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--color-teal-500) 40%, transparent);
+  background: color-mix(in srgb, var(--color-teal-500) 10%, transparent);
+  color: var(--color-teal-400);
+  font-size: 0.65rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s, transform 0.15s, opacity 0.15s;
+  white-space: nowrap;
+}
+
+.extensions-panel-install-btn:hover {
+  background: color-mix(in srgb, var(--color-teal-500) 20%, transparent);
+  border-color: var(--color-teal-500);
+}
+
+/* Installed Badge */
+.extensions-panel-installed-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--color-ink-800);
+  background: var(--color-ink-800);
+  color: var(--color-ink-500);
+  font-size: 0.65rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Keyword Tags */
+.extensions-panel-keyword-tag {
+  font-size: 0.55rem;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--color-amber-500) 10%, var(--color-ink-900));
+  color: var(--color-ink-500);
+}
+
+/* Sort Pills */
+.extensions-panel-sort-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--color-ink-800);
+  background: transparent;
+  color: var(--color-ink-500);
+  font-size: 0.6rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s, transform 0.15s, opacity 0.15s;
+  white-space: nowrap;
+}
+
+.extensions-panel-sort-pill:hover {
+  border-color: var(--color-ink-700);
+  color: var(--color-ink-300);
+}
+
+.extensions-panel-sort-pill.active {
+  border-color: color-mix(in srgb, var(--color-amber-500) 40%, transparent);
+  background: color-mix(in srgb, var(--color-amber-500) 10%, transparent);
+  color: var(--color-amber-300);
+}
+
+/* Section Label */
+.extensions-panel-section-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px 3px;
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--color-ink-500);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Downloads Badge */
+.extensions-panel-downloads-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 0.55rem;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--color-teal-500) 10%, transparent);
+  color: var(--color-teal-400);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.extensions-panel-downloads-badge--total {
+  background: color-mix(in srgb, var(--color-ink-300) 8%, transparent);
+  color: var(--color-ink-500);
+}
+
+/* ─── Package Detail Modal ─── */
+
+.pkg-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--color-ink-950) 80%, transparent);
+  backdrop-filter: blur(4px);
+  animation: pkg-modal-fade-in 0.15s ease-out;
+}
+
+@keyframes pkg-modal-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.pkg-modal {
+  width: min(780px, 92vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-ink-950);
+  border: 1px solid var(--color-ink-800);
+  border-radius: 12px;
+  box-shadow: 0 24px 48px color-mix(in srgb, var(--color-ink-950) 60%, transparent);
+  animation: pkg-modal-slide-in 0.2s ease-out;
+  overflow: hidden;
+}
+
+@keyframes pkg-modal-slide-in {
+  from { transform: translateY(12px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.pkg-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-ink-800);
+}
+
+.pkg-modal-header-info {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pkg-modal-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-ink-100);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pkg-modal-version {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--color-ink-500);
+  flex-shrink: 0;
+}
+
+.pkg-modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.pkg-modal-install-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--color-teal-500) 40%, transparent);
+  background: color-mix(in srgb, var(--color-teal-500) 10%, transparent);
+  color: var(--color-teal-400);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s, transform 0.15s, opacity 0.15s;
+  white-space: nowrap;
+}
+
+.pkg-modal-install-btn:hover {
+  background: color-mix(in srgb, var(--color-teal-500) 20%, transparent);
+  border-color: var(--color-teal-500);
+}
+
+.pkg-modal-install-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.pkg-modal-installed-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--color-ink-800);
+  background: var(--color-ink-800);
+  color: var(--color-ink-500);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.pkg-modal-close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--color-ink-500);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s, transform 0.15s, opacity 0.15s;
+}
+
+.pkg-modal-close-btn:hover {
+  color: var(--color-ink-200);
+  background: var(--color-ink-800);
+}
+
+/* Body */
+.pkg-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+.pkg-modal-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+}
+
+.pkg-modal-description {
+  font-size: 13px;
+  color: var(--color-ink-300);
+  line-height: 1.5;
+  margin: 0 0 16px;
+}
+
+/* Meta grid */
+.pkg-modal-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 16px;
+  padding: 12px 14px;
+  background: var(--color-ink-900);
+  border: 1px solid var(--color-ink-800);
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.pkg-modal-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pkg-modal-meta-wide {
+  grid-column: 1 / -1;
+}
+
+.pkg-modal-meta-label {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--color-ink-600);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.pkg-modal-meta-value {
+  font-size: 12px;
+  color: var(--color-ink-300);
+}
+
+.pkg-modal-meta-link {
+  font-size: 12px;
+  color: var(--color-amber-400);
+  text-decoration: none;
+  transition: color 0.15s;
+  overflow-wrap: anywhere;
+}
+
+.pkg-modal-meta-link:hover {
+  color: var(--color-amber-300);
+  text-decoration: underline;
+}
+
+/* Sections */
+.pkg-modal-section {
+  margin-bottom: 12px;
+}
+
+.pkg-modal-section-label {
+  display: block;
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--color-ink-600);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+/* Maintainers */
+.pkg-modal-maintainers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pkg-modal-maintainer-chip {
+  font-size: 0.65rem;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--color-ink-800);
+  color: var(--color-ink-300);
+  font-weight: 500;
+}
+
+/* Keywords */
+.pkg-modal-keywords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* PI Resources */
+.pkg-modal-pi-resources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pkg-modal-pi-tag {
+  font-size: 0.65rem;
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pkg-modal-pi-tag.extensions {
+  background: color-mix(in srgb, var(--color-amber-500) 15%, transparent);
+  color: var(--color-amber-300);
+}
+
+.pkg-modal-pi-tag.skills {
+  background: color-mix(in srgb, var(--color-teal-500) 15%, transparent);
+  color: var(--color-teal-400);
+}
+
+.pkg-modal-pi-tag.prompts {
+  background: color-mix(in srgb, var(--color-violet-500) 15%, transparent);
+  color: var(--color-violet-400);
+}
+
+.pkg-modal-pi-tag.themes {
+  background: color-mix(in srgb, var(--color-rose-500) 15%, transparent);
+  color: var(--color-rose-400);
+}
+
+/* Tabs */
+.pkg-modal-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--color-ink-800);
+  margin-bottom: 12px;
+}
+
+.pkg-modal-tab {
+  padding: 8px 14px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--color-ink-500);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s, transform 0.15s, opacity 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pkg-modal-tab:hover {
+  color: var(--color-ink-300);
+}
+
+.pkg-modal-tab.active {
+  color: var(--color-amber-300);
+  border-bottom-color: var(--color-amber-500);
+}
+
+.pkg-modal-tab-count {
+  font-size: 0.6rem;
+  padding: 0 4px;
+  border-radius: 6px;
+  background: var(--color-ink-800);
+  color: var(--color-ink-500);
+  font-weight: 400;
+}
+
+.pkg-modal-tab.active .pkg-modal-tab-count {
+  background: color-mix(in srgb, var(--color-amber-500) 20%, var(--color-ink-800));
+  color: var(--color-amber-300);
+}
+
+/* Tab content */
+.pkg-modal-tab-content {
+  min-height: 120px;
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.pkg-modal-empty-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+/* Readme */
+.pkg-modal-readme {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--color-ink-300);
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.pkg-modal-readme h1 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-ink-100);
+  margin: 16px 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--color-ink-800);
+}
+
+.pkg-modal-readme h2 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-ink-100);
+  margin: 14px 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--color-ink-800);
+}
+
+.pkg-modal-readme h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-ink-200);
+  margin: 12px 0 4px;
+}
+
+.pkg-modal-readme h4 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-ink-300);
+  margin: 10px 0 4px;
+}
+
+.pkg-modal-readme pre {
+  background: var(--color-ink-900);
+  border: 1px solid var(--color-ink-800);
+  border-radius: 6px;
+  padding: 12px;
+  margin: 8px 0;
+  overflow-x: auto;
+}
+
+.pkg-modal-readme pre code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--color-ink-200);
+  background: transparent;
+  border: none;
+  padding: 0;
+  border-radius: 0;
+}
+
+.pkg-modal-readme :not(pre) > code {
+  background: var(--color-ink-900);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-amber-300);
+}
+
+.pkg-modal-readme a {
+  color: var(--color-amber-400);
+  text-decoration: none;
+}
+
+.pkg-modal-readme a:hover {
+  text-decoration: underline;
+}
+
+.pkg-modal-readme hr {
+  border: none;
+  border-top: 1px solid var(--color-ink-800);
+  margin: 12px 0;
+}
+
+.pkg-modal-readme ul,
+.pkg-modal-readme ol {
+  padding-left: 20px;
+  margin: 6px 0;
+}
+
+.pkg-modal-readme li {
+  margin: 3px 0;
+}
+
+/* Readme: Images */
+.pkg-modal-readme img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin: 12px 0;
+  display: block;
+}
+
+/* Readme: Tables */
+.pkg-modal-readme table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 12px;
+}
+
+.pkg-modal-readme table th,
+.pkg-modal-readme table td {
+  padding: 8px 12px;
+  border: 1px solid var(--color-ink-800);
+  text-align: left;
+}
+
+.pkg-modal-readme table th {
+  background: var(--color-ink-900);
+  color: var(--color-ink-200);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pkg-modal-readme table td {
+  color: var(--color-ink-300);
+}
+
+.pkg-modal-readme table tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--color-ink-900) 50%, transparent);
+}
+
+/* Readme: Blockquotes */
+.pkg-modal-readme blockquote {
+  border-left: 3px solid var(--color-amber-500);
+  padding: 8px 16px;
+  margin: 10px 0;
+  background: color-mix(in srgb, var(--color-amber-500) 5%, transparent);
+  color: var(--color-ink-400);
+  font-style: italic;
+}
+
+/* Readme: Strikethrough */
+.pkg-modal-readme del {
+  color: var(--color-ink-500);
+  text-decoration: line-through;
+}
+
+/* Versions */
+.pkg-modal-versions {
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.pkg-modal-version-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-radius: 4px;
+}
+
+.pkg-modal-version-row:nth-child(odd) {
+  background: color-mix(in srgb, var(--color-ink-900) 50%, transparent);
+}
+
+.pkg-modal-version-name {
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--color-ink-200);
+}
+
+.pkg-modal-version-date {
+  font-size: 11px;
+  color: var(--color-ink-600);
+}
+
+/* Dependencies */
+.pkg-modal-deps {
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.pkg-modal-deps-section {
+  margin-bottom: 12px;
+}
+
+.pkg-modal-deps-section-label {
+  display: block;
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--color-ink-600);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+.pkg-modal-dep-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 3px;
+}
+
+.pkg-modal-dep-row:nth-child(odd) {
+  background: color-mix(in srgb, var(--color-ink-900) 50%, transparent);
+}
+
+.pkg-modal-dep-name {
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--color-ink-300);
+}
+
+.pkg-modal-dep-badge {
+  font-size: 0.55rem;
+  padding: 0px 5px;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+.pkg-modal-dep-badge.peer {
+  background: color-mix(in srgb, var(--color-amber-500) 15%, transparent);
+  color: var(--color-amber-400);
+}
+
+/* Clickable package names */
+.pkg-name-clickable {
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.pkg-name-clickable:hover {
+  color: var(--color-amber-400);
+  text-decoration: underline;
+}
+
+button.pkg-name-clickable {
+  background: transparent;
+  border: none;
+  padding: 0;
+  text-align: left;
+}
+
+button.pkg-name-clickable:focus-visible {
+  outline: 2px solid var(--color-amber-500);
+  outline-offset: 2px;
+
+}
+
+
+/* ─── Extensions Panel Focus Visible ─── */
+.extensions-panel-icon-btn:focus-visible,
+.extensions-panel-dismiss-btn:focus-visible,
+.extensions-panel-tab:focus-visible,
+.extensions-panel-sort-pill:focus-visible,
+.extensions-panel-install-btn:focus-visible,
+.extensions-panel-action-btn:focus-visible,
+.extensions-panel-retry-btn:focus-visible,
+.pkg-modal-close-btn:focus-visible,
+.pkg-modal-install-btn:focus-visible,
+.pkg-modal-tab:focus-visible {
+  outline: 2px solid var(--color-amber-500);
+  outline-offset: 2px;
+}
+
+.extensions-panel-sort-pill:focus-visible,
+.extensions-panel-tab:focus-visible,
+.pkg-modal-tab:focus-visible {
+  background: var(--color-ink-900);
+}
+
+/* Error banner */
+.extensions-panel-error-banner {
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--color-rose-500) 8%, var(--color-ink-950));
+  border-bottom: 1px solid color-mix(in srgb, var(--color-rose-500) 20%, var(--color-ink-800));
+}
