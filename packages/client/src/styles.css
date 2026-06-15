@@ -7420,7 +7420,8 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
 
 .project-session-stamp,
 .project-session-stamp-home,
-.project-session-stamp-add {
+.project-session-stamp-add,
+.project-session-stamp-settings {
   display: grid;
   place-items: center;
   width: 3rem;
@@ -7440,7 +7441,8 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
 
 .project-session-stamp:hover,
 .project-session-stamp-home:hover,
-.project-session-stamp-add:hover {
+.project-session-stamp-add:hover,
+.project-session-stamp-settings:hover {
   border-color: color-mix(in srgb, var(--workspace-brass) 34%, transparent);
   background: color-mix(in srgb, var(--workspace-brass) 10%, transparent);
   color: var(--workspace-brass);
@@ -7449,7 +7451,8 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
 
 .project-session-stamp:active,
 .project-session-stamp-home:active,
-.project-session-stamp-add:active {
+.project-session-stamp-add:active,
+.project-session-stamp-settings:active {
   transform: translateY(0);
 }
 
@@ -7463,6 +7466,10 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
 
 .project-session-stamp-add {
   border-style: dashed;
+  color: var(--color-ink-500);
+}
+
+.project-session-stamp-settings {
   color: var(--color-ink-500);
 }
 

@@ -7,8 +7,8 @@ import { ContextMenuPortal, ContextMenuItem, ContextMenuDivider, useLongPress } 
  * Discord-style channel list — shows the active project's sessions as
  * "channels" grouped by date. Replaces the session list portion of the
  * old Sidebar. The project header lives at the top with a kebab menu
- * for project actions; the bottom hosts a slim "user panel" with theme
- * toggle and version info.
+ * for project actions; the bottom hosts a slim "user panel" with version
+ * info.
  *
  * Aesthetic kept consistent with the rest of the app: serif (Newsreader)
  * for names + the project header, Geist Mono for timestamps and paths,
@@ -403,33 +403,15 @@ function ChannelItem({
   );
 }
 
-// ─── Footer "user panel" — version + theme toggle ───
+// ─── Footer "user panel" — version info ───
 
-import type { Theme } from "../hooks/useTheme";
 import { VersionChecker } from "./VersionChecker";
 
-function UserPanel({
-  theme,
-  onToggleTheme,
-}: {
-  theme: Theme;
-  onToggleTheme: () => void;
-}) {
+function UserPanel() {
   return (
     <div className="project-session-footer">
       <div className="project-session-footer-inner">
-        <div>
-          <VersionChecker compact />
-        </div>
-        <button
-          type="button"
-          onClick={onToggleTheme}
-          className="project-session-action"
-          title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
-          aria-label="Toggle theme"
-        >
-          <Icon name={theme === "light" ? "moon" : "sun"} size={12} />
-        </button>
+        <VersionChecker compact />
       </div>
     </div>
   );
@@ -456,9 +438,7 @@ export function ChannelList({
   streamingSessionIds,
   onDeleteProject,
   onRequestConfirm,
-  theme,
-  onToggleTheme,
-}: ChannelListProps & { theme: Theme; onToggleTheme: () => void }) {
+}: ChannelListProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const [focusedIdx, setFocusedIdx] = useState(-1);
 
@@ -607,7 +587,7 @@ export function ChannelList({
         )}
       </div>
 
-      <UserPanel theme={theme} onToggleTheme={onToggleTheme} />
+      <UserPanel />
     </aside>
   );
 }

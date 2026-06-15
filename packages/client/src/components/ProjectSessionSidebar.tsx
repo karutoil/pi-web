@@ -1,7 +1,6 @@
 import type { Project, SessionSummary } from "@pi-web/shared";
 import { ServerRail } from "./ServerRail";
 import { ChannelList } from "./ChannelList";
-import type { Theme } from "../hooks/useTheme";
 
 interface ProjectSessionSidebarProps {
   projects: Project[];
@@ -26,8 +25,7 @@ interface ProjectSessionSidebarProps {
   onContinueLatest: () => void;
   streamingSessionIds: Set<string>;
   onRequestConfirm: (title: string, message: string, onConfirm: () => void) => void;
-  theme: Theme;
-  onToggleTheme: () => void;
+  onOpenSettings?: () => void;
 }
 
 export function ProjectSessionSidebar(props: ProjectSessionSidebarProps) {
@@ -49,6 +47,7 @@ export function ProjectSessionSidebar(props: ProjectSessionSidebarProps) {
           if (deleted) props.onDeleteProject(deleted);
         }}
         onRequestConfirm={props.onRequestConfirm}
+        onOpenSettings={props.onOpenSettings}
       />
       {project ? (
         <ChannelList
@@ -68,8 +67,6 @@ export function ProjectSessionSidebar(props: ProjectSessionSidebarProps) {
           streamingSessionIds={props.streamingSessionIds}
           onDeleteProject={props.onDeleteProject}
           onRequestConfirm={props.onRequestConfirm}
-          theme={props.theme}
-          onToggleTheme={props.onToggleTheme}
           fill
         />
       ) : (

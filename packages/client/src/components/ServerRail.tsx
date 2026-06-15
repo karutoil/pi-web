@@ -24,6 +24,7 @@ interface ServerRailProps {
   onDeleteProject: (id: string) => void;
   isHomeActive: boolean;
   onRequestConfirm: (title: string, message: string, onConfirm: () => void) => void;
+  onOpenSettings?: () => void;
   collapsed?: boolean;
   onExpand?: () => void;
   orientation?: "vertical" | "horizontal";
@@ -219,6 +220,29 @@ function AddStamp({
   );
 }
 
+// ─── Settings stamp (bottom of rail, under add project) ───
+
+function SettingsStamp({
+  onClick,
+  collapsed,
+}: {
+  onClick: () => void;
+  collapsed: boolean;
+}) {
+  return (
+    <div className="project-session-stamp-wrap group/settings" data-rail-stamp>
+      <button
+        onClick={onClick}
+        title={collapsed ? "Settings" : undefined}
+        aria-label="Settings"
+        className="project-session-stamp-settings"
+      >
+        <Icon name="settings" size={18} />
+      </button>
+    </div>
+  );
+}
+
 // ─── Rail hairline (the slim divider Discord uses between groups) ───
 
 function RailDivider({ orientation }: { orientation: "vertical" | "horizontal" }) {
@@ -240,6 +264,7 @@ export function ServerRail({
   onDeleteProject,
   isHomeActive,
   onRequestConfirm,
+  onOpenSettings,
   collapsed = true,
   orientation = "vertical",
 }: ServerRailProps) {
@@ -335,6 +360,16 @@ export function ServerRail({
           onClick={onAddProject}
           collapsed={collapsed}
           loading={isAddingProject}
+        />
+      </div>
+
+      <RailDivider orientation={orientation} />
+
+      {/* Settings stamp — under add project */}
+      <div className="animate-stamp-drop" style={{ animationDelay: `${128 + ordered.length * 28}ms` }}>
+        <SettingsStamp
+          onClick={() => onOpenSettings?.()}
+          collapsed={collapsed}
         />
       </div>
     </aside>

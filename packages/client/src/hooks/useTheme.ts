@@ -25,13 +25,19 @@ function emit(theme: Theme) {
   listeners.forEach((l) => l(theme));
 }
 
+function setStored(theme: Theme) {
+  currentTheme = theme;
+  apply(theme);
+  emit(theme);
+}
+
 apply(currentTheme);
 
-export function useTheme(): [Theme, () => void] {
-  const [theme, setTheme] = useState<Theme>(currentTheme);
+export function useTheme(): [Theme, () => void, (theme: Theme) => void] {
+  const [theme, setThemeState] = useState<Theme>(currentTheme);
 
   useLayoutEffect(() => {
-    const update = (t: Theme) => setTheme(t);
+    const update = (t: Theme) => setThemeState(t);
     listeners.add(update);
     // Listen for changes from other tabs.
     const onStorage = (e: StorageEvent) => {
@@ -55,11 +61,13 @@ export function useTheme(): [Theme, () => void] {
   }, [theme]);
 
   const toggle = useCallback(() => {
-    const next = currentTheme === "light" ? "dark" : "light";
-    currentTheme = next;
-    apply(next);
-    emit(next);
+    setStored(currentTheme === "light" ? "dark" : "light");
   }, []);
 
-  return [theme, toggle];
+  const setTheme = useCallback((next: Theme) => {
+    if (next === currentTheme) return;
+    setStored(next);
+  }, []);
+
+  return [theme, toggle, setTheme];
 }

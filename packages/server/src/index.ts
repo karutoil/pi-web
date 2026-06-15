@@ -1104,6 +1104,82 @@ app.get("/api/fs/search-files", (c) => {
 // Health
 app.get("/api/health", (c) => c.json({ status: "ok", time: Date.now(), pool: getPoolStats(), port: server.port }));
 
+// ==================== PI config files ====================
+
+const PI_CONFIG_FILES = new Set(["settings", "models"]);
+const PI_CONFIG_PATHS: Record<string, string> = {
+  settings: join(HOME, ".pi", "agent", "settings.json"),
+  models: join(HOME, ".pi", "agent", "models.json"),
+};
+
+async function safeReadJsonFile(filePath: string): Promise<string> {
+  let raw: string;
+  try {
+    raw = await readFile(filePath, "utf-8");
+  } catch (e: any) {
+    if (e.code === "ENOENT") return "{}";
+    throw new Error(`Failed to read config: ${e.message}`);
+  }
+  try {
+    JSON.parse(raw);
+  } catch (e: any) {
+    throw new Error(`Invalid JSON in ${filePath}: ${e.message}`);
+  }
+  return raw;
+}
+
+async function safeWriteJsonFile(filePath: string, content: string): Promise<void> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch (e: any) {
+    throw new Error(`Invalid JSON: ${e.message}`);
+  }
+  if (parsed === null || typeof parsed !== "object") {
+    throw new Error("Config must be a JSON object");
+  }
+  const raw = JSON.stringify(parsed, null, 2) + "\n";
+  await mkdir(dirname(filePath), { recursive: true });
+  const tmp = `${filePath}.tmp`;
+  await writeFile(tmp, raw, "utf-8");
+  await renameFs(tmp, filePath);
+}
+
+app.get("/api/pi-config/:file", async (c) => {
+  const file = c.req.param("file");
+  if (!PI_CONFIG_FILES.has(file)) {
+    return c.json({ error: "Unknown config file" }, 400);
+  }
+  try {
+    const content = await safeReadJsonFile(PI_CONFIG_PATHS[file]);
+    return c.json({ content });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.put("/api/pi-config/:file", async (c) => {
+  const file = c.req.param("file");
+  if (!PI_CONFIG_FILES.has(file)) {
+    return c.json({ error: "Unknown config file" }, 400);
+  }
+  let body: { content?: unknown };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+  if (typeof body.content !== "string") {
+    return c.json({ error: "content string is required" }, 400);
+  }
+  try {
+    await safeWriteJsonFile(PI_CONFIG_PATHS[file], body.content);
+    return c.json({ success: true });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 400);
+  }
+});
+
 // ==================== Extensions API ====================
 
 const PI_SETTINGS_PATH = join(HOME, ".pi", "agent", "settings.json");

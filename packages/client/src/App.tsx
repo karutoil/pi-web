@@ -7,8 +7,8 @@ import { EmptyState } from "./components/EmptyState";
 import { BackgroundSessionToast } from "./components/BackgroundSessionToast";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { AddProjectExplorer } from "./components/AddProjectExplorer";
+import { SettingsModal } from "./components/SettingsModal";
 import { useWebSocketPool } from "./hooks/useWebSocketPool";
-import { useTheme } from "./hooks/useTheme";
 import { PWABanner } from "./components/PWABanner";
 import { PreviewPanel } from "./components/preview/PreviewPanel";
 import { ProjectSessionSidebar } from "./components/ProjectSessionSidebar";
@@ -49,6 +49,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [channelSearch, setChannelSearch] = useState("");
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; title: string; message: string; confirmLabel?: string; onConfirm: () => void }>({ open: false, title: "", message: "", onConfirm: () => {} });
+  const [showSettings, setShowSettings] = useState(false);
   const workspaceLayout = useWorkspaceLayout();
   const isMobile = useIsMobile();
   const [activeMobilePanel, setActiveMobilePanel] = useState<WorkspacePanelKind>("chat");
@@ -241,8 +242,6 @@ export default function App() {
     ws.subscribe(listener);
     return () => { ws.unsubscribe(listener); ws.setOnSessionLoaded(null); };
   }, [ws, newSessionId, selectedProject?.path]);
-
-  const [theme, toggleTheme] = useTheme();
 
   // ── Right panel state (preview + git) ──
   const previewOpen = usePreviewStore((s) => s.isOpen);
@@ -632,8 +631,7 @@ export default function App() {
           onContinueLatest={handleContinueLatest}
           streamingSessionIds={streamingSessionIds}
           onRequestConfirm={(title, message, onConfirm) => setConfirmDialog({ open: true, title, message, onConfirm })}
-          theme={theme}
-          onToggleTheme={toggleTheme}
+          onOpenSettings={() => setShowSettings(true)}
         />
       ),
       onClose: () => setSidebarOpen(false),
@@ -771,7 +769,7 @@ export default function App() {
       ),
       onClose: () => setTerminalOpen(false),
     }] : []),
-  ], [activePreview, addTerminal, channelSearch, extensionsOpen, filesOpen, gitOpen, handleDeleteProject, handleDeleteSession, handleElementSelected, handleForkSession, handleRefreshSessions, handleRenameSession, handleSelectProject, handleSelectSession, isAddingProject, projects, removeTerminal, renameTerminal, rightPanel, selectedProject, sessionDetail, sessions, sidebarOpen, streamingProjectIds, streamingSessionIds, terminalActiveTabId, terminalTabs, terminalOpen, theme, toggleTheme, view, ws]);
+  ], [activePreview, addTerminal, channelSearch, extensionsOpen, filesOpen, gitOpen, handleDeleteProject, handleDeleteSession, handleElementSelected, handleForkSession, handleRefreshSessions, handleRenameSession, handleSelectProject, handleSelectSession, isAddingProject, projects, removeTerminal, renameTerminal, rightPanel, selectedProject, sessionDetail, sessions, sidebarOpen, streamingProjectIds, streamingSessionIds, terminalActiveTabId, terminalTabs, terminalOpen, view, ws]);
 
   // Reset active mobile tab when the panel it points to is closed
   useEffect(() => {
@@ -885,6 +883,12 @@ export default function App() {
         <AddProjectExplorer
           onAdd={(path, name) => { handleAddProject(path, name); setShowAddProject(false); }}
           onCancel={() => setShowAddProject(false)}
+        />
+      )}
+      {showSettings && (
+        <SettingsModal
+          onClose={() => setShowSettings(false)}
+          onResetWorkspace={requestWorkspaceReset}
         />
       )}
     </div>
