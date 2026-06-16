@@ -18,16 +18,27 @@ export function PWABanner() {
   const { isInstallable, isInstalled, install } = usePWAInstall();
   const { hasUpdate, applyUpdate } = useServiceWorkerUpdate();
   const isOnline = useOnlineStatus();
-
   const [installDismissed, dismissInstall] = useDismissed("install");
   const [updateDismissed, dismissUpdate] = useDismissed("update");
 
-  // Reset update dismissal when a new update appears
+  // iOS detection — iOS has no `beforeinstallprompt` event.
+  // Users must manually add to Home Screen via Share → "Add to Home Screen".
+  const [isIOS, setIsIOS] = useState(false);
+  const [showIOSHint, setShowIOSHint] = useState(false);
+  const [iosHintDismissed, dismissIOSHint] = useDismissed("ios-install");
+
   useEffect(() => {
-    if (hasUpdate) {
-      try { localStorage.removeItem("pwa-dismiss-update"); } catch {}
-    }
-  }, [hasUpdate]);
+    const ua = navigator.userAgent;
+    const inStandalone = window.matchMedia("(display-mode: standalone)").matches || (navigator as any).standalone === true;
+    setIsIOS(/iPhone|iPad|iPod/.test(ua) && !(window as any).MSStream && !inStandalone);
+  }, []);
+
+  // Show the iOS hint after 5s so the user has seen the app first
+  useEffect(() => {
+    if (!isIOS || iosHintDismissed) return;
+    const t = setTimeout(() => setShowIOSHint(true), 5000);
+    return () => clearTimeout(t);
+  }, [isIOS, iosHintDismissed]);
 
   const showInstall = isInstallable && !isInstalled && !installDismissed;
   const showUpdate = hasUpdate && !updateDismissed;
@@ -42,9 +53,7 @@ export function PWABanner() {
         </div>
       )}
 
-      {/* Install prompt — top of screen on mobile, top-right on desktop.
-          Positioned BELOW the ChatHeader (which is ~40px tall) so it
-          doesn't cover the git/session/sidebar header buttons at z-90. #131 */}
+      {/* Install prompt — Chrome/Edge only (fires `beforeinstallprompt`) */}
       {showInstall && (
         <div className="fixed top-12 left-3 right-3 md:top-12 md:left-auto md:right-4 md:w-80 z-[90] bg-ink-900/95 backdrop-blur-md border border-ink-700 rounded-xl px-3 py-2.5 flex items-center gap-2.5 shadow-lg animate-slide-down">
           <div className="w-8 h-8 rounded-lg bg-amber-600/20 flex items-center justify-center shrink-0">
@@ -70,12 +79,30 @@ export function PWABanner() {
         </div>
       )}
 
-      {/* Update available — cascades below the install banner. Both
-          banners live BELOW the header so they never overlap header
-          buttons (git, session actions, sidebar toggle, etc). #131 */}
+      {/* iOS "Add to Home Screen" hint */}
+      {isIOS && showIOSHint && !iosHintDismissed && (
+        <div className="fixed top-12 left-3 right-3 md:top-12 md:left-auto md:right-4 md:w-80 z-[90] bg-ink-900/95 backdrop-blur-md border border-ink-700 rounded-xl px-3 py-2.5 flex items-center gap-2.5 shadow-lg animate-slide-down">
+          <div className="w-8 h-8 rounded-lg bg-amber-600/20 flex items-center justify-center shrink-0">
+            <Icon name="download" size={16} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-ink-100 text-sm font-medium">Install PI</div>
+            <div className="text-ink-400 text-[0.7rem] leading-tight">Tap <strong>Share</strong> <span className="ml-0.5">⋯</span> then "Add to Home Screen"</div>
+          </div>
+          <button
+            onClick={dismissIOSHint}
+            className="p-1 text-ink-500 hover:text-ink-300 transition-colors shrink-0 touch-target-sm"
+            aria-label="Dismiss install prompt"
+          >
+            <Icon name="close" size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* Update available — cascades below the install banner. */}
       {showUpdate && (
         <div className={`fixed ${showInstall ? 'top-[7.25rem] md:top-[7.25rem]' : 'top-12 md:top-12'} left-3 right-3 md:left-auto md:right-4 md:w-80 z-[89] bg-ink-900/95 backdrop-blur-md border border-amber-700/50 rounded-xl px-3 py-2.5 flex items-center gap-2.5 shadow-lg animate-slide-down`}>
-          <div className="w-8 h-8 rounded-lg bg-amber-600/20 flex items-center justify-center shrink-0">
+          <div className="w-8 h-8 rounded-lg bg-amber-600/50 flex items-center justify-center shrink-0">
             <Icon name="refresh" size={16} />
           </div>
           <div className="flex-1 min-w-0">

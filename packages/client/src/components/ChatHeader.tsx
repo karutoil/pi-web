@@ -65,7 +65,7 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar,
   // Mobile: compact two-row layout
   if (isMobile) {
     return (
-      <div className="conversation-mobile-header shrink-0 max-h-[35vh] overflow-y-auto">
+      <div className="conversation-mobile-header shrink-0 max-h-[35vh] overflow-y-auto mobile-safe-top">
         <div className="conversation-mobile-title-row">
           {onBack && (
             <button type="button" onClick={onBack} className="p-1.5 -ml-1 rounded-md hover:bg-ink-800 text-ink-400" aria-label="Back" title="Back">

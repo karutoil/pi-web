@@ -9,7 +9,7 @@
   "scripts": {
     "postinstall": "bun run scripts/patch-pi-clear-queue.ts",
     "screenshots": "bun run scripts/screenshots.ts",
-    "dev": "concurrently -n server,client -c blue,green \"bun run dev:server\" \"bun run dev:client\"",
+    "dev": "concurrently -n server,client -c blue,green \"bun run dev:server\" \"bun run dev:client --host\"",
     "dev:server": "cross-env PORT=3069 bun run --cwd packages/server dev",
     "dev:client": "cross-env CLIENT_PORT=3070 bun run --cwd packages/client dev",
     "build": "tsc -b && bun run --cwd packages/client build",

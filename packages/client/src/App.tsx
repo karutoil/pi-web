@@ -884,7 +884,7 @@ export default function App() {
   }, []);
 
   return (
-    <div className="flex h-[100dvh] overflow-hidden bg-ink-950">
+    <div className="flex h-[100dvh] overflow-hidden bg-ink-950" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
       <PWABanner />
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-0 focus:left-0 focus:z-80 focus:bg-ink-900 focus:p-4 focus:text-amber-500">Skip to chat</a>
       <main id="main-content" className="flex-1 flex flex-row min-w-0 min-h-0 h-full overflow-hidden">

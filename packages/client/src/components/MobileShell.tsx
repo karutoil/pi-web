@@ -37,7 +37,7 @@ export function MobileShell({
   return (
     <div className="flex flex-col h-full w-full overflow-hidden bg-ink-950">
       {/* Viewport: all panels rendered, only active is visible */}
-      <div className="relative flex-1 min-h-0 overflow-hidden mobile-safe-top">
+      <div className="relative flex-1 min-h-0 overflow-hidden">
         {panels.map((panel) => {
           const isActive = panel.id === (activePanel?.id ?? activePanelId);
           return (
@@ -49,7 +49,7 @@ export function MobileShell({
           >
             {/* Generic top frame — skip when panel supplies its own header or is chat */}
             {!panel.header && panel.id !== "chat" && (
-            <div className="shrink-0 flex items-center gap-2 px-3 h-12 border-b border-ink-800">
+            <div className="shrink-0 flex items-center gap-2 px-3 h-12 border-b border-ink-800 mobile-safe-top">
               <span className="text-amber-500">{panel.icon}</span>
               <span className="flex-1 truncate text-sm text-ink-100">
                 {panel.title}
@@ -70,7 +70,7 @@ export function MobileShell({
             {panel.header && <div className="shrink-0">{panel.header}</div>}
             {/* Close button when panel has own header but also has onClose */}
             {panel.header && panel.onClose && (
-              <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-ink-800">
+              <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-ink-800 mobile-safe-top">
                 <button
                   onClick={panel.onClose}
                   className="p-1 rounded-md hover:bg-ink-800 text-ink-400 text-xs font-mono flex items-center gap-1"
