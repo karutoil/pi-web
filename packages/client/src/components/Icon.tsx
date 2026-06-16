@@ -399,6 +399,22 @@ const SVG_PATHS = {
     ),
   },
 
+  // ── Globe (global scope) ──────────────────────────────────
+  globe: {
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.5",
+    ...ROUND,
+    children: (
+      <>
+        <circle cx="8" cy="8" r="6" />
+        <ellipse cx="8" cy="8" rx="6" ry="2.5" />
+        <line x1="8" y1="2" x2="8" y2="14" />
+      </>
+    ),
+  },
+
   // ── Project / folder ──────────────────────────────────────
   // Classic tabbed folder with a proper tab notch
   project: {

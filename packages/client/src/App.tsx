@@ -20,6 +20,7 @@ import { useRightPanelStore } from "./hooks/useRightPanelStore";
 import { useWorkspaceLayout } from "./hooks/useWorkspaceLayout";
 import { useIsMobile } from "./hooks/useIsMobile";
 import { ExtensionsPanel } from "./components/ExtensionsPanel";
+import { SkillsPanel } from "./components/SkillsPanel";
 import { WorkspaceDock } from "./components/WorkspaceDock";
 import { MobileShell } from "./components/MobileShell";
 import { Icon } from "./components/Icon";
@@ -204,6 +205,7 @@ export default function App() {
       });
       setSessionDetail(session);
       setNewSessionId(null);
+      if (session.filePath) fetchSessions();
     };
     ws.setOnSessionLoaded(handleSessionLoaded);
 
@@ -250,6 +252,7 @@ export default function App() {
   const gitOpen = rightPanel.isOpen("git");
   const filesOpen = rightPanel.isOpen("files");
   const extensionsOpen = rightPanel.isOpen("extensions");
+  const skillsOpen = rightPanel.isOpen("skills");
 
   // Sync preview store → right panel store
   useEffect(() => {
@@ -293,13 +296,19 @@ export default function App() {
       icon: <Icon name="puzzle" size={10} />,
       children: null,
     }] : []),
+    ...(!skillsOpen ? [{
+      id: "skills" as const,
+      title: "Skills",
+      icon: <Icon name="spark" size={10} />,
+      children: null,
+    }] : []),
     ...(!terminalOpen ? [{
       id: "terminal" as const,
       title: "Terminal",
       icon: <Icon name="terminal" size={10} />,
       children: null,
     }] : []),
-  ], [gitOpen, rightPanel, selectedProject, sidebarOpen, terminalOpen, filesOpen, extensionsOpen]);
+  ], [gitOpen, rightPanel, selectedProject, sidebarOpen, terminalOpen, filesOpen, extensionsOpen, skillsOpen]);
 
   const reopenPanel = useCallback((panelId: WorkspacePanelKind) => {
     if (panelId === "channels") setSidebarOpen(true);
@@ -307,6 +316,7 @@ export default function App() {
     if (panelId === "git") rightPanel.open("git");
     if (panelId === "files") rightPanel.open("files");
     if (panelId === "extensions") rightPanel.open("extensions");
+    if (panelId === "skills") rightPanel.open("skills");
     if (panelId === "terminal") setTerminalOpen(true);
   }, [rightPanel]);
 
@@ -657,6 +667,8 @@ export default function App() {
               onToggleGit={() => { const wasOpen = gitOpen; rightPanel.toggle("git"); if (!wasOpen && isMobile) setActiveMobilePanel("git"); }}
               onToggleFiles={() => { const wasOpen = filesOpen; rightPanel.toggle("files"); if (!wasOpen && isMobile) setActiveMobilePanel("files"); }}
               onToggleExtensions={() => { const wasOpen = extensionsOpen; rightPanel.toggle("extensions"); if (!wasOpen && isMobile) setActiveMobilePanel("extensions"); }}
+              onToggleSkills={() => { const wasOpen = skillsOpen; rightPanel.toggle("skills"); if (!wasOpen && isMobile) setActiveMobilePanel("skills"); }}
+              skillsOpen={skillsOpen}
               terminalOpen={terminalOpen}
               previewOpen={rightPanel.isOpen("preview")}
               gitOpen={gitOpen}
@@ -740,9 +752,24 @@ export default function App() {
           visible={true}
           onClose={() => rightPanel.close("extensions")}
           embedded
+          project={selectedProject}
         />
       ),
       onClose: () => rightPanel.close("extensions"),
+    }] : []),
+    ...(skillsOpen ? [{
+      id: "skills" as const,
+      title: "Skills",
+      icon: <Icon name="spark" size={12} />,
+      children: (
+        <SkillsPanel
+          visible={true}
+          onClose={() => rightPanel.close("skills")}
+          embedded
+          project={selectedProject}
+        />
+      ),
+      onClose: () => rightPanel.close("skills"),
     }] : []),
     ...(terminalOpen ?[{
       id: "terminal" as const,
@@ -770,7 +797,7 @@ export default function App() {
       ),
       onClose: () => setTerminalOpen(false),
     }] : []),
-  ], [activePreview, addTerminal, channelSearch, extensionsOpen, filesOpen, gitOpen, handleDeleteProject, handleDeleteSession, handleElementSelected, handleForkSession, handleRefreshSessions, handleRenameSession, handleSelectProject, handleSelectSession, isAddingProject, projects, removeTerminal, renameTerminal, rightPanel, selectedProject, sessionDetail, sessions, sidebarOpen, streamingProjectIds, streamingSessionIds, terminalActiveTabId, terminalTabs, terminalOpen, view, ws]);
+  ], [activePreview, addTerminal, channelSearch, extensionsOpen, filesOpen, gitOpen, handleDeleteProject, handleDeleteSession, handleElementSelected, handleForkSession, handleRefreshSessions, handleRenameSession, handleSelectProject, handleSelectSession, isAddingProject, projects, removeTerminal, renameTerminal, rightPanel, selectedProject, sessionDetail, sessions, sidebarOpen, streamingProjectIds, streamingSessionIds, terminalActiveTabId, terminalTabs, terminalOpen, view, ws, skillsOpen]);
 
   // Reset active mobile tab when the panel it points to is closed
   useEffect(() => {
@@ -786,11 +813,32 @@ export default function App() {
     ws.setOnSessionEvent((event) => {
       if (event.type === "sessions_refreshed") {
         setSessions(event.sessions || []);
+      } else if (event.type === "session_renamed") {
+        setSessions(prev => prev.map(s => s.id === event.sessionId ? { ...s, name: event.name } : s));
+        if (activeSession?.id === event.sessionId) {
+          setActiveSession(prev => prev ? { ...prev, name: event.name } : prev);
+        }
+        fetchSessions();
+      } else if (event.type === "session_name_changed") {
+        const id = ws.state?.sessionId;
+        if (id) {
+          setSessions(prev => prev.map(s => s.id === id ? { ...s, name: event.name } : s));
+          if (activeSession?.id === id) {
+            setActiveSession(prev => prev ? { ...prev, name: event.name } : prev);
+          }
+        }
+        fetchSessions();
+      } else if (event.type === "session_deleted") {
+        setSessions(prev => prev.filter(s => s.id !== event.sessionId));
+        if (activeSession?.id === event.sessionId) {
+          setActiveSession(null);
+          setView("sessions");
+        }
       }
     });
     // #4 — Cleanup: remove handler from old connection on ws change
     return () => ws.setOnSessionEvent(null);
-  }, [ws]);
+  }, [ws, fetchSessions, activeSession?.id]);
 
   // Cmd/Ctrl+N shortcut — new session
   // Cmd/Ctrl+K — quick project switcher (⌘P) by cycling through projects.

@@ -28,9 +28,12 @@ interface Props {
   /** Extensions panel toggle */
   onToggleExtensions?: () => void;
   extensionsOpen?: boolean;
+  /** Skills panel toggle */
+  onToggleSkills?: () => void;
+  skillsOpen?: boolean;
 }
 
-export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar, onSessionActions, onToggleTerminal, showTerminal, onBack, onTogglePreview, previewOpen, onToggleGit, gitOpen, onToggleFiles, filesOpen, onToggleExtensions, extensionsOpen }: Props) {
+export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar, onSessionActions, onToggleTerminal, showTerminal, onBack, onTogglePreview, previewOpen, onToggleGit, gitOpen, onToggleFiles, filesOpen, onToggleExtensions, extensionsOpen, onToggleSkills, skillsOpen }: Props) {
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(sessionName || "");
   const isMobile = useIsMobile();
@@ -127,6 +130,11 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar,
             {onToggleExtensions && (
               <button type="button" onClick={onToggleExtensions} className={`p-1.5 rounded-md ${extensionsOpen ? 'text-amber-500 bg-amber-500/10' : 'text-ink-400 hover:bg-ink-800'}`} aria-label="Extensions" title="Extensions">
                 <Icon name="puzzle" size={14} />
+              </button>
+            )}
+            {onToggleSkills && (
+              <button type="button" onClick={onToggleSkills} className={`p-1.5 rounded-md ${skillsOpen ? 'text-amber-500 bg-amber-500/10' : 'text-ink-400 hover:bg-ink-800'}`} aria-label="Skills" title="Skills">
+                <Icon name="spark" size={14} />
               </button>
             )}
             {onSessionActions && (
@@ -258,6 +266,17 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar,
             title="Extensions"
           >
             <Icon name="puzzle" size={14} />
+          </button>
+        )}
+        {onToggleSkills && (
+          <button
+            type="button"
+            onClick={onToggleSkills}
+            className={`conversation-toolbar-pill ${skillsOpen ? "conversation-toolbar-pill-active" : ""}`}
+            aria-label="Toggle skills"
+            title="Skills"
+          >
+            <Icon name="spark" size={14} />
           </button>
         )}
       </div>

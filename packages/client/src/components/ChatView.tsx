@@ -47,11 +47,13 @@ interface ChatViewProps {
   onToggleGit?: () => void;
   onToggleFiles?: () => void;
   onToggleExtensions?: () => void;
+  onToggleSkills?: () => void;
   terminalOpen?: boolean;
   previewOpen?: boolean;
   gitOpen?: boolean;
   filesOpen?: boolean;
   extensionsOpen?: boolean;
+  skillsOpen?: boolean;
 }
 
 function extractMsgText(msg: ChatMessage): string {
@@ -66,7 +68,7 @@ function extractMsgText(msg: ChatMessage): string {
   return "";
 }
 
-export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar, showSidebar, onBack, onToggleTerminal, onTogglePreview, onToggleGit, onToggleFiles, onToggleExtensions, terminalOpen, previewOpen, gitOpen, filesOpen, extensionsOpen }: ChatViewProps) {
+export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar, showSidebar, onBack, onToggleTerminal, onTogglePreview, onToggleGit, onToggleFiles, onToggleExtensions, onToggleSkills, terminalOpen, previewOpen, gitOpen, filesOpen, extensionsOpen, skillsOpen }: ChatViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showThinking, setShowThinking] = useState(true);
   const [srAnnouncement, setSrAnnouncement] = useState('');
@@ -82,7 +84,22 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
     setAutoScroll(true);
   }, [ws.state?.sessionId]);
 
+  // Toggle the history search overlay on Ctrl/Cmd+F and focus it.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        setHistorySearchOpen(true);
+        setTimeout(() => historySearchRef.current?.focus(), 0);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   const contentRef = useRef<HTMLDivElement>(null);
+  const historySearchRef = useRef<HTMLInputElement>(null);
+  const [historySearchOpen, setHistorySearchOpen] = useState(false);
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sessionActionStatus, setSessionActionStatus] = useState<string | null>(null);
@@ -509,36 +526,59 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
 
   return (
     <div className="conversation-shell">
-      <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} onToggleSidebar={onToggleSidebar} showSidebar={showSidebar} onSessionActions={() => setShowSessionActions(true)} onBack={onBack} onToggleTerminal={onToggleTerminal} onTogglePreview={onTogglePreview} onToggleGit={onToggleGit} onToggleFiles={onToggleFiles} onToggleExtensions={onToggleExtensions} showTerminal={terminalOpen} previewOpen={previewOpen} gitOpen={gitOpen} filesOpen={filesOpen} extensionsOpen={extensionsOpen} />
+      <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} onToggleSidebar={onToggleSidebar} showSidebar={showSidebar} onSessionActions={() => setShowSessionActions(true)} onBack={onBack} onToggleTerminal={onToggleTerminal} onTogglePreview={onTogglePreview} onToggleGit={onToggleGit} onToggleFiles={onToggleFiles} onToggleExtensions={onToggleExtensions} onToggleSkills={onToggleSkills} showTerminal={terminalOpen} previewOpen={previewOpen} gitOpen={gitOpen} filesOpen={filesOpen} extensionsOpen={extensionsOpen} skillsOpen={skillsOpen} />
 
       <div aria-live="polite" className="sr-only">{srAnnouncement}</div>
 
-      <div className="shrink-0 px-3 py-1.5 border-b border-ink-800 flex items-center gap-2">
-        <Icon name="search" size={12} className="text-ink-500" />
-        <input
-          type="text"
-          value={historySearch}
-          onChange={e => setHistorySearch(e.target.value)}
-          placeholder="Search history…"
-          className="flex-1 min-w-0 bg-transparent text-xs text-ink-200 placeholder:text-ink-600 outline-none"
-          spellCheck={false}
-        />
-        {historySearch && (
-          <span className="text-xs text-ink-500">
-            {visibleHistoricalEntries.length} / {historicalEntries.length}
-          </span>
-        )}
-        {historySearch && (
+      {historySearchOpen && (
+        <div className="shrink-0 px-3 py-1.5 border-b border-ink-800 flex items-center gap-2">
+          <Icon name="search" size={12} className="text-ink-500" />
+          <input
+            ref={historySearchRef}
+            type="text"
+            value={historySearch}
+            onChange={e => setHistorySearch(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === "Escape") {
+                setHistorySearchOpen(false);
+                setHistorySearch("");
+              }
+            }}
+            onBlur={() => {
+              if (!historySearch.trim()) setHistorySearchOpen(false);
+            }}
+            placeholder="Search history…"
+            className="flex-1 min-w-0 bg-transparent text-xs text-ink-200 placeholder:text-ink-600 outline-none"
+            spellCheck={false}
+          />
+          {historySearch && (
+            <span className="text-xs text-ink-500">
+              {visibleHistoricalEntries.length} / {historicalEntries.length}
+            </span>
+          )}
+          {historySearch && (
+            <button
+              type="button"
+              onClick={() => setHistorySearch("")}
+              className="text-ink-500 hover:text-ink-300 text-xs"
+              aria-label="Clear history search"
+            >
+              Clear
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => setHistorySearch("")}
+            onClick={() => {
+              setHistorySearchOpen(false);
+              setHistorySearch("");
+            }}
             className="text-ink-500 hover:text-ink-300 text-xs"
-            aria-label="Clear history search"
+            aria-label="Close history search"
           >
-            Clear
+            Esc
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       <div className="flex-1 flex min-h-0 min-w-0 overflow-hidden relative">
         {/* Loading overlay — blurs + blocks interaction until connected + state received */}

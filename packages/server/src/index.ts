@@ -11,7 +11,7 @@ import { homedir, platform } from "node:os";
 import { addProject, removeProject, listProjects, getProject, touchProject, getLayout, saveLayout, deleteLayout, getProjectSettings, saveProjectSettings } from "./db";
 import { listProjectSessions, getSessionDetail } from "./pi-sessions";
 import { buildSessionHtmlPretty } from "./sessionExportPretty";
-import { getOrCreateAgent, stopAllAgents, getPoolStats, lookupAgent, detachFromAgent, deleteFromPool, rekeyAgent } from "./pi-agent";
+import { getOrCreateAgent, stopAllAgents, getPoolStats, lookupAgent, detachFromAgent, deleteFromPool, rekeyAgent, setProjectSessionsChangedHandler, broadcastToProjectClients } from "./pi-agent";
 import { createTerminal, getTerminal, listTerminals, killTerminal } from "./pi-terminal";
 import { getGitStatus, getGitDiff, getGitDiffForCommit, gitStage, gitUnstage, gitCommit, gitLog, gitCheckout, gitDiscard, gitBranches, gitPush, gitPull, gitFetch, gitCreateBranch, gitDeleteBranch, gitRenameBranch, gitTags, gitCreateTag, gitDeleteTag, gitStashList, gitStashShow, gitStashPush, gitStashPop, gitStashApply, gitStashDrop, gitAmend, gitCherryPick, gitRevert, gitResolveConflict, getGitDiffStats, gitDiffWithRef, gitShowCommit, gitLogSearch, gitBlame, gitRemotes, gitUnstageAll } from "./pi-git";
 import type { GitResult } from "./pi-git";
@@ -21,6 +21,7 @@ import { previewReplace, executeReplace } from "./lib/replace";
 import { startPreview, stopPreview, getPreview, listPreviews, addLogListener, stopAllPreviews, setPreviewPort, setPreviewRemoteUrl } from "./pi-preview";
 import { handlePreviewRequest, parsePreviewPath } from "./pi-preview-proxy";
 import { getOverlayJS, getOverlayCSS } from "./pi-preview-overlay";
+import { createSkillsRoutes } from "./pi-skills";
 import type { WSClientMessage, WSServerMessage, WorkspaceLayout } from "@pi-web/shared";
 
 // ─── Rate limiting for file writes ─────────────────────────────
@@ -1286,6 +1287,18 @@ app.put("/api/pi-config/:file", async (c) => {
 const PI_SETTINGS_PATH = join(HOME, ".pi", "agent", "settings.json");
 const PI_EXTENSIONS_DIR = join(HOME, ".pi", "agent", "extensions");
 
+function projectSettingsPath(cwd: string): string {
+  return join(cwd, ".pi", "settings.json");
+}
+
+function projectExtensionsDir(cwd: string): string {
+  return join(cwd, ".pi", "extensions");
+}
+
+function projectNpmDir(cwd: string): string {
+  return join(cwd, ".pi", "npm");
+}
+
 interface PiPackageEntry {
   source: string;
   extensions?: string[];
@@ -1314,6 +1327,23 @@ async function writePiSettings(settings: PiSettings): Promise<void> {
   const raw = JSON.stringify(settings, null, 2) + "\n";
   await mkdir(dirname(PI_SETTINGS_PATH), { recursive: true });
   await writeFile(PI_SETTINGS_PATH, raw, "utf-8");
+}
+
+async function readProjectPiSettings(cwd: string): Promise<PiSettings> {
+  const path = projectSettingsPath(cwd);
+  try {
+    const raw = await readFile(path, "utf-8");
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+async function writeProjectPiSettings(cwd: string, settings: PiSettings): Promise<void> {
+  const path = projectSettingsPath(cwd);
+  const raw = JSON.stringify(settings, null, 2) + "\n";
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, raw, "utf-8");
 }
 
 const MAX_README_LENGTH = 256_000;
@@ -1420,6 +1450,7 @@ interface InstalledExtension {
   name: string;
   source: string;
   type: "package" | "local";
+  scope: "global" | "project";
   enabled: boolean;
   version?: string;
   description?: string;
@@ -1430,12 +1461,28 @@ interface InstalledExtension {
   themes?: string[];
 }
 
-// List installed extensions
-app.get("/api/extensions", async (c) => {
-  const settings = await readPiSettings();
-  const extensions: InstalledExtension[] = [];
+async function readPackageMetadata(name: string, npmBaseDir: string): Promise<{ version?: string; description?: string; path?: string }> {
+  const pkgName = name.includes("/") ? name : name;
+  const pkgJsonPath = join(npmBaseDir, "node_modules", pkgName, "package.json");
+  try {
+    if (existsSync(pkgJsonPath)) {
+      const pkgJson = JSON.parse(await readFile(pkgJsonPath, "utf-8"));
+      return {
+        version: pkgJson.version,
+        description: pkgJson.description,
+        path: join(pkgJsonPath, ".."),
+      };
+    }
+  } catch {}
+  return {};
+}
 
-  // Parse packages from settings
+async function collectInstalledPackages(
+  settings: PiSettings,
+  scope: "global" | "project",
+  npmBaseDir: string,
+  extensions: InstalledExtension[],
+): Promise<void> {
   const packages = settings.packages || [];
   for (const entry of packages) {
     const source = typeof entry === "string" ? entry : entry.source;
@@ -1445,49 +1492,33 @@ app.get("/api/extensions", async (c) => {
     // Reject malformed package sources to prevent path traversal
     if (!isValidNpmPackageName(name)) continue;
 
-    // Check if any extensions are disabled (prefixed with -)
     const extFilters = filters.extensions || [];
     const hasDisabled = extFilters.some((f: string) => f.startsWith("-"));
     const hasEnabled = extFilters.some((f: string) => f.startsWith("+"));
-
-    // Try to read package.json from the npm install dir
-    let version: string | undefined;
-    let description: string | undefined;
-    let pkgPath: string | undefined;
-    try {
-      const pkgName = name.includes("/") ? name : name;
-      // Resolve the actual installed path
-      const possiblePaths = [
-        join(HOME, ".pi", "agent", "npm", "node_modules", pkgName, "package.json"),
-      ];
-      for (const pp of possiblePaths) {
-        if (existsSync(pp)) {
-          const pkgJson = JSON.parse(await readFile(pp, "utf-8"));
-          version = pkgJson.version;
-          description = pkgJson.description;
-          pkgPath = join(pp, "..");
-          break;
-        }
-      }
-    } catch {}
+    const meta = await readPackageMetadata(name, npmBaseDir);
 
     extensions.push({
       id: source,
       name,
       source,
       type: "package",
+      scope,
       enabled: !hasDisabled || hasEnabled,
-      version,
-      description,
-      path: pkgPath,
+      ...meta,
       extensions: filters.extensions,
       skills: filters.skills,
       prompts: filters.prompts,
       themes: filters.themes,
     });
   }
+}
 
-  // Parse local extensions from settings.extensions
+async function collectLocalExtensions(
+  settings: PiSettings,
+  scope: "global" | "project",
+  baseDir: string,
+  extensions: InstalledExtension[],
+): Promise<void> {
   const localExts = settings.extensions || [];
   for (const ext of localExts) {
     const isDisabled = ext.startsWith("-");
@@ -1502,29 +1533,32 @@ app.get("/api/extensions", async (c) => {
       name,
       source: cleanPath,
       type: "local",
+      scope,
       enabled: isEnabled || !isDisabled,
       path: safePath,
     });
   }
 
-  // Also scan local extensions directory for auto-discovered extensions
+  const extDir = scope === "project" ? projectExtensionsDir(baseDir) : PI_EXTENSIONS_DIR;
   try {
-    if (existsSync(PI_EXTENSIONS_DIR)) {
-      const entries = readdirSync(PI_EXTENSIONS_DIR, { withFileTypes: true });
+    if (existsSync(extDir)) {
+      const entries = readdirSync(extDir, { withFileTypes: true });
       for (const entry of entries) {
         if (entry.name.startsWith(".") || entry.name === "__tests__") continue;
         const extPath = entry.isDirectory()
-          ? join(PI_EXTENSIONS_DIR, entry.name, "index.ts")
-          : join(PI_EXTENSIONS_DIR, entry.name);
+          ? join(extDir, entry.name, "index.ts")
+          : join(extDir, entry.name);
         if (!entry.isDirectory() && !entry.name.endsWith(".ts") && !entry.name.endsWith(".js")) continue;
-        const localId = `local:${entry.isDirectory() ? `extensions/${entry.name}` : `extensions/${entry.name}`}`;
+        const localId = scope === "project"
+          ? `local:project:${entry.isDirectory() ? `extensions/${entry.name}` : `extensions/${entry.name}`}`
+          : `local:${entry.isDirectory() ? `extensions/${entry.name}` : `extensions/${entry.name}`}`;
         // Skip if already listed from settings
-        if (extensions.some(e => e.id === localId || e.path === extPath || e.path === join(PI_EXTENSIONS_DIR, entry.name))) continue;
+        if (extensions.some(e => e.id === localId || e.path === extPath || e.path === join(extDir, entry.name))) continue;
 
         let description: string | undefined;
         let version: string | undefined;
         try {
-          const pkgJsonPath = join(PI_EXTENSIONS_DIR, entry.name, "package.json");
+          const pkgJsonPath = join(extDir, entry.name, "package.json");
           if (existsSync(pkgJsonPath)) {
             const pkgJson = JSON.parse(await readFile(pkgJsonPath, "utf-8"));
             description = pkgJson.description;
@@ -1537,21 +1571,70 @@ app.get("/api/extensions", async (c) => {
           name: entry.name.replace(/\.(ts|js)$/, ""),
           source: entry.isDirectory() ? `extensions/${entry.name}` : `extensions/${entry.name}`,
           type: "local",
+          scope,
           enabled: true, // auto-discovered = enabled by default
           version,
           description,
-          path: join(PI_EXTENSIONS_DIR, entry.name),
+          path: join(extDir, entry.name),
         });
       }
     }
   } catch {}
+}
+
+// List installed extensions
+app.get("/api/extensions", async (c) => {
+  const cwd = c.req.query("cwd");
+  const extensions: InstalledExtension[] = [];
+
+  const globalSettings = await readPiSettings();
+  await collectInstalledPackages(globalSettings, "global", join(HOME, ".pi", "agent", "npm"), extensions);
+  await collectLocalExtensions(globalSettings, "global", HOME, extensions);
+
+  if (cwd && typeof cwd === "string" && isAbsolute(cwd)) {
+    const projectSettings = await readProjectPiSettings(cwd);
+    await collectInstalledPackages(projectSettings, "project", projectNpmDir(cwd), extensions);
+    await collectLocalExtensions(projectSettings, "project", cwd, extensions);
+  }
 
   return c.json({ extensions });
 });
 
+function togglePackageEntry(settings: PiSettings, rawId: string, enabled: boolean): boolean {
+  const packages = settings.packages || [];
+  let found = false;
+  const updated = packages.map(entry => {
+    const source = typeof entry === "string" ? entry : entry.source;
+    if (source === rawId) {
+      found = true;
+      if (typeof entry === "string") {
+        // Convert to object form with filter
+        return { source, extensions: enabled ? ["+index.ts"] : ["-index.ts"] };
+      } else {
+        const extFilters = entry.extensions || [];
+        if (enabled) {
+          // Replace - with + or add +
+          const hasAny = extFilters.length > 0;
+          return { ...entry, extensions: hasAny ? extFilters.map((f: string) => f.startsWith("-") ? `+${f.slice(1)}` : f) : ["+index.ts"] };
+        } else {
+          const hasAny = extFilters.length > 0;
+          return { ...entry, extensions: hasAny ? extFilters.map((f: string) => f.startsWith("+") ? `-${f.slice(1)}` : f.startsWith("-") ? f : `-${f}`) : ["-index.ts"] };
+        }
+      }
+    }
+    return entry;
+  });
+
+  if (found) {
+    settings.packages = updated;
+    return true;
+  }
+  return false;
+}
+
 // Toggle extension enabled/disabled
 app.patch("/api/extensions/:id/toggle", async (c) => {
-  let body: { enabled?: unknown };
+  let body: { enabled?: unknown; scope?: unknown; cwd?: unknown };
   try {
     body = await c.req.json();
   } catch {
@@ -1560,40 +1643,36 @@ app.patch("/api/extensions/:id/toggle", async (c) => {
   if (typeof body?.enabled !== "boolean") {
     return c.json({ error: "enabled boolean is required" }, 400);
   }
+  const scope = body.scope === "project" ? "project" : "global";
+  const projectCwd = typeof body.cwd === "string" && isAbsolute(body.cwd) ? body.cwd : null;
+  if (scope === "project" && !projectCwd) {
+    return c.json({ error: "cwd is required for project scope" }, 400);
+  }
+
   const rawId = decodeURIComponent(c.req.param("id"));
   const { enabled } = body;
+
+  if (scope === "project") {
+    if (rawId.startsWith("local:")) {
+      return c.json({ error: "Project-local custom paths are not manageable from the panel" }, 400);
+    }
+    const parsed = parseNpmSource(rawId);
+    if (!parsed.ok) return c.json({ error: "Invalid extension id" }, 400);
+    const settings = await readProjectPiSettings(projectCwd!);
+    const found = togglePackageEntry(settings, rawId, enabled);
+    if (!found) return c.json({ error: "Extension not found" }, 404);
+    await writeProjectPiSettings(projectCwd!, settings);
+    return c.json({ success: true, restartRequired: true });
+  }
+
   const settings = await readPiSettings();
 
   // Handle package entries (validate npm source shape when matched)
   if (!rawId.startsWith("local:")) {
     const parsed = parseNpmSource(rawId);
     if (!parsed.ok) return c.json({ error: "Invalid extension id" }, 400);
-    const packages = settings.packages || [];
-    let found = false;
-    const updated = packages.map(entry => {
-      const source = typeof entry === "string" ? entry : entry.source;
-      if (source === rawId) {
-        found = true;
-        if (typeof entry === "string") {
-          // Convert to object form with filter
-          return { source, extensions: enabled ? ["+index.ts"] : ["-index.ts"] };
-        } else {
-          const extFilters = entry.extensions || [];
-          if (enabled) {
-            // Replace - with + or add +
-            const hasAny = extFilters.length > 0;
-            return { ...entry, extensions: hasAny ? extFilters.map((f: string) => f.startsWith("-") ? `+${f.slice(1)}` : f) : ["+index.ts"] };
-          } else {
-            const hasAny = extFilters.length > 0;
-            return { ...entry, extensions: hasAny ? extFilters.map((f: string) => f.startsWith("+") ? `-${f.slice(1)}` : f.startsWith("-") ? f : `-${f}`) : ["-index.ts"] };
-          }
-        }
-      }
-      return entry;
-    });
-
+    const found = togglePackageEntry(settings, rawId, enabled);
     if (found) {
-      settings.packages = updated;
       await writePiSettings(settings);
       return c.json({ success: true, restartRequired: true });
     }
@@ -1626,7 +1705,7 @@ app.patch("/api/extensions/:id/toggle", async (c) => {
 
 // Install an extension via pi install
 app.post("/api/extensions/install", async (c) => {
-  let body: { source?: unknown };
+  let body: { source?: unknown; scope?: unknown; cwd?: unknown };
   try {
     body = await c.req.json();
   } catch {
@@ -1641,6 +1720,12 @@ app.post("/api/extensions/install", async (c) => {
     return c.json({ error: "Invalid npm package name" }, 400);
   }
 
+  const scope = body.scope === "project" ? "project" : "global";
+  const projectCwd = typeof body.cwd === "string" && isAbsolute(body.cwd) ? body.cwd : null;
+  if (scope === "project" && !projectCwd) {
+    return c.json({ error: "cwd is required for project scope" }, 400);
+  }
+
   const home = process.env.HOME || process.env.USERPROFILE || homedir();
   const envPath = [
     join(home, ".bun/bin"),
@@ -1650,9 +1735,11 @@ app.post("/api/extensions/install", async (c) => {
   ].join(delimiter);
 
   const piBin = platform() === "win32" ? "pi.cmd" : "pi";
+  const args = scope === "project" ? [piBin, "install", source, "-l", "-a"] : [piBin, "install", source];
+  const cwd = scope === "project" ? projectCwd! : HOME;
   try {
-    const proc = Bun.spawn([piBin, "install", source], {
-      cwd: HOME,
+    const proc = Bun.spawn(args, {
+      cwd,
       stdout: "pipe",
       stderr: "pipe",
       env: { ...process.env, PATH: envPath },
@@ -1680,7 +1767,7 @@ app.post("/api/extensions/install", async (c) => {
 
 // Uninstall an extension via pi remove
 app.post("/api/extensions/uninstall", async (c) => {
-  let body: { source?: unknown };
+  let body: { source?: unknown; scope?: unknown; cwd?: unknown };
   try {
     body = await c.req.json();
   } catch {
@@ -1695,6 +1782,12 @@ app.post("/api/extensions/uninstall", async (c) => {
     return c.json({ error: "Invalid npm package name" }, 400);
   }
 
+  const scope = body.scope === "project" ? "project" : "global";
+  const projectCwd = typeof body.cwd === "string" && isAbsolute(body.cwd) ? body.cwd : null;
+  if (scope === "project" && !projectCwd) {
+    return c.json({ error: "cwd is required for project scope" }, 400);
+  }
+
   const home = process.env.HOME || process.env.USERPROFILE || homedir();
   const envPath = [
     join(home, ".bun/bin"),
@@ -1704,9 +1797,11 @@ app.post("/api/extensions/uninstall", async (c) => {
   ].join(delimiter);
 
   const piBin = platform() === "win32" ? "pi.cmd" : "pi";
+  const args = scope === "project" ? [piBin, "remove", source, "-l", "-a"] : [piBin, "remove", source];
+  const cwd = scope === "project" ? projectCwd! : HOME;
   try {
-    const proc = Bun.spawn([piBin, "remove", source], {
-      cwd: HOME,
+    const proc = Bun.spawn(args, {
+      cwd,
       stdout: "pipe",
       stderr: "pipe",
       env: { ...process.env, PATH: envPath },
@@ -1731,6 +1826,9 @@ app.post("/api/extensions/uninstall", async (c) => {
     return c.json({ error: err.message || "Failed to remove extension" }, 500);
   }
 });
+
+// Skills API (mounts its own sub-router under /api/skills)
+app.route("/api/skills", createSkillsRoutes());
 
 // Restart all running PI agent processes (and any external `pi` CLI instances).
 app.post("/api/extensions/restart", async (c) => {
@@ -1979,7 +2077,7 @@ app.get("/api/extensions/detail", async (c) => {
     // Enrich with download counts
     try {
       const [dlRes, wkRes] = await Promise.all([
-        fetch(`https://api.npmjs.org/downloads/point/last-year/${encodeURIComponent(name)}`, { signal: AbortSignal.timeout(REGISTRY_FETCH_TIMEOUT_MS) }),
+        fetch(`https://api.npmjs.org/downloads/point/last-month/${encodeURIComponent(name)}`, { signal: AbortSignal.timeout(REGISTRY_FETCH_TIMEOUT_MS) }),
         fetch(`https://api.npmjs.org/downloads/point/last-week/${encodeURIComponent(name)}`, { signal: AbortSignal.timeout(REGISTRY_FETCH_TIMEOUT_MS) }),
       ]);
       if (dlRes.ok) {
@@ -2411,7 +2509,10 @@ app.get(
                     try {
                       const safePath = validateSessionPath(target.filePath, proj.path);
                       unlink(safePath)
-                        .then(() => { if (raw.readyState === 1) raw.send(JSON.stringify({ type: "session_deleted", sessionId })); })
+                        .then(() => {
+                          if (raw.readyState === 1) raw.send(JSON.stringify({ type: "session_deleted", sessionId }));
+                          refreshProjectSessions(proj.path);
+                        })
                         .catch((e: any) => { if (raw.readyState === 1) raw.send(JSON.stringify({ type: "error", message: `Failed to delete: ${e.message}` })); });
                     } catch (e: any) {
                       if (raw.readyState === 1) raw.send(JSON.stringify({ type: "error", message: `Invalid session path: ${e.message}` }));
@@ -2437,6 +2538,7 @@ app.get(
                         return writeFile(safePath, content.trim() + "\n" + renameEntry + "\n");
                       }).then(() => {
                         if (raw.readyState === 1) raw.send(JSON.stringify({ type: "session_renamed", sessionId, name }));
+                        refreshProjectSessions(proj2.path);
                       }).catch((e: any) => {
                         if (raw.readyState === 1) raw.send(JSON.stringify({ type: "error", message: `Failed to rename: ${e.message}` }));
                       });
@@ -2525,6 +2627,17 @@ app.get("*", async (c) => {
     });
   }
 });
+
+async function refreshProjectSessions(cwd: string) {
+  try {
+    const sessions = await listProjectSessions(cwd);
+    broadcastToProjectClients(cwd, { type: "sessions_refreshed", sessions });
+  } catch (e: any) {
+    console.error("[sessions] failed to broadcast refresh:", e.message);
+  }
+}
+
+setProjectSessionsChangedHandler(refreshProjectSessions);
 
 const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 0;
 const hostname = process.env.HOST || "127.0.0.1";

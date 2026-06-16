@@ -36,12 +36,18 @@ interface PackageDetail {
 
 // ─── Component ───
 
+type ExtensionScope = "global" | "project";
+
 interface PackageDetailModalProps {
   packageName: string;
   onClose: () => void;
-  onInstall?: (name: string) => void;
+  onInstall?: (name: string, scope: ExtensionScope) => void;
   isInstalled?: boolean;
   isInstalling?: boolean;
+  installedElsewhere?: string | null;
+  installScope?: ExtensionScope;
+  setInstallScope?: (scope: ExtensionScope) => void;
+  projectName?: string | null;
 }
 
 const titleId = "pkg-modal-title";
@@ -51,7 +57,11 @@ export function PackageDetailModal({
   onClose,
   onInstall,
   isInstalled,
+  installedElsewhere,
   isInstalling,
+  installScope = "global",
+  setInstallScope,
+  projectName,
 }: PackageDetailModalProps) {
   const [detail, setDetail] = useState<PackageDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -158,10 +168,31 @@ export function PackageDetailModal({
             )}
           </div>
           <div className="pkg-modal-header-actions">
+            {setInstallScope && (
+              <div className="pkg-modal-scope-switch" role="group" aria-label="Install scope">
+                <button
+                  type="button"
+                  onClick={() => setInstallScope("global")}
+                  className={`pkg-modal-scope-btn ${installScope === "global" ? "active" : ""}`}
+                  title="Install to global PI settings"
+                >
+                  Global
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInstallScope("project")}
+                  className={`pkg-modal-scope-btn ${installScope === "project" ? "active" : ""} ${!projectName ? "disabled" : ""}`}
+                  disabled={!projectName}
+                  title={projectName ? `Install to ${projectName}` : "Select a project to install locally"}
+                >
+                  {projectName ? "Project" : "No project"}
+                </button>
+              </div>
+            )}
             {onInstall && !isInstalled && (
               <button
-                onClick={() => onInstall(packageName)}
-                disabled={isInstalling}
+                onClick={() => onInstall(packageName, installScope)}
+                disabled={isInstalling || (installScope === "project" && !projectName)}
                 className="pkg-modal-install-btn"
               >
                 {isInstalling ? (
@@ -174,8 +205,13 @@ export function PackageDetailModal({
                 )}
               </button>
             )}
-            {isInstalled && (
-              <span className="pkg-modal-installed-badge">Installed</span>
+            {(isInstalled || installedElsewhere) && (
+              <span
+                className="pkg-modal-installed-badge"
+                title={isInstalled ? undefined : `Installed in ${installedElsewhere} scope`}
+              >
+                {isInstalled ? "Installed" : `Installed (${installedElsewhere})`}
+              </span>
             )}
             <button onClick={onClose} className="pkg-modal-close-btn" aria-label="Close">
               <Icon name="close" size={14} />
@@ -216,8 +252,8 @@ export function PackageDetailModal({
                 )}
                 {detail.downloads > 0 && (
                   <div className="pkg-modal-meta-item">
-                    <span className="pkg-modal-meta-label">Popular</span>
-                    <span className="pkg-modal-meta-value">{detail.downloads.toLocaleString()}/yr</span>
+                    <span className="pkg-modal-meta-label">Monthly</span>
+                    <span className="pkg-modal-meta-value">{detail.downloads.toLocaleString()}/mo</span>
                   </div>
                 )}
                 {detail.license && (

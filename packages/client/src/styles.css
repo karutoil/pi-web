@@ -8442,6 +8442,7 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
 
 .extensions-panel {
   background: var(--color-ink-950);
+  position: relative;
 }
 
 .extensions-panel-header {
@@ -8631,6 +8632,7 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
 .extensions-panel-toggle-thumb {
   position: absolute;
   top: 2px;
+  left: 2px;
   width: 12px;
   height: 12px;
   border-radius: 50%;
@@ -8638,12 +8640,12 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
 }
 
 .extensions-panel-toggle.on .extensions-panel-toggle-thumb {
-  left: 14px;
+  transform: translateX(12px);
   background: var(--color-amber-300);
 }
 
 .extensions-panel-toggle.off .extensions-panel-toggle-thumb {
-  left: 2px;
+  transform: translateX(0);
   background: var(--color-ink-500);
 }
 
@@ -8824,6 +8826,60 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   color: var(--color-ink-500);
 }
 
+/* Scope Pills */
+.extensions-panel-scope-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--color-ink-800);
+  background: transparent;
+  color: var(--color-ink-500);
+  font-size: 0.6rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s, transform 0.15s, opacity 0.15s;
+  white-space: nowrap;
+}
+
+.extensions-panel-scope-pill:hover:not(:disabled) {
+  border-color: var(--color-ink-700);
+  color: var(--color-ink-300);
+}
+
+.extensions-panel-scope-pill.active {
+  border-color: color-mix(in srgb, var(--color-amber-500) 40%, transparent);
+  background: color-mix(in srgb, var(--color-amber-500) 10%, transparent);
+  color: var(--color-amber-300);
+}
+
+.extensions-panel-scope-pill:disabled,
+.extensions-panel-scope-pill.disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+/* Scope Badge */
+.extensions-panel-scope-badge {
+  font-size: 0.55rem;
+  padding: 0px 4px;
+  border-radius: 3px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.extensions-panel-scope-badge.global {
+  background: color-mix(in srgb, var(--color-ink-300) 10%, transparent);
+  color: var(--color-ink-500);
+}
+
+.extensions-panel-scope-badge.project {
+  background: color-mix(in srgb, var(--color-indigo-500) 15%, transparent);
+  color: var(--color-indigo-400);
+}
+
 /* Sort Pills */
 .extensions-panel-sort-pill {
   display: inline-flex;
@@ -8977,9 +9033,49 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   white-space: nowrap;
 }
 
-.pkg-modal-install-btn:hover {
+.pkg-modal-install-btn:hover:not(:disabled) {
   background: color-mix(in srgb, var(--color-teal-500) 20%, transparent);
   border-color: var(--color-teal-500);
+}
+
+.pkg-modal-install-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.pkg-modal-scope-switch {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--color-ink-800);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.pkg-modal-scope-btn {
+  padding: 5px 10px;
+  border: none;
+  background: transparent;
+  color: var(--color-ink-500);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s, transform 0.15s, opacity 0.15s;
+}
+
+.pkg-modal-scope-btn:hover:not(:disabled) {
+  background: var(--color-ink-900);
+  color: var(--color-ink-300);
+}
+
+.pkg-modal-scope-btn.active {
+  background: color-mix(in srgb, var(--color-amber-500) 10%, var(--color-ink-800));
+  color: var(--color-amber-300);
+}
+
+.pkg-modal-scope-btn:disabled,
+.pkg-modal-scope-btn.disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
 }
 
 .pkg-modal-install-btn:disabled {
@@ -9506,4 +9602,58 @@ button.pkg-name-clickable:focus-visible {
   padding: 8px 12px;
   background: color-mix(in srgb, var(--color-rose-500) 8%, var(--color-ink-950));
   border-bottom: 1px solid color-mix(in srgb, var(--color-rose-500) 20%, var(--color-ink-800));
+}
+
+/* ─── Extensions Panel: UX polish additions ─── */
+
+/* Persistent pending-restart dot on the panel header */
+.extensions-panel-pending-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-amber-500);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--color-amber-500) 60%, transparent);
+  flex-shrink: 0;
+  animation: ext-pending-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes ext-pending-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Long error text: scrollable so raw npm stderr stays readable */
+.extensions-panel-error-text {
+  max-height: 96px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Installed-list filter input — sticky so it stays visible while scrolling */
+.extensions-panel-installed-filter {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--color-ink-950);
+  padding: 6px 4px;
+}
+
+/* Reconnecting overlay after a restart */
+.extensions-panel-reconnecting {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--color-ink-950) 80%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+/* Keyboard-focus highlight for search result cards */
+.extensions-panel-search-card.focused {
+  border-color: color-mix(in srgb, var(--color-amber-500) 50%, var(--color-ink-700));
+  background: color-mix(in srgb, var(--color-amber-500) 5%, var(--color-ink-900));
 }

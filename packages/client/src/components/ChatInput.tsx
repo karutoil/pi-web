@@ -373,7 +373,7 @@ export function ChatInput({ onSend, onSteer, onFollowUp, onAbort, isStreaming, d
               onChange={handleChange}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
-              placeholder={isStreaming ? "Follow up (Ctrl+Enter = steer)" : "Ask PI..."}
+              placeholder={isStreaming ? "Steer..." : "Ask PI..."}
               disabled={disabled}
               rows={1}
               className="conversation-textarea"
@@ -449,25 +449,6 @@ export function ChatInput({ onSend, onSteer, onFollowUp, onAbort, isStreaming, d
                 </button>
               )}
 
-              {isStreaming && (
-                <span className="hidden sm:inline text-[0.6rem] font-mono text-ink-500 mr-1" title="Keyboard shortcuts">
-                  Enter=follow up · Ctrl+Enter=steer
-                </span>
-              )}
-
-              {isStreaming && (
-                <button
-                  type="button"
-                  onClick={handleSteer}
-                  disabled={(!text.trim() && pendingImages.length === 0) || disabled}
-                  className="conversation-toolbar-pill text-[0.6rem] text-amber-400 border-amber-500/30 bg-amber-500/10"
-                  title="Steer (Ctrl+Enter)"
-                  aria-label="Steer current response"
-                >
-                  Steer
-                </button>
-              )}
-
               {isStreaming ? (
                 <>
                   <button type="button" onClick={onAbort} className="conversation-abort-button" title="Abort" aria-label="Abort">
@@ -475,7 +456,7 @@ export function ChatInput({ onSend, onSteer, onFollowUp, onAbort, isStreaming, d
                   </button>
                   <button
                     type="button"
-                    onClick={handleSend}
+                    onClick={() => handleSend()}
                     disabled={(!text.trim() && pendingImages.length === 0) || disabled}
                     className="conversation-send-button"
                     title="Follow up (Enter)"
@@ -487,7 +468,7 @@ export function ChatInput({ onSend, onSteer, onFollowUp, onAbort, isStreaming, d
               ) : (
                 <button
                   type="button"
-                  onClick={handleSend}
+                  onClick={() => handleSend()}
                   disabled={(!text.trim() && pendingImages.length === 0) || disabled}
                   className="conversation-send-button"
                   title="Send"

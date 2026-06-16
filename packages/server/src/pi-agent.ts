@@ -30,6 +30,7 @@ export class PooledAgent {
   private runningTools = new Set<string>();
   private lastActivityAt = Date.now();
   private idleTimeoutMs: number;
+  private isPendingNewSession: boolean;
 
   /** Get the current pool key for this agent. */
   getKey(): string {
@@ -49,6 +50,7 @@ export class PooledAgent {
   ) {
     this.agentKey = agentKey;
     this.idleTimeoutMs = idleTimeoutMs;
+    this.isPendingNewSession = !options.sessionPath;
     this.createAgent = createAgent;
     this.agent = createAgent(options);
 
@@ -157,9 +159,31 @@ export class PooledAgent {
     }
   }
 
+  /** Send a pre-serialized payload to every attached client. */
+  sendToClients(data: string) {
+    for (const ws of this.clients) {
+      try {
+        if (ws.readyState === 1) ws.send(data);
+      } catch {}
+    }
+  }
+
   private handleAgentMessage(msg: WSServerMessage) {
     this.noteActivity(msg);
     this.broadcast(msg);
+    if (projectSessionsChangedHandler) {
+      const cwd = agentKeyCwd(this.agentKey);
+      if (!cwd) return;
+      if (msg.type === "state") {
+        const sessionFile = (msg as any).data?.sessionFile;
+        if (this.isPendingNewSession && sessionFile) {
+          this.isPendingNewSession = false;
+          projectSessionsChangedHandler(cwd);
+        }
+      } else if (msg.type === "session_name_changed" || msg.type === "agent_end") {
+        projectSessionsChangedHandler(cwd);
+      }
+    }
   }
 
   private noteActivity(msg: WSServerMessage) {
@@ -219,6 +243,27 @@ export class PooledAgent {
 // away.
 
 const agentPool = new Map<string, PooledAgent>();
+
+let projectSessionsChangedHandler: ((cwd: string) => void) | null = null;
+
+export function setProjectSessionsChangedHandler(handler: (cwd: string) => void) {
+  projectSessionsChangedHandler = handler;
+}
+
+function agentKeyCwd(key: string): string | null {
+  const parts = key.split("::");
+  return parts[0] || null;
+}
+
+export function broadcastToProjectClients(cwd: string, msg: WSServerMessage) {
+  const prefix = `${cwd}::`;
+  const data = JSON.stringify(msg);
+  for (const [key, agent] of agentPool) {
+    if (key.startsWith(prefix)) {
+      agent.sendToClients(data);
+    }
+  }
+}
 
 /** Build the pool key for a (cwd, sessionPath) pair. */
 export function buildAgentKey(cwd: string, sessionPath: string | null | undefined): string {

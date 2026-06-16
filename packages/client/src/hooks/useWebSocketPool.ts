@@ -487,6 +487,8 @@ function createConnection(
     get widgets() { return data.widgets; },
     get windowTitle() { return data.windowTitle; },
     get autoRetry() { return data.autoRetry; },
+    get pendingSteering() { return data.pendingSteering; },
+    get pendingFollowUp() { return data.pendingFollowUp; },
     get extensionErrors() { return data.extensionErrors; },
     get compactionResult() { return data.compactionResult; },
     get exportHtmlResult() { return data.exportHtmlResult; },
