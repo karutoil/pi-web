@@ -119,6 +119,7 @@ export interface WSBridge {
   cycleModel: () => void;
   cycleThinkingLevel: () => void;
   compact: (customInstructions?: string) => void;
+  dismissCompactionResult: () => void;
   setAutoCompaction: (enabled: boolean) => void;
   setAutoRetry: (enabled: boolean) => void;
   abortRetry: () => void;

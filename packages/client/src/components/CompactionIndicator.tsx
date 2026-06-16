@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { CompactionResultState } from "../lib/types";
 
 interface CompactionIndicatorProps {
@@ -6,11 +6,22 @@ interface CompactionIndicatorProps {
   isCompacting: boolean;
   onCompact: (customInstructions?: string) => void;
   onSetAutoCompaction: (enabled: boolean) => void;
+  onDismiss?: () => void;
 }
 
-export function CompactionIndicator({ compactionResult, isCompacting, onCompact, onSetAutoCompaction }: CompactionIndicatorProps) {
+const AUTO_DISMISS_MS = 5 * 60 * 1000;
+
+export function CompactionIndicator({ compactionResult, isCompacting, onCompact, onSetAutoCompaction, onDismiss }: CompactionIndicatorProps) {
   const [showCustomCompact, setShowCustomCompact] = useState(false);
   const [customInstructions, setCustomInstructions] = useState("");
+
+  useEffect(() => {
+    if (!compactionResult || isCompacting) return;
+    const timer = setTimeout(() => {
+      onDismiss?.();
+    }, AUTO_DISMISS_MS);
+    return () => clearTimeout(timer);
+  }, [compactionResult, isCompacting, onDismiss]);
 
   if (isCompacting) {
     return (
@@ -33,6 +44,16 @@ export function CompactionIndicator({ compactionResult, isCompacting, onCompact,
           {compactionResult.willRetry && <div className="conversation-warning">Will retry prompt...</div>}
           {summary && <div className="conversation-muted conversation-truncate" title={summary}>{summary.slice(0, 80)}</div>}
         </div>
+        {onDismiss && (
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="conversation-compaction-dismiss"
+            aria-label="Dismiss compaction notice"
+          >
+            ×
+          </button>
+        )}
       </div>
     );
   }
@@ -44,6 +65,16 @@ export function CompactionIndicator({ compactionResult, isCompacting, onCompact,
         <div className="conversation-compaction-copy">
           <span>Compaction aborted</span>
         </div>
+        {onDismiss && (
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="conversation-compaction-dismiss"
+            aria-label="Dismiss compaction notice"
+          >
+            ×
+          </button>
+        )}
       </div>
     );
   }

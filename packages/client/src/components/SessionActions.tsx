@@ -7,11 +7,12 @@ interface SessionActionsProps {
   onExportHtmlPretty: () => void;
   onExportJsonl: () => void;
   onClone: () => void;
+  onRestartPi: () => void;
   onSetAutoCompaction: (enabled: boolean) => void;
   onClose: () => void;
 }
 
-export function SessionActions({ onCompact, onExportHtml, onExportHtmlPretty, onExportJsonl, onClone, onSetAutoCompaction, onClose }: SessionActionsProps) {
+export function SessionActions({ onCompact, onExportHtml, onExportHtmlPretty, onExportJsonl, onClone, onRestartPi, onSetAutoCompaction, onClose }: SessionActionsProps) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -29,6 +30,7 @@ export function SessionActions({ onCompact, onExportHtml, onExportHtmlPretty, on
     { label: "Export HTML (Pretty)", icon: "export" as const, action: onExportHtmlPretty },
     { label: "Export JSONL", icon: "export" as const, action: onExportJsonl },
     { label: "Clone session", icon: "clone" as const, action: onClone },
+    { label: "Restart PI", icon: "refresh" as const, action: onRestartPi },
   ];
 
   return (

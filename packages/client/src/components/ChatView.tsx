@@ -70,8 +70,17 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
   const [showThinking, setShowThinking] = useState(true);
   const [srAnnouncement, setSrAnnouncement] = useState('');
   const [autoScroll, setAutoScroll] = useState(true);
+  const [historySearch, setHistorySearch] = useState("");
+  const [projectSettings, setProjectSettings] = useState({ systemPrompt: "", projectInstructions: "" });
   const autoScrollRef = useRef(true);
   useEffect(() => { autoScrollRef.current = autoScroll; }, [autoScroll]);
+
+  // Reset auto-scroll when switching sessions so the jump-to-latest button
+  // doesn't stay visible from a previous conversation.
+  useEffect(() => {
+    setAutoScroll(true);
+  }, [ws.state?.sessionId]);
+
   const contentRef = useRef<HTMLDivElement>(null);
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -88,6 +97,11 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
     .filter((e: SessionEntry) => e.message && e.type !== "compaction" && e.type !== "branch_summary");
   const hasMoreHistory = allHistorical.length > renderLimit;
   const historicalEntries = hasMoreHistory ? allHistorical.slice(-renderLimit) : allHistorical;
+
+  const historySearchLower = historySearch.trim().toLowerCase();
+  const visibleHistoricalEntries = historySearchLower
+    ? historicalEntries.filter(e => e.message && extractMsgText(e.message).toLowerCase().includes(historySearchLower))
+    : historicalEntries;
 
   useEffect(() => () => {
     if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
@@ -206,12 +220,19 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
   }, [showSessionActionStatus, ws.lastCommandResponse]);
 
   const handleSend = useCallback((text: string, images?: { data: string; mimeType: string }[]) => {
-    if (ws.isStreaming) {
-      ws.send({ type: "steer", message: text });
-    } else {
-      ws.sendPrompt(text, images);
+    const parts: string[] = [];
+    if (!ws.isStreaming) {
+      if (projectSettings.systemPrompt.trim()) parts.push(projectSettings.systemPrompt.trim());
+      if (projectSettings.projectInstructions.trim()) parts.push(projectSettings.projectInstructions.trim());
     }
-  }, [ws]);
+    if (text.trim()) parts.push(text.trim());
+    const message = parts.join("\n\n---\n\n");
+    if (ws.isStreaming) {
+      ws.send({ type: "steer", message });
+    } else {
+      ws.sendPrompt(message, images);
+    }
+  }, [ws, projectSettings]);
 
   const handleAbort = useCallback(() => ws.send({ type: "abort" }), [ws]);
   const handleFork = useCallback((entryId: string) => {
@@ -297,6 +318,19 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
     ws.setAutoCompaction(enabled);
   }, [showSessionActionStatus, ws]);
 
+  const handleRestartPi = useCallback(async () => {
+    if (!confirm("Restart PI? This will stop all running PI agent processes.")) return;
+    try {
+      showSessionActionStatus("Restarting PI…");
+      const res = await fetch("/api/extensions/restart", { method: "POST" });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok || data.error) throw new Error(data.error || "Restart failed");
+      showSessionActionStatus("PI restarted.");
+    } catch (e: any) {
+      showSessionActionStatus(`PI restart failed: ${e.message || "unknown error"}`);
+    }
+  }, [showSessionActionStatus]);
+
   // Screen reader announcements for streaming + loading state
   useEffect(() => {
     if (!ws.isConnected || !ws.state) {
@@ -336,11 +370,11 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
 
   // Group messages into turns for context menu copy
   // A turn = user message + all toolResults + final assistant response
-  const historicalMsgs = (sessionDetail?.entries || [])
-    .filter(e => e.message && e.type !== "compaction" && e.type !== "branch_summary")
-    .map(e => e.message!);
+  const historicalMsgs = allHistorical.map(e => e.message!);
   const liveMsgs = ws.messages;
   const allChatMsgs = [...historicalMsgs, ...liveMsgs];
+
+  const isLoading = !ws.isConnected || !ws.state;
 
   // Build toolCallId → toolResult message map for inline tool result rendering
   const toolResultsMap = useMemo(() => {
@@ -405,8 +439,18 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
     return "";
   }, []);
 
-  // Determine if PI is still loading (not connected or no state received yet)
-  const isLoading = !ws.isConnected || !ws.state;
+  useEffect(() => {
+    if (!project?.id) return;
+    fetch(`/api/projects/${encodeURIComponent(project.id)}/settings`)
+      .then(r => r.json())
+      .then(d => {
+        setProjectSettings({
+          systemPrompt: d.systemPrompt || "",
+          projectInstructions: d.projectInstructions || "",
+        });
+      })
+      .catch(() => {});
+  }, [project?.id]);
 
   const getTurnText = useCallback((turn: ChatMessage[]): string => {
     return turn.map(m => {
@@ -429,6 +473,33 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
       <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} onToggleSidebar={onToggleSidebar} showSidebar={showSidebar} onSessionActions={() => setShowSessionActions(true)} onBack={onBack} onToggleTerminal={onToggleTerminal} onTogglePreview={onTogglePreview} onToggleGit={onToggleGit} onToggleFiles={onToggleFiles} onToggleExtensions={onToggleExtensions} showTerminal={terminalOpen} previewOpen={previewOpen} gitOpen={gitOpen} filesOpen={filesOpen} extensionsOpen={extensionsOpen} />
 
       <div aria-live="polite" className="sr-only">{srAnnouncement}</div>
+
+      <div className="shrink-0 px-3 py-1.5 border-b border-ink-800 flex items-center gap-2">
+        <Icon name="search" size={12} className="text-ink-500" />
+        <input
+          type="text"
+          value={historySearch}
+          onChange={e => setHistorySearch(e.target.value)}
+          placeholder="Search history…"
+          className="flex-1 min-w-0 bg-transparent text-xs text-ink-200 placeholder:text-ink-600 outline-none"
+          spellCheck={false}
+        />
+        {historySearch && (
+          <span className="text-xs text-ink-500">
+            {visibleHistoricalEntries.length} / {historicalEntries.length}
+          </span>
+        )}
+        {historySearch && (
+          <button
+            type="button"
+            onClick={() => setHistorySearch("")}
+            className="text-ink-500 hover:text-ink-300 text-xs"
+            aria-label="Clear history search"
+          >
+            Clear
+          </button>
+        )}
+      </div>
 
       <div className="flex-1 flex min-h-0 min-w-0 overflow-hidden relative">
         {/* Loading overlay — blurs + blocks interaction until connected + state received */}
@@ -460,13 +531,14 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
           )}
 
           {/* Historical messages (virtualized) */}
-          {historicalEntries.map((entry: SessionEntry, i: number) => {
+          {visibleHistoricalEntries.map((entry: SessionEntry, displayIdx: number) => {
             if (!entry.message) return null;
+            const originalIdx = allHistorical.indexOf(entry);
             const isUser = entry.message.role === "user";
-            const turn = getTurnForMsg(i);
+            const turn = getTurnForMsg(originalIdx >= 0 ? originalIdx : 0);
             return (
               <MessageBubble
-                key={entry.id || i}
+                key={entry.id || displayIdx}
                 message={entry.message}
                 showThinking={showThinking}
                 toolResultsMap={toolResultsMap}
@@ -538,6 +610,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
               isCompacting={!!ws.state?.isCompacting}
               onCompact={(instr) => ws.compact(instr)}
               onSetAutoCompaction={handleSetAutoCompaction}
+              onDismiss={ws.dismissCompactionResult}
             />
           </div>
         )}
@@ -652,6 +725,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
           onExportJsonl={handleExportJsonl}
           onClone={handleClone}
           onSetAutoCompaction={handleSetAutoCompaction}
+          onRestartPi={handleRestartPi}
           onClose={() => setShowSessionActions(false)}
         />
       )}

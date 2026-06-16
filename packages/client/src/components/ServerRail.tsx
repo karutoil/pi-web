@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { Project } from "@pi-web/shared";
 import { Icon } from "./Icon";
+import { useProjectFavicon } from "../hooks/useProjectFavicon";
 import { ContextMenuPortal, ContextMenuItem, ContextMenuDivider, useLongPress } from "./ContextMenu";
 
 /**
@@ -74,6 +75,7 @@ function ProjectStamp({
   onDelete,
 }: ProjectStampProps) {
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const favicon = useProjectFavicon(project.id);
   const longPress = useLongPress(e => setCtxMenu({ x: e.clientX, y: e.clientY }));
 
   const handleContextMenu = (e: React.MouseEvent) => {
@@ -107,9 +109,18 @@ function ProjectStamp({
         className="project-session-stamp"
         data-active={active}
       >
-        <span className="select-none">
-          {projectInitials(displayName)}
-        </span>
+        {favicon ? (
+          <img
+            src={favicon}
+            alt=""
+            className="w-full h-full object-cover rounded-[0.85rem] pointer-events-none"
+            aria-hidden="true"
+          />
+        ) : (
+          <span className="select-none">
+            {projectInitials(displayName)}
+          </span>
+        )}
 
         {streaming && (
           <span

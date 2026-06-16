@@ -2,12 +2,8 @@ import { useState, useEffect, useMemo } from "react";
 import { Icon } from "./Icon";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useTheme } from "../hooks/useTheme";
-import { codeToHtml, getFiletypeFromFileName, registerCustomTheme } from "@pierre/diffs";
-import { piDiffDark, piDiffLight } from "../themes/piDiffTheme";
-
-// Register PI diff themes so the highlighter can use them.
-registerCustomTheme("pi-web-diff-dark", () => Promise.resolve(piDiffDark));
-registerCustomTheme("pi-web-diff-light", () => Promise.resolve(piDiffLight));
+import { codeToHtml, getFiletypeFromFileName } from "@pierre/diffs";
+import "../themes/piDiffTheme";
 
 // ─── Types ───
 

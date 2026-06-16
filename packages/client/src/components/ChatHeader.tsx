@@ -111,7 +111,7 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar,
             )}
             {onTogglePreview && (
               <button type="button" onClick={onTogglePreview} className={`p-1.5 rounded-md ${previewOpen ? 'text-amber-500 bg-amber-500/10' : 'text-ink-400 hover:bg-ink-800'}`} aria-label="Preview" title="Preview">
-                <span className="text-xs leading-none">◧</span>
+                <Icon name="preview" size={14} />
               </button>
             )}
             {onToggleGit && (
@@ -235,7 +235,7 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar,
             aria-label="Toggle preview"
             title="Preview"
           >
-            <span className="text-xs leading-none">◧</span>
+            <Icon name="preview" size={14} />
           </button>
         )}
         {onToggleGit && (

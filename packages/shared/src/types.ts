@@ -361,7 +361,7 @@ export interface APIProjectsResponse {
 
 // ─── Workspace layout ───
 
-export type WorkspacePanelKind = "chat" | "preview" | "git" | "terminal" | "rail" | "channels" | "files" | "extensions";
+export type WorkspacePanelKind = "chat" | "preview" | "git" | "terminal" | "rail" | "channels" | "files" | "extensions" | "search" | "outline";
 export type WorkspaceRegionId = "left" | "center" | "right" | "top" | "bottom";
 export type WorkspaceRegionMode = "tabs" | "split";
 
@@ -391,6 +391,29 @@ export interface APILayoutResponse {
 
 export interface SaveLayoutRequest {
   layout: WorkspaceLayout;
+}
+
+// ─── Project settings ───
+
+export interface ProjectSettings {
+  systemPrompt: string;
+  projectInstructions: string;
+}
+
+// ─── Search / replace types ───
+
+export interface SearchResult {
+  path: string;
+  line: number;
+  column: number;
+  preview: string;
+  matchRanges: Array<{ start: number; end: number }>;
+}
+
+export interface ReplaceChange {
+  path: string;
+  replacements: number;
+  diff: string;
 }
 
 // ─── Preview types ───

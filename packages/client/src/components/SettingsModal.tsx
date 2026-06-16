@@ -349,17 +349,18 @@ function AgentOverridesEditor({ value, onChange }: { value: { name: string; mode
 interface SettingsModalProps {
   onClose: () => void;
   onResetWorkspace: () => void;
+  projectId?: string;
 }
 
-type SettingsTab = "pi-settings" | "pi-models" | "pi-web";
+type SettingsTab = "pi-settings" | "pi-models" | "pi-web" | "project";
 
-const TABS: { id: SettingsTab; label: string }[] = [
-  { id: "pi-settings", label: "PI Settings" },
-  { id: "pi-models", label: "PI Models" },
-  { id: "pi-web", label: "PI Web" },
-];
-
-export function SettingsModal({ onClose, onResetWorkspace }: SettingsModalProps) {
+export function SettingsModal({ onClose, onResetWorkspace, projectId }: SettingsModalProps) {
+  const TABS: { id: SettingsTab; label: string }[] = [
+    { id: "pi-settings", label: "PI Settings" },
+    { id: "pi-models", label: "PI Models" },
+    { id: "pi-web", label: "PI Web" },
+    ...(projectId ? [{ id: "project" as const, label: "Project" }] : []),
+  ];
   const [activeTab, setActiveTab] = useState<SettingsTab>("pi-settings");
 
   // PI settings
@@ -370,6 +371,43 @@ export function SettingsModal({ onClose, onResetWorkspace }: SettingsModalProps)
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [showStructuredForm, setShowStructuredForm] = useState(false);
+
+  // Project settings
+  const [projectSystemPrompt, setProjectSystemPrompt] = useState("");
+  const [projectInstructions, setProjectInstructions] = useState("");
+  const [projectSaving, setProjectSaving] = useState(false);
+  const [projectSaveError, setProjectSaveError] = useState<string | null>(null);
+  const [projectDirty, setProjectDirty] = useState(false);
+
+  useEffect(() => {
+    if (!projectId) return;
+    fetch(`/api/projects/${encodeURIComponent(projectId)}/settings`)
+      .then(r => r.json())
+      .then(d => {
+        setProjectSystemPrompt(d.systemPrompt || "");
+        setProjectInstructions(d.projectInstructions || "");
+      })
+      .catch(() => {});
+  }, [projectId]);
+
+  const handleSaveProjectSettings = useCallback(async () => {
+    if (!projectId) return;
+    setProjectSaving(true);
+    setProjectSaveError(null);
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ systemPrompt: projectSystemPrompt, projectInstructions: projectInstructions }),
+      });
+      if (!res.ok) throw new Error("Failed to save project settings");
+      setProjectDirty(false);
+    } catch (e: any) {
+      setProjectSaveError(e.message || "Failed to save");
+    } finally {
+      setProjectSaving(false);
+    }
+  }, [projectId, projectSystemPrompt, projectInstructions]);
 
   // PI models
   const [modelsRaw, setModelsRaw] = useState("{}");
@@ -808,6 +846,42 @@ export function SettingsModal({ onClose, onResetWorkspace }: SettingsModalProps)
           </div>
         </div>
       </section>
+    </div>
+  );
+
+  const renderProjectSettings = () => (
+    <div className="flex flex-col gap-3 h-full min-h-0">
+      <Field label="System prompt" hint="Sent as the first system context for every new prompt in this project.">
+        <textarea
+          value={projectSystemPrompt}
+          onChange={e => { setProjectSystemPrompt(e.target.value); setProjectDirty(true); }}
+          rows={4}
+          className="modal-field w-full text-xs font-mono resize-y min-h-[4rem]"
+          spellCheck={false}
+          placeholder="You are an expert engineer working on this project..."
+        />
+      </Field>
+      <Field label="Project instructions" hint="Always included alongside user messages from this project.">
+        <textarea
+          value={projectInstructions}
+          onChange={e => { setProjectInstructions(e.target.value); setProjectDirty(true); }}
+          rows={4}
+          className="modal-field w-full text-xs font-mono resize-y min-h-[4rem]"
+          spellCheck={false}
+          placeholder="Follow the project's style guide and use TypeScript..."
+        />
+      </Field>
+      {projectSaveError && <div className="text-red-400 text-xs bg-red-950/30 border border-red-900/40 rounded px-3 py-2">{projectSaveError}</div>}
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={handleSaveProjectSettings}
+          disabled={projectSaving || !projectDirty}
+          className={`modal-button modal-button--primary text-xs ${projectSaving || !projectDirty ? "opacity-45 cursor-not-allowed" : ""}`}
+        >
+          {projectSaving ? "Saving…" : "Save project settings"}
+        </button>
+      </div>
     </div>
   );
 

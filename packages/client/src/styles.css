@@ -3678,6 +3678,7 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   font-size: 0.62rem;
   padding: 0.35rem 0.65rem;
   backdrop-filter: blur(14px);
+  pointer-events: auto;
   transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
 }
 
@@ -4061,6 +4062,29 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
 .conversation-compaction-copy {
   min-width: 0;
   flex: 1;
+}
+
+.conversation-compaction-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-start;
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 0;
+  border-radius: 0.35rem;
+  background: transparent;
+  color: var(--color-ink-500);
+  cursor: pointer;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0;
+  transition: color 160ms ease, background-color 160ms ease;
+}
+
+.conversation-compaction-dismiss:hover {
+  background: color-mix(in srgb, var(--color-ink-500) 10%, transparent);
+  color: var(--color-ink-200);
 }
 
 .conversation-compaction-card[data-success="true"] {

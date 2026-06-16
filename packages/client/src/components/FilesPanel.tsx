@@ -9,7 +9,11 @@ import type { Extension } from "@codemirror/state";
 import { languages } from "@codemirror/language-data";
 import { useTheme } from "../hooks/useTheme";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { useEditorTabs, makeEditorTabId } from "../hooks/useEditorTabs";
 import { Icon } from "./Icon";
+import { OutlineSection } from "./OutlineSection";
+import type { SearchResult } from "@pi-web/shared";
+import type { SymbolOutline } from "../lib/symbolParser";
 
 // ─── Types ───
 
@@ -40,12 +44,15 @@ async function loadLanguageExtension(fileName: string): Promise<Extension> {
 
 // ─── Code Editor ───
 
-function CodeEditor({ filePath, content, onSave, onClose, saveError }: {
+function CodeEditor({ filePath, content, onChange, onSave, onClose, saveError, gotoLine, onGotoLine }: {
   filePath: string;
   content: string;
-  onSave: (content: string) => void;
+  onChange?: (value: string) => void;
+  onSave: () => void;
   onClose: () => void;
   saveError?: string | null;
+  gotoLine?: number | null;
+  onGotoLine?: (line: number) => void;
 }) {
   const [editContent, setEditContent] = useState(content);
   const [saving, setSaving] = useState(false);
@@ -78,6 +85,20 @@ function CodeEditor({ filePath, content, onSave, onClose, saveError }: {
   }, []);
 
   const [extensions, setExtensions] = useState<Extension[]>([chromeTheme, theme === "dark" ? vscodeDark : vscodeLight]);
+  const viewRef = useRef<EditorView | null>(null);
+
+  useEffect(() => {
+    if (!gotoLine || !viewRef.current) return;
+    const view = viewRef.current;
+    try {
+      const pos = view.state.doc.line(gotoLine).from;
+      view.dispatch({
+        selection: { anchor: pos },
+        effects: EditorView.scrollIntoView(pos, { y: "center" }),
+      });
+      onGotoLine?.(gotoLine);
+    } catch {}
+  }, [gotoLine, onGotoLine]);
 
   useEffect(() => {
     setEditContent(content);
@@ -97,17 +118,17 @@ function CodeEditor({ filePath, content, onSave, onClose, saveError }: {
   const handleChange = useCallback((value: string) => {
     setEditContent(value);
     setDirty(true);
-  }, []);
+    onChange?.(value);
+  }, [onChange]);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
     try {
-      await onSave(editContent);
-      setDirty(false);
+      await onSave();
     } finally {
       setSaving(false);
     }
-  }, [editContent, onSave]);
+  }, [onSave]);
 
   const handleEditorKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "s") {
@@ -154,6 +175,7 @@ function CodeEditor({ filePath, content, onSave, onClose, saveError }: {
           height="100%"
           extensions={extensions}
           onChange={handleChange}
+          onCreateEditor={(view) => { viewRef.current = view; }}
           className="h-full"
           basicSetup={{ lineNumbers: true, highlightActiveLineGutter: true, highlightActiveLine: true }}
         />
@@ -220,12 +242,36 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
   const [paths, setPaths] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const [fileContent, setFileContent] = useState<string | null>(null);
   const [diffContent, setDiffContent] = useState<string | null>(null);
   const [diffPath, setDiffPath] = useState<string | null>(null);
   const [gitStatusEntries, setGitStatusEntries] = useState<GitStatusEntry[]>([]);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [leftMode, setLeftMode] = useState<"files" | "search">("files");
+  const [outlineCollapsed, setOutlineCollapsed] = useState(false);
+
+  // Project-wide search state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchRegex, setSearchRegex] = useState(false);
+  const [searchCase, setSearchCase] = useState(false);
+  const [searchWord, setSearchWord] = useState(false);
+  const [searchGlob, setSearchGlob] = useState("");
+  const [searchExclude, setSearchExclude] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+
+  const {
+    tabs,
+    activeTab,
+    activeTabId,
+    openFile,
+    closeTab,
+    setActiveTabId,
+    updateUnsaved,
+    markSaved,
+    setTabError,
+    gotoTabLine,
+    clearGotoLine,
+  } = useEditorTabs(projectId, cwd);
 
   const [explorerWidth, setExplorerWidth] = useState<number>(() => {
     try {
@@ -285,42 +331,31 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
     }
   }, [visible, fetchFiles, fetchGitStatus]);
 
-  const handleFileSelect = useCallback(async (relativePath: string) => {
+  const handleFileSelect = useCallback((relativePath: string) => {
     const fullPath = joinPath(cwd, relativePath);
-    setSelectedFile(fullPath);
-    setSaveError(null);
-    try {
-      const res = await fetch(`/api/fs/read?path=${encodeURIComponent(fullPath)}&projectId=${encodeURIComponent(projectId)}`);
-      const data = await res.json();
-      if (data.error) {
-        setFileContent(`// Error: ${data.error}`);
-      } else {
-        setFileContent(data.content);
-      }
-    } catch (e: any) {
-      setFileContent(`// Error loading file: ${e.message}`);
-    }
-  }, [cwd, projectId]);
+    openFile(fullPath);
+  }, [cwd, openFile]);
 
-  const handleSaveFile = useCallback(async (content: string) => {
-    if (!selectedFile) return;
-    setSaveError(null);
+  const handleSaveFile = useCallback(async () => {
+    if (!activeTab) return;
+    setTabError(activeTab.id, null);
     try {
       const res = await fetch("/api/fs/write", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: selectedFile, projectId, content, overwrite: true }),
+        body: JSON.stringify({ path: activeTab.filePath, projectId, content: activeTab.unsavedContent, overwrite: true }),
       });
       const data = await res.json();
       if (!data.success) {
-        setSaveError(data.error || "Failed to save file");
+        setTabError(activeTab.id, data.error || "Failed to save file");
       } else {
+        markSaved(activeTab.id);
         fetchGitStatus();
       }
     } catch (e: any) {
-      setSaveError(e.message || "Failed to save file");
+      setTabError(activeTab.id, e.message || "Failed to save file");
     }
-  }, [selectedFile, projectId, fetchGitStatus]);
+  }, [activeTab, projectId, markSaved, fetchGitStatus, setTabError]);
 
   const handleViewDiff = useCallback(async (relativePath: string) => {
     const fullPath = joinPath(cwd, relativePath);
@@ -337,11 +372,7 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
   const handleRefresh = useCallback(() => {
     fetchFiles();
     fetchGitStatus();
-    if (selectedFile) {
-      const relativePath = selectedFile.slice(cwd.length + 1);
-      handleFileSelect(relativePath);
-    }
-  }, [fetchFiles, fetchGitStatus, selectedFile, cwd, handleFileSelect]);
+  }, [fetchFiles, fetchGitStatus]);
 
   // Keep callbacks in refs so the model's stale closure still calls current versions
   const handleFileSelectRef = useRef(handleFileSelect);
@@ -371,14 +402,61 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
     model.setGitStatus(gitStatusEntries);
   }, [model, gitStatusEntries]);
 
-  const search = useFileTreeSearch(model);
+  const fileSearch = useFileTreeSearch(model);
+
+  const performSearch = useCallback(async () => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    setSearchLoading(true);
+    setSearchError(null);
+    try {
+      const params = new URLSearchParams({ projectId, q: searchQuery.trim() });
+      if (searchCase) params.set("caseSensitive", "true");
+      if (searchWord) params.set("wholeWord", "true");
+      if (searchRegex) params.set("regex", "true");
+      if (searchGlob) params.set("glob", searchGlob);
+      if (searchExclude) params.set("exclude", searchExclude);
+      const res = await fetch(`/api/search?${params}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setSearchResults(data.results || []);
+    } catch (e: any) {
+      setSearchError(e.message || "Search failed");
+      setSearchResults([]);
+    } finally {
+      setSearchLoading(false);
+    }
+  }, [projectId, searchQuery, searchCase, searchWord, searchRegex, searchGlob, searchExclude]);
+
+  useEffect(() => {
+    if (leftMode !== "search") return;
+    const t = setTimeout(performSearch, 250);
+    return () => clearTimeout(t);
+  }, [leftMode, performSearch]);
+
+  const handleResultClick = useCallback(async (relativePath: string, line: number) => {
+    const fullPath = joinPath(cwd, relativePath);
+    await openFile(fullPath);
+    gotoTabLine(makeEditorTabId(projectId, fullPath), line);
+    setLeftMode("files");
+  }, [cwd, projectId, openFile, gotoTabLine]);
+
+  const groupedResults = useMemo(() => {
+    const map = new Map<string, SearchResult[]>();
+    for (const r of searchResults) {
+      map.set(r.path, [...(map.get(r.path) || []), r]);
+    }
+    return Array.from(map.entries());
+  }, [searchResults]);
 
   const handlePanelKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "p") {
       e.preventDefault();
-      search.open();
+      fileSearch.open();
     }
-  }, [search]);
+  }, [fileSearch]);
 
   const treeStyle = useMemo(() => ({
     ["--trees-bg-override" as string]: "var(--files-bg)",
@@ -402,9 +480,8 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
     ["--trees-status-ignored-override" as string]: "var(--files-text-muted)",
   } as React.CSSProperties), []);
 
-  const showEditor = selectedFile && fileContent !== null;
   const showDiff = diffContent !== null && diffPath;
-  const showMobileOverlay = isMobile && (showEditor || showDiff);
+  const showMobileOverlay = isMobile && (!!activeTab || showDiff);
 
   if (!visible) return null;
 
@@ -418,17 +495,34 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
         >
           <div className="files-panel-header shrink-0">
             <div className="files-panel-title-row">
-              <span className="files-panel-title">Files</span>
-              <div className="ml-auto flex items-center gap-0.5">
+              <div className="flex items-center gap-0.5 bg-ink-900/50 rounded p-0.5">
                 <button
                   type="button"
-                  onClick={() => search.open()}
-                  className="files-panel-icon-button"
-                  aria-label="Search files"
-                  title="Search (⌘P)"
+                  onClick={() => setLeftMode("files")}
+                  className={`px-2 py-0.5 text-[0.65rem] rounded ${leftMode === "files" ? "bg-ink-800 text-ink-100" : "text-ink-500 hover:text-ink-300"}`}
                 >
-                  <Icon name="search" size={12} />
+                  Files
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setLeftMode("search")}
+                  className={`px-2 py-0.5 text-[0.65rem] rounded ${leftMode === "search" ? "bg-ink-800 text-ink-100" : "text-ink-500 hover:text-ink-300"}`}
+                >
+                  Find
+                </button>
+              </div>
+              <div className="ml-auto flex items-center gap-0.5">
+                {leftMode === "files" && (
+                  <button
+                    type="button"
+                    onClick={() => fileSearch.open()}
+                    className="files-panel-icon-button"
+                    aria-label="Filter files"
+                    title="Filter files (⌘P)"
+                  >
+                    <Icon name="search" size={12} />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handleRefresh}
@@ -445,26 +539,26 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
                 )}
               </div>
             </div>
-            {search.isOpen && (
+            {fileSearch.isOpen && (
               <div className="files-panel-search">
                 <input
                   type="text"
-                  placeholder="Search files…"
-                  aria-label="Search files"
-                  value={search.value}
-                  onChange={(e) => search.setValue(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Escape") search.close(); }}
+                  placeholder="Filter files…"
+                  aria-label="Filter files"
+                  value={fileSearch.value}
+                  onChange={(e) => fileSearch.setValue(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Escape") fileSearch.close(); }}
                   className="files-panel-search-input"
                   autoFocus
                 />
-                {search.value && (
+                {fileSearch.value && (
                   <span className="files-panel-search-count">
-                    {search.matchingPaths.length} match{search.matchingPaths.length !== 1 ? "es" : ""}
+                    {fileSearch.matchingPaths.length} match{fileSearch.matchingPaths.length !== 1 ? "es" : ""}
                   </span>
                 )}
                 <button
                   type="button"
-                  onClick={() => search.close()}
+                  onClick={() => fileSearch.close()}
                   className="files-panel-search-clear"
                   aria-label="Close search"
                 >
@@ -474,7 +568,30 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
             )}
           </div>
 
-          <div className="files-panel-tree flex-1 min-h-0 overflow-auto custom-scrollbar">
+          {leftMode === "search" && (
+            <div className="px-2 pt-2 pb-1 space-y-1.5 border-b border-ink-800/50">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") performSearch(); }}
+                placeholder="Find in files…"
+                className="files-panel-search-input w-full text-xs"
+                spellCheck={false}
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="inline-flex items-center gap-1 text-[0.65rem] text-ink-400 cursor-pointer"><input type="checkbox" checked={searchCase} onChange={e => setSearchCase(e.target.checked)} /> Aa</label>
+                <label className="inline-flex items-center gap-1 text-[0.65rem] text-ink-400 cursor-pointer"><input type="checkbox" checked={searchWord} onChange={e => setSearchWord(e.target.checked)} /> \b</label>
+                <label className="inline-flex items-center gap-1 text-[0.65rem] text-ink-400 cursor-pointer"><input type="checkbox" checked={searchRegex} onChange={e => setSearchRegex(e.target.checked)} /> .*</label>
+                <input type="text" value={searchGlob} onChange={e => setSearchGlob(e.target.value)} placeholder="Include glob" className="files-panel-search-input w-24 text-[0.65rem]" />
+                <input type="text" value={searchExclude} onChange={e => setSearchExclude(e.target.value)} placeholder="Exclude glob" className="files-panel-search-input w-24 text-[0.65rem]" />
+              </div>
+            </div>
+          )}
+
+          {leftMode === "files" ? (
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              <div className="files-panel-tree flex-1 min-h-0 overflow-auto custom-scrollbar">
             {loading ? (
               <div className="files-panel-empty">
                 <div className="files-panel-loading-spinner" />
@@ -525,6 +642,39 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
               />
             )}
           </div>
+              {activeTab && (
+                <OutlineSection
+                  content={activeTab.unsavedContent}
+                  collapsed={outlineCollapsed}
+                  onToggle={() => setOutlineCollapsed(v => !v)}
+                  onSelect={(s: SymbolOutline) => gotoTabLine(activeTab.id, s.line)}
+                />
+              )}
+            </div>
+          ) : (
+            <div className="flex-1 min-h-0 overflow-auto custom-scrollbar p-2 space-y-2">
+              {searchLoading && <div className="text-xs text-ink-500">Searching…</div>}
+              {searchError && <div className="text-xs text-rose-400">{searchError}</div>}
+              {searchQuery.trim() && !searchLoading && searchResults.length === 0 && !searchError && (
+                <div className="text-xs text-ink-500">No results</div>
+              )}
+              {groupedResults.map(([path, matches]) => (
+                <div key={path} className="space-y-0.5">
+                  <div className="text-amber-500 text-[0.65rem] font-medium truncate" title={path}>{path}</div>
+                  {matches.map((m, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => handleResultClick(path, m.line)}
+                      className="w-full text-left pl-2 text-[0.65rem] font-mono text-ink-300 hover:text-ink-100 border-l-2 border-ink-700 hover:border-amber-500"
+                    >
+                      <span className="text-ink-500">{m.line}:</span> {m.preview}
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Resizer */}
@@ -563,14 +713,46 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
 
         {/* Editor / diff */}
         <div className={showMobileOverlay ? "absolute inset-0 z-20 flex flex-col overflow-hidden bg-ink-950" : isMobile ? "hidden" : "flex-1 min-w-0 relative flex flex-col overflow-hidden"}>
-          {showEditor ? (
+          {tabs.length > 0 && (
+            <div className="shrink-0 flex items-center gap-0.5 px-2 py-1 border-b border-ink-800 bg-ink-900/50 overflow-x-auto custom-scrollbar">
+              {tabs.map(tab => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTabId(tab.id)}
+                  className={`flex items-center gap-1.5 max-w-[10rem] px-2 py-1 rounded-md text-xs transition-colors ${
+                    tab.id === activeTabId
+                      ? "bg-ink-800 text-ink-100"
+                      : "text-ink-400 hover:bg-ink-800/60"
+                  }`}
+                  title={tab.filePath}
+                >
+                  <span className="truncate">{tab.filePath.split("/").pop() || tab.filePath}</span>
+                  {tab.dirty && <span className="text-amber-500">●</span>}
+                  <span
+                    onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
+                    className="shrink-0 text-ink-500 hover:text-ink-200"
+                    aria-label={`Close ${tab.filePath}`}
+                    role="button"
+                  >
+                    <Icon name="close" size={10} />
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {activeTab ? (
             <CodeEditor
-              key={selectedFile}
-              filePath={selectedFile}
-              content={fileContent}
+              key={activeTab.id}
+              filePath={activeTab.filePath}
+              content={activeTab.unsavedContent}
+              onChange={(value) => updateUnsaved(activeTab.id, value)}
               onSave={handleSaveFile}
-              onClose={() => { setSelectedFile(null); setFileContent(null); setSaveError(null); }}
-              saveError={saveError}
+              onClose={() => closeTab(activeTab.id)}
+              saveError={activeTab.error}
+              gotoLine={activeTab.gotoLine}
+              onGotoLine={() => clearGotoLine(activeTab.id)}
             />
           ) : showDiff ? null : (
             <div className="flex-1 flex flex-col items-center justify-center text-ink-500 text-xs select-none">

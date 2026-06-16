@@ -4,10 +4,11 @@ import { createBunWebSocket } from "hono/bun";
 import type { ServerWebSocket } from "bun";
 import { join, basename, resolve, normalize, relative, isAbsolute, delimiter, dirname } from "node:path";
 import { existsSync, statSync, lstatSync, readdirSync, realpathSync } from "node:fs";
+import type { Dirent } from "node:fs";
 import { readdir, stat, readFile, writeFile, unlink, rename as renameFs, mkdir } from "node:fs/promises";
 import { homedir, platform } from "node:os";
 
-import { addProject, removeProject, listProjects, getProject, touchProject, getLayout, saveLayout, deleteLayout } from "./db";
+import { addProject, removeProject, listProjects, getProject, touchProject, getLayout, saveLayout, deleteLayout, getProjectSettings, saveProjectSettings } from "./db";
 import { listProjectSessions, getSessionDetail } from "./pi-sessions";
 import { buildSessionHtmlPretty } from "./sessionExportPretty";
 import { getOrCreateAgent, stopAllAgents, getPoolStats, lookupAgent, detachFromAgent, deleteFromPool, rekeyAgent } from "./pi-agent";
@@ -15,6 +16,8 @@ import { createTerminal, getTerminal, listTerminals, killTerminal } from "./pi-t
 import { getGitStatus, getGitDiff, getGitDiffForCommit, gitStage, gitUnstage, gitCommit, gitLog, gitCheckout, gitDiscard, gitBranches, gitPush, gitPull, gitFetch, gitCreateBranch, gitDeleteBranch, gitRenameBranch, gitTags, gitCreateTag, gitDeleteTag, gitStashList, gitStashShow, gitStashPush, gitStashPop, gitStashApply, gitStashDrop, gitAmend, gitCherryPick, gitRevert, gitResolveConflict, getGitDiffStats, gitDiffWithRef, gitShowCommit, gitLogSearch, gitBlame, gitRemotes, gitUnstageAll } from "./pi-git";
 import type { GitResult } from "./pi-git";
 import { getVersionInfo } from "./pi-version";
+import { searchProject } from "./lib/search";
+import { previewReplace, executeReplace } from "./lib/replace";
 import { startPreview, stopPreview, getPreview, listPreviews, addLogListener, stopAllPreviews, setPreviewPort, setPreviewRemoteUrl } from "./pi-preview";
 import { handlePreviewRequest, parsePreviewPath } from "./pi-preview-proxy";
 import { getOverlayJS, getOverlayCSS } from "./pi-preview-overlay";
@@ -48,6 +51,13 @@ function checkWriteRateLimit(projectId: string): boolean {
 const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>();
 
 const app = new Hono();
+
+app.onError((err, c) => {
+  console.error("[server] unhandled error", err);
+  return c.json({ error: "Internal server error", message: err.message }, 500);
+});
+
+app.notFound((c) => c.json({ error: "Not found", path: c.req.path }, 404));
 
 // ==================== Path Validation (#2) ====================
 
@@ -277,6 +287,21 @@ app.delete("/api/projects/:id", (c) => {
   return c.json({ success: ok }, ok ? 200 : 404);
 });
 
+// Project settings (system prompt / instructions)
+app.get("/api/projects/:id/settings", (c) => {
+  const { id } = c.req.param();
+  const settings = getProjectSettings(id);
+  return c.json(settings);
+});
+
+app.put("/api/projects/:id/settings", async (c) => {
+  const { id } = c.req.param();
+  const body = await c.req.json().catch(() => ({}));
+  const { systemPrompt, projectInstructions } = body as { systemPrompt?: string; projectInstructions?: string };
+  saveProjectSettings(id, { systemPrompt, projectInstructions });
+  return c.json(getProjectSettings(id));
+});
+
 app.get("/api/layout", (c) => {
   const key = c.req.query("key") || "workspace";
   const saved = getLayout(key);
@@ -299,6 +324,50 @@ app.delete("/api/layout", (c) => {
 });
 
 // List sessions for a project
+app.get("/api/projects/:id/favicon", async (c) => {
+  const project = getProject(c.req.param("id"));
+  if (!project) return c.json({ error: "Project not found" }, 404);
+
+  const base = realpathSync(project.path);
+  const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build", ".next", "target", "__pycache__", ".pi", ".cache", ".bun", ".turbo"]);
+  const MAX_DEPTH = 8;
+  // prefer favicon.svg, fall back to favicon.ico anywhere in the project
+  let svgPath: string | null = null;
+  let icoPath: string | null = null;
+
+  function walk(dir: string, depth: number) {
+    if (svgPath || depth > MAX_DEPTH) return;
+    let entries: Dirent[] | undefined;
+    try { entries = readdirSync(dir, { withFileTypes: true }) as Dirent[]; } catch { return; }
+    if (!entries) return;
+    for (const entry of entries) {
+      if (entry.name.startsWith(".")) continue;
+      if (entry.isDirectory() && SKIP_DIRS.has(entry.name)) continue;
+      const fullPath = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath, depth + 1);
+      } else if (entry.isFile()) {
+        const lower = entry.name.toLowerCase();
+        if (!svgPath && lower === "favicon.svg") svgPath = fullPath;
+        else if (!icoPath && lower === "favicon.ico") icoPath = fullPath;
+      }
+      if (svgPath) return;
+    }
+  }
+
+  walk(base, 0);
+  const iconPath = (svgPath || icoPath) as string | null;
+  if (!iconPath) return c.json({ dataUrl: null });
+
+  try {
+    const buf = await readFile(iconPath);
+    const mime = iconPath.toLowerCase().endsWith(".svg") ? "image/svg+xml" : "image/x-icon";
+    return c.json({ dataUrl: `data:${mime};base64,${buf.toString("base64")}` });
+  } catch {
+    return c.json({ dataUrl: null });
+  }
+});
+
 app.get("/api/projects/:id/sessions", async (c) => {
   const { id } = c.req.param();
   const project = getProject(id);
@@ -544,6 +613,38 @@ app.put("/api/fs/write", async (c) => {
   } catch (e: any) {
     return c.json({ error: e.message }, 403);
   }
+});
+
+// ── Project-wide search ───────────────────────────────────
+app.get("/api/search", async (c) => {
+  const projectId = c.req.query("projectId");
+  const q = c.req.query("q");
+  if (!projectId) return c.json({ error: "projectId required" }, 400);
+  if (!q || q.trim().length === 0) return c.json({ results: [], truncated: false });
+  const result = await searchProject(projectId, {
+    q: q.trim(),
+    regex: c.req.query("regex") === "true",
+    caseSensitive: c.req.query("caseSensitive") === "true",
+    wholeWord: c.req.query("wholeWord") === "true",
+    glob: c.req.query("glob") || undefined,
+    exclude: c.req.query("exclude") || undefined,
+    maxResults: parseInt(c.req.query("maxResults") || "200", 10),
+  });
+  return c.json(result);
+});
+
+app.post("/api/search/replace-preview", async (c) => {
+  const { projectId, query, replacement, useRegex } = await c.req.json() as { projectId?: string; query?: string; replacement?: string; useRegex?: boolean };
+  if (!projectId || !query) return c.json({ error: "projectId and query required" }, 400);
+  const result = await previewReplace({ projectId, query, replacement: replacement || "", useRegex });
+  return c.json(result);
+});
+
+app.post("/api/search/replace", async (c) => {
+  const { projectId, query, replacement, useRegex, paths } = await c.req.json() as { projectId?: string; query?: string; replacement?: string; useRegex?: boolean; paths?: string[] };
+  if (!projectId || !query) return c.json({ error: "projectId and query required" }, 400);
+  const result = await executeReplace({ projectId, query, replacement: replacement || "", useRegex, paths });
+  return c.json(result);
 });
 
 // List terminals for a project

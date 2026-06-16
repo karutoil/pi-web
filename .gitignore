@@ -29,6 +29,10 @@ bun.lock
 *.swo
 *~
 
+# Screenshot harness
+# Generated PNG screenshots are committed to the repo for the README.
+.screenshot-home/
+
 # OS
 .DS_Store
 Thumbs.db

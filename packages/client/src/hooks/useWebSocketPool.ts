@@ -386,6 +386,7 @@ function createConnection(
     cycleModel: () => { send({ type: "cycle_model" }); },
     cycleThinkingLevel: () => { send({ type: "cycle_thinking_level" }); },
     compact: (customInstructions?: string) => { send({ type: "compact", customInstructions }); },
+    dismissCompactionResult: () => { data.compactionResult = null; notify(); },
     setAutoCompaction: (enabled: boolean) => { send({ type: "set_auto_compaction", enabled }); },
     setAutoRetry: (enabled: boolean) => { send({ type: "set_auto_retry", enabled }); },
     abortRetry: () => { send({ type: "abort_retry" }); },

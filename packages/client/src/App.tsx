@@ -272,7 +272,7 @@ export default function App() {
     ...(selectedProject && !rightPanel.isOpen("preview") ? [{
       id: "preview" as const,
       title: "Preview",
-      icon: <span className="text-xs">◧</span>,
+      icon: <Icon name="preview" size={10} />,
       children: null,
     }] : []),
     ...(selectedProject && !gitOpen ? [{
@@ -686,7 +686,7 @@ export default function App() {
     ...(rightPanel.isOpen("preview") && selectedProject ? [{
       id: "preview" as const,
       title: "Preview",
-      icon: <span className="text-xs">◧</span>,
+      icon: <Icon name="preview" size={12} />,
       children: (
         <PreviewPanel
           projectId={selectedProject.id}
@@ -744,7 +744,7 @@ export default function App() {
       ),
       onClose: () => rightPanel.close("extensions"),
     }] : []),
-    ...(terminalOpen ? [{
+    ...(terminalOpen ?[{
       id: "terminal" as const,
       title: "Terminal",
       icon: <Icon name="terminal" size={12} />,
@@ -890,6 +890,7 @@ export default function App() {
         <SettingsModal
           onClose={() => setShowSettings(false)}
           onResetWorkspace={requestWorkspaceReset}
+          projectId={selectedProject?.id}
         />
       )}
     </div>

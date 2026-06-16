@@ -1,12 +1,9 @@
 import { useMemo, useState } from "react";
 import { FileDiff } from "@pierre/diffs/react";
 import { useTheme } from "../hooks/useTheme";
-import { parsePatchFiles, registerCustomTheme } from "@pierre/diffs";
-import { piDiffDark, piDiffLight } from "../themes/piDiffTheme";
+import { parsePatchFiles } from "@pierre/diffs";
+import "../themes/piDiffTheme";
 import type { FileDiffMetadata } from "@pierre/diffs";
-
-registerCustomTheme("pi-web-diff-dark", () => Promise.resolve(piDiffDark));
-registerCustomTheme("pi-web-diff-light", () => Promise.resolve(piDiffLight));
 
 interface Props {
   content: string;

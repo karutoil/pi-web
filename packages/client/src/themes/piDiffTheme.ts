@@ -1,3 +1,5 @@
+import { registerCustomTheme } from "@pierre/diffs";
+
 function alpha(hex: string, a: number): string {
   const normalized = hex.replace("#", "");
   if (normalized.length !== 6) return hex;
@@ -130,3 +132,8 @@ export function makePiDiffTheme(kind: "light" | "dark") {
 
 export const piDiffLight = makePiDiffTheme("light");
 export const piDiffDark = makePiDiffTheme("dark");
+
+// Register once for Pierre's shared highlighter. Importing this module
+// is enough; both DiffRenderer and GitBlame depend on it.
+registerCustomTheme("pi-web-diff-dark", () => Promise.resolve(piDiffDark));
+registerCustomTheme("pi-web-diff-light", () => Promise.resolve(piDiffLight));

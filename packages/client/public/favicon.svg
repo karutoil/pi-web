@@ -6,13 +6,16 @@
       <stop offset="100%" stop-color="#c08d0e"/>
     </linearGradient>
   </defs>
-  <!-- Dark rounded background -->
   <rect width="32" height="32" rx="7" fill="#0d0a07"/>
-  <!-- Amber border ring -->
   <circle cx="16" cy="16" r="13.5" fill="none" stroke="url(#seal)" stroke-width="1.8"/>
-  <!-- Arrow — the PI logo mark, thick for favicon clarity -->
-  <path d="M10 18.5 L16 12.5 L22 18.5" stroke="#e8b830" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-  <path d="M16 12.5 L16 23" stroke="#e8b830" stroke-width="2.4" stroke-linecap="round" fill="none"/>
-  <!-- Dot at base -->
-  <circle cx="16" cy="23" r="1.5" fill="#f5c842"/>
+  <text
+    x="16"
+    y="16"
+    text-anchor="middle"
+    dominant-baseline="central"
+    font-family="Georgia, 'Times New Roman', serif"
+    font-weight="bold"
+    font-size="15"
+    fill="#e8b830"
+  >π</text>
 </svg>

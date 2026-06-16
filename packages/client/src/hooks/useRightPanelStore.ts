@@ -8,7 +8,7 @@
 
 import { create } from "zustand";
 
-export type RightPanelKind = "preview" | "git" | "terminal" | "files" | "extensions";
+export type RightPanelKind = "preview" | "git" | "terminal" | "files" | "extensions" | "search" | "outline";
 
 export interface RightPanelState {
   /** Which panel kind is currently active */

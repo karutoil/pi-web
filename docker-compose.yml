@@ -16,4 +16,5 @@ services:
     volumes:
       - "${HOME}:${HOME}"
       - "${PI_BINARY_DIR:-/dev/null}:/host-pi-bin:ro"
-    user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
+    # The image runs as the container's default user. Under rootless Podman
+    # that user is mapped to the host caller, so host bind mounts stay writable.

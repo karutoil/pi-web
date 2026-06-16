@@ -39,6 +39,37 @@ function initSchema() {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `);
+  db.run(`
+    CREATE TABLE IF NOT EXISTS project_settings (
+      project_id TEXT PRIMARY KEY,
+      system_prompt TEXT DEFAULT '',
+      project_instructions TEXT DEFAULT '',
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    )
+  `);
+}
+
+export function getProjectSettings(projectId: string): { systemPrompt: string; projectInstructions: string } {
+  const d = getDb();
+  const row = d.query("SELECT system_prompt, project_instructions FROM project_settings WHERE project_id = ?").get(projectId) as { system_prompt?: string; project_instructions?: string } | undefined;
+  return {
+    systemPrompt: row?.system_prompt || "",
+    projectInstructions: row?.project_instructions || "",
+  };
+}
+
+export function saveProjectSettings(projectId: string, settings: { systemPrompt?: string; projectInstructions?: string }) {
+  const d = getDb();
+  d.run(
+    `INSERT INTO project_settings (project_id, system_prompt, project_instructions, updated_at)
+     VALUES (?, ?, ?, datetime('now'))
+     ON CONFLICT(project_id) DO UPDATE SET
+       system_prompt = COALESCE(excluded.system_prompt, system_prompt),
+       project_instructions = COALESCE(excluded.project_instructions, project_instructions),
+       updated_at = datetime('now')`,
+    [projectId, settings.systemPrompt ?? null, settings.projectInstructions ?? null],
+  );
 }
 
 export function addProject(name: string, path: string): Project {

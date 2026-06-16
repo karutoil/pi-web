@@ -697,6 +697,22 @@ const SVG_PATHS = {
     ),
   },
 
+  // ── Preview / viewport ─────────────────────────────────
+  preview: {
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.5",
+    ...ROUND,
+    children: (
+      <>
+        <rect x="2" y="3" width="12" height="10" rx="1.5" />
+        <line x1="2" y1="6" x2="14" y2="6" />
+        <line x1="4.5" y1="9.5" x2="8.5" y2="9.5" />
+      </>
+    ),
+  },
+
   // ── File / document ──────────────────────────────────────
   file: {
     viewBox: "0 0 16 16",
@@ -723,6 +739,39 @@ const SVG_PATHS = {
       <>
         <circle cx="8" cy="8" r="2.5" />
         <path d="M13.5 8.75 L13.5 7.25 L11.9 7 C11.8 6.5 11.6 6 11.3 5.6 L12.4 4.1 L11.3 3 L9.8 4.1 C9.3 3.8 8.8 3.6 8.3 3.5 L8 2 L6.5 2.25 L6.2 3.8 C5.7 3.9 5.2 4.1 4.8 4.4 L3.3 3.3 L2.2 4.4 L3.3 5.9 C3 6.4 2.8 6.9 2.7 7.4 L1 7.75 L1 9.25 L2.7 9.5 C2.9 10 3.1 10.5 3.4 11 L2.3 12.5 L3.4 13.6 L4.9 12.5 C5.4 12.8 5.9 13 6.4 13.1 L6.7 14.75 L8.2 14.75 L8.5 13.1 C9 13 9.5 12.8 9.9 12.5 L11.4 13.6 L12.5 12.5 L11.4 11 C11.7 10.5 11.9 10 12 9.5 L13.5 8.75 Z" />
+      </>
+    ),
+  },
+
+  // ── Image / photo ───────────────────────────────────────
+  image: {
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.5",
+    ...ROUND,
+    children: (
+      <>
+        <rect x="2.5" y="3.5" width="11" height="9" rx="1.5" />
+        <circle cx="5.5" cy="6.5" r="1.5" />
+        <path d="M2.5 12 L5.5 8.5 L7.5 10.5 L10.5 7 L13.5 12" />
+      </>
+    ),
+  },
+
+  // ── Microphone / voice input ────────────────────────────
+  microphone: {
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.5",
+    ...ROUND,
+    children: (
+      <>
+        <rect x="6" y="2" width="4" height="7" rx="2" />
+        <path d="M4 7.5 A4 4 0 0 0 12 7.5" />
+        <path d="M8 12 L8 14.5" />
+        <path d="M5 14.5 L11 14.5" />
       </>
     ),
   },
