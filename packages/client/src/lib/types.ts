@@ -115,6 +115,9 @@ export interface WSBridge {
   exportHtmlResult: ExportHtmlResultState | null;
   cloneResult: CloneResultState | null;
   lastCommandResponse: CommandResponseState | null;
+  // New: pending queue messages we sent locally but have not yet seen as a persisted user message
+  pendingSteering: string[];
+  pendingFollowUp: string[];
   // New: command methods
   cycleModel: () => void;
   cycleThinkingLevel: () => void;
@@ -125,6 +128,7 @@ export interface WSBridge {
   abortRetry: () => void;
   setSteeringMode: (mode: "all" | "one-at-a-time") => void;
   setFollowUpMode: (mode: "all" | "one-at-a-time") => void;
+  clearQueue: () => void;
   exportHtml: (outputPath?: string) => void;
   switchSession: (sessionPath: string) => void;
   clone: () => void;

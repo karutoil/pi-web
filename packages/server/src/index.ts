@@ -2346,6 +2346,7 @@ app.get(
             case "abort": agent.send({ type: "abort" }); break;
             case "steer": agent.send({ type: "steer", message: msg.message, ...(msg as any).images ? { images: (msg as any).images } : {} }); break;
             case "follow_up": agent.send({ type: "follow_up", message: msg.message, ...(msg as any).images ? { images: (msg as any).images } : {} }); break;
+            case "clear_queue": agent.send({ type: "clear_queue" }); break;
             case "new_session": agent.send({ type: "new_session" }); break;
             case "load_session": agent.loadSession(msg.sessionPath); break;
             case "switch_session": agent.switchSession((msg as any).sessionPath); break;

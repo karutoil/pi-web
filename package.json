@@ -7,6 +7,7 @@
     "packages/*"
   ],
   "scripts": {
+    "postinstall": "bun run scripts/patch-pi-clear-queue.ts",
     "screenshots": "bun run scripts/screenshots.ts",
     "dev": "concurrently -n server,client -c blue,green \"bun run dev:server\" \"bun run dev:client\"",
     "dev:server": "cross-env PORT=3069 bun run --cwd packages/server dev",

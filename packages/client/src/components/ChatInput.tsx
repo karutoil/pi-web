@@ -14,6 +14,8 @@ import { usePromptLibrary } from "../hooks/usePromptLibrary";
 
 interface ChatInputProps {
   onSend: (text: string, images?: { data: string; mimeType: string }[]) => void;
+  onSteer?: (text: string, images?: { data: string; mimeType: string }[]) => void;
+  onFollowUp?: (text: string, images?: { data: string; mimeType: string }[]) => void;
   onAbort: () => void;
   isStreaming: boolean;
   disabled: boolean;
@@ -34,7 +36,7 @@ interface ChatInputProps {
 
 interface PendingImage { data: string; mimeType: string; }
 
-export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, onRequestCommands, showTerminal, statusEntries, widgets, autoRetry, onAbortRetry, projectPath, ws, sessionStats }: ChatInputProps) {
+export function ChatInput({ onSend, onSteer, onFollowUp, onAbort, isStreaming, disabled, commands, onRequestCommands, showTerminal, statusEntries, widgets, autoRetry, onAbortRetry, projectPath, ws, sessionStats }: ChatInputProps) {
   const [text, setText] = useState("");
   const [showCommands, setShowCommands] = useState(false);
   const [showFileMentions, setShowFileMentions] = useState(false);
@@ -81,22 +83,42 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
   const atMatch = showFileMentions ? /(?:^|\s)@([^\s@]*)$/.exec(text.slice(0, textareaRef.current?.selectionStart ?? text.length)) : null;
   const fileMentionFilter = atMatch ? atMatch[1] : "";
 
-  const handleSend = useCallback(() => {
+  const submitAs = useCallback((sendFn: (text: string, images?: { data: string; mimeType: string }[]) => void, e?: KeyboardEvent) => {
     const trimmed = textRef.current.trim();
     if ((!trimmed && pendingImagesRef.current.length === 0) || disabledRef.current) return;
-    onSend(trimmed, pendingImagesRef.current.length > 0 ? pendingImagesRef.current : undefined);
+    sendFn(trimmed, pendingImagesRef.current.length > 0 ? pendingImagesRef.current : undefined);
     setText("");
     setPendingImages([]);
     setShowCommands(false);
     if (textareaRef.current) textareaRef.current.style.height = "auto";
-  }, [disabled, onSend]);
+    e?.stopPropagation();
+  }, []);
+
+  const handleSend = useCallback((e?: KeyboardEvent) => {
+    submitAs(isStreaming ? onFollowUp ?? onSend : onSend, e);
+  }, [submitAs, isStreaming, onFollowUp, onSend]);
+
+  const handleSteer = useCallback((e?: KeyboardEvent) => {
+    if (isStreaming && onSteer) {
+      submitAs(onSteer, e);
+    } else {
+      handleSend(e);
+    }
+  }, [submitAs, isStreaming, onSteer, handleSend]);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (isStreaming && e.ctrlKey) {
+        handleSteer(e);
+      } else {
+        handleSend(e);
+      }
+    }
     if (e.key === "Escape") { setShowCommands(false); setShowFileMentions(false); }
     if (e.key === "Backspace" && showCommands && slashIndex === text.length - 1) setShowCommands(false);
     if (e.key === "Backspace" && showFileMentions && !atMatch) setShowFileMentions(false);
-  }, [handleSend, showCommands, showFileMentions, slashIndex, text.length, atMatch]);
+  }, [handleSend, handleSteer, isStreaming, showCommands, showFileMentions, slashIndex, text.length, atMatch]);
 
   const handleInput = useCallback(() => {
     const el = textareaRef.current;
@@ -351,7 +373,7 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
               onChange={handleChange}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
-              placeholder={isStreaming ? "Steer..." : "Ask PI..."}
+              placeholder={isStreaming ? "Follow up (Ctrl+Enter = steer)" : "Ask PI..."}
               disabled={disabled}
               rows={1}
               className="conversation-textarea"
@@ -427,10 +449,41 @@ export function ChatInput({ onSend, onAbort, isStreaming, disabled, commands, on
                 </button>
               )}
 
-              {isStreaming ? (
-                <button type="button" onClick={onAbort} className="conversation-abort-button" title="Abort" aria-label="Abort">
-                  <Icon name="abort" size={14} />
+              {isStreaming && (
+                <span className="hidden sm:inline text-[0.6rem] font-mono text-ink-500 mr-1" title="Keyboard shortcuts">
+                  Enter=follow up · Ctrl+Enter=steer
+                </span>
+              )}
+
+              {isStreaming && (
+                <button
+                  type="button"
+                  onClick={handleSteer}
+                  disabled={(!text.trim() && pendingImages.length === 0) || disabled}
+                  className="conversation-toolbar-pill text-[0.6rem] text-amber-400 border-amber-500/30 bg-amber-500/10"
+                  title="Steer (Ctrl+Enter)"
+                  aria-label="Steer current response"
+                >
+                  Steer
                 </button>
+              )}
+
+              {isStreaming ? (
+                <>
+                  <button type="button" onClick={onAbort} className="conversation-abort-button" title="Abort" aria-label="Abort">
+                    <Icon name="abort" size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSend}
+                    disabled={(!text.trim() && pendingImages.length === 0) || disabled}
+                    className="conversation-send-button"
+                    title="Follow up (Enter)"
+                    aria-label="Send follow-up message"
+                  >
+                    <Icon name="send" size={14} />
+                  </button>
+                </>
               ) : (
                 <button
                   type="button"

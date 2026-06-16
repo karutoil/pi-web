@@ -165,6 +165,7 @@ export type WSClientMessage =
   | { type: "abort" }
   | { type: "steer"; message: string; images?: ImageAttachment[] }
   | { type: "follow_up"; message: string; images?: ImageAttachment[] }
+  | { type: "clear_queue" }
   | { type: "new_session" }
   | { type: "load_session"; sessionPath: string }
   | { type: "switch_session"; sessionPath: string }

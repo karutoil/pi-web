@@ -655,6 +655,7 @@ class PIAgent {
         case "set_auto_retry":
         case "set_steering_mode":
         case "set_follow_up_mode":
+        case "clear_queue":
         case "abort_retry":
         case "abort_bash":
         case "bash":
@@ -678,6 +679,7 @@ class PIAgent {
   prompt(message: string, images?: any[]) { this.doSend({ type: "prompt", message, images }); }
   steer(message: string, images?: any[]) { this.doSend({ type: "steer", message, images }); }
   followUp(message: string, images?: any[]) { this.doSend({ type: "follow_up", message, images }); }
+  clearQueue() { this.doSend({ type: "clear_queue" }); }
   abort() { this.doSend({ type: "abort" }); }
   newSession() { this.doSend({ type: "new_session" }); }
   fork(entryId: string) { this.doSend({ type: "fork", entryId }); }

@@ -12,6 +12,7 @@ import { GitBranchSelector } from "./GitBranchSelector";
 import { CompactionIndicator } from "./CompactionIndicator";
 import { ExtensionErrorToast } from "./ExtensionErrorToast";
 import { turnToMarkdown, copyToClipboard } from "../lib/markdownExport";
+import { MessageQueue } from "./MessageQueue";
 
 
 // ─── Loading overlay: blurs chat + blocks interaction until PI is ready ───
@@ -219,20 +220,27 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
     }
   }, [showSessionActionStatus, ws.lastCommandResponse]);
 
-  const handleSend = useCallback((text: string, images?: { data: string; mimeType: string }[]) => {
+  const buildMessage = useCallback((text: string) => {
     const parts: string[] = [];
     if (!ws.isStreaming) {
       if (projectSettings.systemPrompt.trim()) parts.push(projectSettings.systemPrompt.trim());
       if (projectSettings.projectInstructions.trim()) parts.push(projectSettings.projectInstructions.trim());
     }
     if (text.trim()) parts.push(text.trim());
-    const message = parts.join("\n\n---\n\n");
-    if (ws.isStreaming) {
-      ws.send({ type: "steer", message });
-    } else {
-      ws.sendPrompt(message, images);
-    }
-  }, [ws, projectSettings]);
+    return parts.join("\n\n---\n\n");
+  }, [ws.isStreaming, projectSettings]);
+
+  const handleSend = useCallback((text: string, images?: { data: string; mimeType: string }[]) => {
+    ws.sendPrompt(buildMessage(text), images);
+  }, [ws, buildMessage]);
+
+  const handleSteer = useCallback((text: string, images?: { data: string; mimeType: string }[]) => {
+    ws.send({ type: "steer", message: buildMessage(text), ...(images ? { images } : {}) });
+  }, [ws, buildMessage]);
+
+  const handleFollowUp = useCallback((text: string, images?: { data: string; mimeType: string }[]) => {
+    ws.send({ type: "follow_up", message: buildMessage(text), ...(images ? { images } : {}) });
+  }, [ws, buildMessage]);
 
   const handleAbort = useCallback(() => ws.send({ type: "abort" }), [ws]);
   const handleFork = useCallback((entryId: string) => {
@@ -372,7 +380,38 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
   // A turn = user message + all toolResults + final assistant response
   const historicalMsgs = allHistorical.map(e => e.message!);
   const liveMsgs = ws.messages;
-  const allChatMsgs = [...historicalMsgs, ...liveMsgs];
+
+  // Deduplicate live messages against historical entries so the same persisted
+  // message is not rendered twice while the server is streaming.
+  const messageSignature = useCallback((msg: ChatMessage): string => {
+    let text = "";
+    if (typeof msg.content === "string") {
+      text = msg.content;
+    } else if (Array.isArray(msg.content)) {
+      text = msg.content.map(c => c.type === "text" ? (c.text ?? "") : c.type === "image" ? `image:${c.mimeType ?? ""}` : c.type).join("|");
+    }
+    return `${msg.role}:${text}:${msg.toolCallId ?? ""}`;
+  }, []);
+
+  const uniqueLiveMsgs = useMemo(() => {
+    if (historicalMsgs.length === 0 || liveMsgs.length === 0) return liveMsgs;
+    const histSigs = historicalMsgs.map(messageSignature);
+    const liveSigs = liveMsgs.map(messageSignature);
+    let overlap = 0;
+    for (let i = 1; i <= Math.min(histSigs.length, liveSigs.length); i++) {
+      let match = true;
+      for (let j = 0; j < i; j++) {
+        if (histSigs[histSigs.length - i + j] !== liveSigs[j]) {
+          match = false;
+          break;
+        }
+      }
+      if (match) overlap = i;
+    }
+    return liveMsgs.slice(overlap);
+  }, [historicalMsgs, liveMsgs, messageSignature]);
+
+  const allChatMsgs = [...historicalMsgs, ...uniqueLiveMsgs];
 
   const isLoading = !ws.isConnected || !ws.state;
 
@@ -553,7 +592,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
           })}
 
           {/* Live messages */}
-          {ws.messages.map((msg, i) => (
+          {uniqueLiveMsgs.map((msg, i) => (
             <MessageBubble
               key={`live-${i}`}
               message={msg}
@@ -585,7 +624,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
 
         </div>
 
-        {ws.messages.length === 0 && !liveMsg && !hasHistoricalMessages && (
+        {allChatMsgs.length === 0 && !liveMsg && !hasHistoricalMessages && (
           <div className="conversation-empty">
             <Icon name="pi-logo" size={48} className="conversation-empty-icon" />
             <h3 className="conversation-empty-title">Start a conversation</h3>
@@ -615,7 +654,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
           </div>
         )}
         {/* Compact & Session actions button */}
-        {ws.messages.length > 0 && !ws.isStreaming && !ws.compactionResult && (
+        {allChatMsgs.length > 0 && !ws.isStreaming && !ws.compactionResult && (
           <div className="conversation-action-row">
             <button
               type="button"
@@ -668,8 +707,18 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
         onClearAll={() => setExtensionErrorList([])}
       />
 
+      <MessageQueue
+        steering={ws.state?.steering ?? []}
+        followUp={ws.state?.followUp ?? []}
+        pendingSteering={ws.pendingSteering}
+        pendingFollowUp={ws.pendingFollowUp}
+        onClear={() => ws.clearQueue()}
+      />
+
       <ChatInput
         onSend={handleSend}
+        onSteer={handleSteer}
+        onFollowUp={handleFollowUp}
         onAbort={handleAbort}
         isStreaming={ws.isStreaming}
         disabled={!ws.isConnected}

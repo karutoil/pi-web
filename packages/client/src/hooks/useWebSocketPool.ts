@@ -14,6 +14,20 @@ export interface WSConnection extends WSBridge {
 
 // ─── Single WS connection to one agent ───
 
+function getMessageSignature(msg: ChatMessage): string {
+  let text = "";
+  if (typeof msg.content === "string") {
+    text = msg.content;
+  } else if (Array.isArray(msg.content)) {
+    text = msg.content
+      .map((c) =>
+        c.type === "text" ? (c.text ?? "") : c.type === "image" ? `image:${c.mimeType ?? ""}` : c.type,
+      )
+      .join("|");
+  }
+  return `${msg.role}:${text}:${msg.toolCallId ?? ""}`;
+}
+
 function createConnection(
   key: string,
   projectId: string | null,
@@ -26,6 +40,15 @@ function createConnection(
   let preRunCountRef = 0;
   const onSessionLoadedRef = { current: null as ((session: SessionDetail) => void) | null };
   const onSessionEventRef = { current: null as ((event: WSServerMessage) => void) | null };
+
+  // Helper: extract plain text from a ChatMessage for queue matching
+  function getChatMessageText(msg: ChatMessage): string {
+    if (typeof msg.content === "string") return msg.content;
+    if (Array.isArray(msg.content)) {
+      return msg.content.filter((c): c is { type: "text"; text: string } => c.type === "text").map((c) => c.text).join("");
+    }
+    return "";
+  }
 
   // Reactive state — subscribers get notified
   const listeners = new Set<() => void>();
@@ -52,6 +75,9 @@ function createConnection(
     windowTitle: null as string | null,
     // New: auto-retry state
     autoRetry: null as { attempt: number; maxAttempts: number; delayMs: number; errorMessage: string } | null,
+    // New: pending queue messages we sent locally but have not yet seen as a persisted user message
+    pendingSteering: [] as string[],
+    pendingFollowUp: [] as string[],
     // New: extension errors
     extensionErrors: [] as Array<{ extensionPath: string; event: string; error: string }>,
     // New: compaction result
@@ -158,28 +184,51 @@ function createConnection(
         data.isStreaming = false;
         data.isActive = false;
         const preMsgs = messagesRef.slice(0, preRunCountRef);
-        // Preserve the user message(s) sent during this run (may contain image content blocks)
-        const userMsgs = messagesRef.slice(preRunCountRef).filter(m => m.role === "user");
-        const newMsgs: ChatMessage[] = [];
+        const seen = new Set(preMsgs.map(getMessageSignature));
+        const merged = [...preMsgs];
         if (msg.messages?.length) {
           for (const m of msg.messages) {
-            if (m.role === "assistant" || m.role === "toolResult") newMsgs.push(m);
+            if (m.role === "user" || m.role === "assistant" || m.role === "toolResult") {
+              const sig = getMessageSignature(m);
+              if (!seen.has(sig)) {
+                seen.add(sig);
+                merged.push(m);
+              }
+            }
           }
         }
-        messagesRef = [...preMsgs, ...userMsgs, ...newMsgs];
+        // Preserve any user messages that were added locally while streaming but not yet echoed
+        for (const m of messagesRef.slice(preRunCountRef)) {
+          if (m.role === "user" && !seen.has(getMessageSignature(m))) {
+            merged.push(m);
+          }
+        }
+        messagesRef = merged;
         data.messages = [...messagesRef];
         data.liveMessages = new Map(); data.runningTools = new Map();
         break;
       }
       case "message_start": data.liveMessages = new Map(data.liveMessages); data.liveMessages.set("current", msg.message); break;
       case "message_update": data.liveMessages = new Map(data.liveMessages); data.liveMessages.set("current", msg.message); break;
-      case "message_end":
+      case "message_end": {
         if (msg.message.role === "assistant" || msg.message.role === "toolResult") {
           messagesRef = [...messagesRef, msg.message];
           data.messages = [...messagesRef];
+        } else if (msg.message.role === "user") {
+          const text = getChatMessageText(msg.message).trim();
+          if (text) {
+            data.pendingSteering = data.pendingSteering.filter((t) => t.trim() !== text);
+            data.pendingFollowUp = data.pendingFollowUp.filter((t) => t.trim() !== text);
+          }
+          const sig = getMessageSignature(msg.message);
+          if (!messagesRef.some((m) => getMessageSignature(m) === sig)) {
+            messagesRef = [...messagesRef, msg.message];
+            data.messages = [...messagesRef];
+          }
         }
         { const lm = new Map(data.liveMessages); lm.delete("current"); data.liveMessages = lm; }
         break;
+      }
       case "tool_start": { const rt = new Map(data.runningTools); rt.set(msg.toolCallId, { toolCallId: msg.toolCallId, toolName: msg.toolName, args: msg.args, status: "running" }); data.runningTools = rt; break; }
       case "tool_update": { const rt = new Map(data.runningTools); const e = rt.get(msg.toolCallId); if (e) rt.set(msg.toolCallId, { ...e, partialResult: msg.partialResult }); data.runningTools = rt; break; }
       case "tool_end": { const rt = new Map(data.runningTools); const e = rt.get(msg.toolCallId); if (e) rt.set(msg.toolCallId, { ...e, result: msg.result, isError: msg.isError, status: msg.isError ? "error" : "done" }); data.runningTools = rt; break; }
@@ -324,6 +373,13 @@ function createConnection(
   }
 
   function send(msg: WSClientMessage) {
+    if (msg.type === "steer") {
+      data.pendingSteering = [...data.pendingSteering, msg.message];
+      notify();
+    } else if (msg.type === "follow_up") {
+      data.pendingFollowUp = [...data.pendingFollowUp, msg.message];
+      notify();
+    }
     if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
   }
 
@@ -365,6 +421,8 @@ function createConnection(
       data.exportHtmlResult = null;
       data.cloneResult = null;
       data.lastCommandResponse = null;
+      data.pendingSteering = [];
+      data.pendingFollowUp = [];
       notify();
     },
     loadSession: (sessionPath: string) => {
@@ -380,6 +438,8 @@ function createConnection(
       data.exportHtmlResult = null;
       data.cloneResult = null;
       data.lastCommandResponse = null;
+      data.pendingSteering = [];
+      data.pendingFollowUp = [];
       notify();
     },
     // New command methods
@@ -392,6 +452,11 @@ function createConnection(
     abortRetry: () => { send({ type: "abort_retry" }); },
     setSteeringMode: (mode: "all" | "one-at-a-time") => { send({ type: "set_steering_mode", mode }); },
     setFollowUpMode: (mode: "all" | "one-at-a-time") => { send({ type: "set_follow_up_mode", mode }); },
+    clearQueue: () => {
+      data.pendingSteering = [];
+      data.pendingFollowUp = [];
+      send({ type: "clear_queue" });
+    },
     exportHtml: (outputPath?: string) => { send({ type: "export_html", outputPath }); },
     switchSession: (sessionPath: string) => {
       data.exportHtmlResult = null;
