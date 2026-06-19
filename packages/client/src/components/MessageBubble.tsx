@@ -361,7 +361,14 @@ function AssistantBubble({
 
       {/* Streaming thinking indicator */}
       {isStreaming && thinkingBlocks.length === 0 && textBlocks.length === 0 && (
-        <div className="conversation-streaming-thought">Thinking...</div>
+        <div className="conversation-streaming-thought">
+          <span className="conversation-thinking-dots" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </span>
+          <span>Thinking</span>
+        </div>
       )}
 
       {/* Text content */}
@@ -706,7 +713,7 @@ function CodeBlock({ children, className, ...props }: CodeBlockProps) {
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Extract language from className (react-markdown adds "language-xxx" class)
-  const lang = className?.replace("language-", "");
+  const lang = className?.replace("language-", "") || "";
   const text = extractTextFromNode(children);
 
   // Cleanup timeout on unmount
@@ -722,32 +729,28 @@ function CodeBlock({ children, className, ...props }: CodeBlockProps) {
     });
   };
 
-  // Render diffs with our custom renderer
-  if (lang === "diff" || isDiffContent(text)) {
-    return (
-      <div className="relative group">
-        <button
-          onClick={handleCopy}
-          className="conversation-copy-button"
-          aria-label="Copy code"
-        >
-          {copied ? "Copied!" : "Copy"}
-        </button>
-        <DiffRenderer key={text} content={text} />
-      </div>
-    );
-  }
+  const isDiff = lang === "diff" || isDiffContent(text);
+  const label = isDiff ? "diff" : (lang || "text");
 
   return (
-    <div className="relative group">
-      <button
-        onClick={handleCopy}
-        className="conversation-copy-button"
-        aria-label="Copy code"
-      >
-        {copied ? "Copied!" : "Copy"}
-      </button>
-      <pre className={className} {...props}>{children}</pre>
+    <div className="conversation-code-block group">
+      <div className="conversation-code-header">
+        <span className="conversation-code-lang">{label}</span>
+        <button
+          onClick={handleCopy}
+          className="conversation-code-copy"
+          aria-label="Copy code"
+          type="button"
+        >
+          <Icon name="copy-plain" size={10} />
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      {isDiff ? (
+        <DiffRenderer key={text} content={text} />
+      ) : (
+        <pre className={className} {...props}>{children}</pre>
+      )}
     </div>
   );
 }

@@ -61,10 +61,16 @@ function normalizeLayout(value: unknown): WorkspaceLayout {
   const normalizedRegions = REGION_IDS.map((id, index) => {
     const region = regions.find(r => r?.id === id) ?? DEFAULT_REGIONS[index];
     const mode: WorkspaceRegionMode = region?.mode === "split" ? "split" : "tabs";
+    // Default split axis: side/center regions split vertically (column),
+    // top/bottom split horizontally (row). Legacy layouts omit splitAxis and
+    // inherit this default; drag-splits set it explicitly.
+    const defaultAxis: "row" | "column" = id === "top" || id === "bottom" ? "row" : "column";
+    const splitAxis: "row" | "column" = region?.splitAxis === "row" || region?.splitAxis === "column" ? region.splitAxis : defaultAxis;
     return {
       id,
       size: normalizeSize(region?.size, region?.size ?? DEFAULT_REGIONS[index].size, id === "left" || id === "right" ? 0 : 80, id === "left" || id === "right" ? 720 : 520),
       mode,
+      splitAxis,
     };
   });
 
@@ -184,10 +190,20 @@ export function useWorkspaceLayout() {
       if (targetIndex >= 0) nextPanels.splice(targetIndex, 0, moved);
       else nextPanels.push(moved);
 
+      // On a split, record the requested axis (left/right → row, up/down → column)
+      // so the region renders splits in the dragged direction regardless of its
+      // position. Tab drops keep the existing axis (no change).
+      const splitAxis: "row" | "column" | undefined = isSplit
+        ? (placement === "split-left" || placement === "split-right" ? "row" : "column")
+        : undefined;
       return {
         ...prev,
         panels: nextPanels.map((panel, index) => ({ ...panel, order: index })),
-        regions: prev.regions.map(r => r.id === region ? { ...r, mode: isSplit ? "split" : "tabs" } : r),
+        regions: prev.regions.map(r => r.id === region ? {
+          ...r,
+          mode: isSplit ? "split" : "tabs",
+          ...(splitAxis ? { splitAxis } : {}),
+        } : r),
         updatedAt: new Date().toISOString(),
       };
     });

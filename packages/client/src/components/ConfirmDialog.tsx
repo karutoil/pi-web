@@ -48,13 +48,17 @@ export function ConfirmDialog({
           aria-modal="true"
           aria-labelledby="confirm-title"
         >
+          <div className="modal-header">
+            <div className="modal-title-wrap">
+              <h3
+                id="confirm-title"
+                className="modal-title"
+              >
+                {title}
+              </h3>
+            </div>
+          </div>
           <div className="modal-body modal-body--compact">
-            <h3
-              id="confirm-title"
-              className="modal-title"
-            >
-              {title}
-            </h3>
             <p className="text-ink-300 text-xs leading-relaxed mb-1">
               {message}
             </p>

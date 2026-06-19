@@ -495,23 +495,29 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
         >
           <div className="files-panel-header shrink-0">
             <div className="files-panel-title-row">
-              <div className="flex items-center gap-0.5 bg-ink-900/50 rounded p-0.5">
+              <div className="files-panel-segmented" role="tablist" aria-label="Files view">
                 <button
                   type="button"
+                  role="tab"
+                  aria-selected={leftMode === "files"}
                   onClick={() => setLeftMode("files")}
-                  className={`px-2 py-0.5 text-[0.65rem] rounded ${leftMode === "files" ? "bg-ink-800 text-ink-100" : "text-ink-500 hover:text-ink-300"}`}
+                  className={`files-panel-segment ${leftMode === "files" ? "files-panel-segment-active" : ""}`}
                 >
-                  Files
+                  <Icon name="file" size={11} />
+                  <span>Files</span>
                 </button>
                 <button
                   type="button"
+                  role="tab"
+                  aria-selected={leftMode === "search"}
                   onClick={() => setLeftMode("search")}
-                  className={`px-2 py-0.5 text-[0.65rem] rounded ${leftMode === "search" ? "bg-ink-800 text-ink-100" : "text-ink-500 hover:text-ink-300"}`}
+                  className={`files-panel-segment ${leftMode === "search" ? "files-panel-segment-active" : ""}`}
                 >
-                  Find
+                  <Icon name="search" size={11} />
+                  <span>Find</span>
                 </button>
               </div>
-              <div className="ml-auto flex items-center gap-0.5">
+              <div className="files-panel-title-actions">
                 {leftMode === "files" && (
                   <button
                     type="button"
@@ -569,22 +575,22 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
           </div>
 
           {leftMode === "search" && (
-            <div className="px-2 pt-2 pb-1 space-y-1.5 border-b border-ink-800/50">
+            <div className="files-search-controls">
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") performSearch(); }}
                 placeholder="Find in files…"
-                className="files-panel-search-input w-full text-xs"
+                className="files-panel-search-input files-panel-search-input-wide"
                 spellCheck={false}
               />
-              <div className="flex flex-wrap items-center gap-2">
-                <label className="inline-flex items-center gap-1 text-[0.65rem] text-ink-400 cursor-pointer"><input type="checkbox" checked={searchCase} onChange={e => setSearchCase(e.target.checked)} /> Aa</label>
-                <label className="inline-flex items-center gap-1 text-[0.65rem] text-ink-400 cursor-pointer"><input type="checkbox" checked={searchWord} onChange={e => setSearchWord(e.target.checked)} /> \b</label>
-                <label className="inline-flex items-center gap-1 text-[0.65rem] text-ink-400 cursor-pointer"><input type="checkbox" checked={searchRegex} onChange={e => setSearchRegex(e.target.checked)} /> .*</label>
-                <input type="text" value={searchGlob} onChange={e => setSearchGlob(e.target.value)} placeholder="Include glob" className="files-panel-search-input w-24 text-[0.65rem]" />
-                <input type="text" value={searchExclude} onChange={e => setSearchExclude(e.target.value)} placeholder="Exclude glob" className="files-panel-search-input w-24 text-[0.65rem]" />
+              <div className="files-search-toggles">
+                <label className="files-search-toggle"><input type="checkbox" checked={searchCase} onChange={e => setSearchCase(e.target.checked)} /> <span>Aa</span></label>
+                <label className="files-search-toggle"><input type="checkbox" checked={searchWord} onChange={e => setSearchWord(e.target.checked)} /> <span>\b</span></label>
+                <label className="files-search-toggle"><input type="checkbox" checked={searchRegex} onChange={e => setSearchRegex(e.target.checked)} /> <span>.*</span></label>
+                <input type="text" value={searchGlob} onChange={e => setSearchGlob(e.target.value)} placeholder="Include" className="files-search-glob" />
+                <input type="text" value={searchExclude} onChange={e => setSearchExclude(e.target.value)} placeholder="Exclude" className="files-search-glob" />
               </div>
             </div>
           )}
@@ -598,14 +604,24 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
                 <span>Loading files…</span>
               </div>
             ) : error ? (
-              <div className="files-panel-empty">
-                <Icon name="close" size={16} />
+              <div className="files-panel-empty files-panel-empty-card">
+                <div className="files-panel-empty-icon files-panel-empty-icon-error">
+                  <Icon name="close" size={16} />
+                </div>
+                <strong>Couldn’t load files</strong>
                 <span>{error}</span>
-                <button type="button" onClick={handleRefresh} className="files-panel-retry">Retry</button>
+                <button type="button" onClick={handleRefresh} className="files-panel-retry">
+                  <Icon name="refresh" size={11} />
+                  Retry
+                </button>
               </div>
             ) : paths.length === 0 ? (
-              <div className="files-panel-empty">
-                <span>No files found</span>
+              <div className="files-panel-empty files-panel-empty-card">
+                <div className="files-panel-empty-icon">
+                  <Icon name="folder" size={16} />
+                </div>
+                <strong>No files found</strong>
+                <span>This directory is empty.</span>
               </div>
             ) : (
               <FileTree
@@ -652,23 +668,30 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
               )}
             </div>
           ) : (
-            <div className="flex-1 min-h-0 overflow-auto custom-scrollbar p-2 space-y-2">
-              {searchLoading && <div className="text-xs text-ink-500">Searching…</div>}
-              {searchError && <div className="text-xs text-rose-400">{searchError}</div>}
+            <div className="files-search-results custom-scrollbar flex-1 min-h-0 overflow-auto p-2 space-y-2">
+              {searchLoading && <div className="files-search-status"><span className="files-search-spinner" /> Searching…</div>}
+              {searchError && <div className="files-search-error">{searchError}</div>}
               {searchQuery.trim() && !searchLoading && searchResults.length === 0 && !searchError && (
-                <div className="text-xs text-ink-500">No results</div>
+                <div className="files-search-empty">
+                  <Icon name="search" size={14} />
+                  <span>No results</span>
+                </div>
               )}
               {groupedResults.map(([path, matches]) => (
-                <div key={path} className="space-y-0.5">
-                  <div className="text-amber-500 text-[0.65rem] font-medium truncate" title={path}>{path}</div>
+                <div key={path} className="files-search-group">
+                  <div className="files-search-file" title={path}>
+                    <Icon name="file" size={10} />
+                    <span>{path}</span>
+                  </div>
                   {matches.map((m, i) => (
                     <button
                       key={i}
                       type="button"
                       onClick={() => handleResultClick(path, m.line)}
-                      className="w-full text-left pl-2 text-[0.65rem] font-mono text-ink-300 hover:text-ink-100 border-l-2 border-ink-700 hover:border-amber-500"
+                      className="files-search-match"
                     >
-                      <span className="text-ink-500">{m.line}:</span> {m.preview}
+                      <span className="files-search-line">{m.line}</span>
+                      <span className="files-search-preview">{m.preview}</span>
                     </button>
                   ))}
                 </div>
@@ -678,8 +701,9 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
         </div>
 
         {/* Resizer */}
+        {/* Resizer */}
         {!isMobile && <div
-          className="w-1.5 shrink-0 cursor-col-resize touch-none bg-ink-900 hover:bg-ink-700 active:bg-ink-600 transition-colors z-10"
+          className="files-resizer"
           onPointerDown={(e) => {
             const target = e.currentTarget;
             target.setPointerCapture(e.pointerId);
@@ -714,28 +738,25 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
         {/* Editor / diff */}
         <div className={showMobileOverlay ? "absolute inset-0 z-20 flex flex-col overflow-hidden bg-ink-950" : isMobile ? "hidden" : "flex-1 min-w-0 relative flex flex-col overflow-hidden"}>
           {tabs.length > 0 && (
-            <div className="shrink-0 flex items-center gap-0.5 px-2 py-1 border-b border-ink-800 bg-ink-900/50 overflow-x-auto custom-scrollbar">
+            <div className="files-editor-tabs shrink-0 custom-scrollbar">
               {tabs.map(tab => (
                 <button
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTabId(tab.id)}
-                  className={`flex items-center gap-1.5 max-w-[10rem] px-2 py-1 rounded-md text-xs transition-colors ${
-                    tab.id === activeTabId
-                      ? "bg-ink-800 text-ink-100"
-                      : "text-ink-400 hover:bg-ink-800/60"
-                  }`}
+                  className={`files-editor-tab ${tab.id === activeTabId ? "files-editor-tab-active" : ""}`}
                   title={tab.filePath}
                 >
-                  <span className="truncate">{tab.filePath.split("/").pop() || tab.filePath}</span>
-                  {tab.dirty && <span className="text-amber-500">●</span>}
+                  <Icon name="file" size={10} className="files-editor-tab-icon" />
+                  <span className="files-editor-tab-label">{tab.filePath.split("/").pop() || tab.filePath}</span>
+                  {tab.dirty && <span className="files-editor-tab-dirty" aria-label="Unsaved changes">●</span>}
                   <span
                     onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
-                    className="shrink-0 text-ink-500 hover:text-ink-200"
+                    className="files-editor-tab-close"
                     aria-label={`Close ${tab.filePath}`}
                     role="button"
                   >
-                    <Icon name="close" size={10} />
+                    <Icon name="close" size={9} />
                   </span>
                 </button>
               ))}
@@ -755,11 +776,15 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
               onGotoLine={() => clearGotoLine(activeTab.id)}
             />
           ) : showDiff ? null : (
-            <div className="flex-1 flex flex-col items-center justify-center text-ink-500 text-xs select-none">
-              <Icon name="file" size={24} />
-              <span className="mt-2">Select a file to edit</span>
+            <div className="files-editor-placeholder">
+              <div className="files-editor-placeholder-icon">
+                <Icon name="file" size={22} />
+              </div>
+              <span className="files-editor-placeholder-title">Select a file to edit</span>
+              <span className="files-editor-placeholder-copy">Choose a file from the tree, or use Find to search across the project.</span>
             </div>
           )}
+
 
           {diffContent !== null && diffPath && (
             <div className="absolute inset-0 z-30 bg-ink-900">
@@ -771,10 +796,11 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
 
       {gitStatusEntries.length > 0 && (
         <div className="files-panel-footer shrink-0">
+          <span className="files-panel-footer-dot" aria-hidden />
           <span className="files-panel-footer-text">
             {gitStatusEntries.length} changed file{gitStatusEntries.length !== 1 ? "s" : ""}
-            {" · "}Right-click file → View diff
           </span>
+          <span className="files-panel-footer-hint">Right-click file → View diff</span>
         </div>
       )}
     </div>

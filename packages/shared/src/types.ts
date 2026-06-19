@@ -452,6 +452,13 @@ export interface WorkspaceRegionLayout {
   id: WorkspaceRegionId;
   size: number;
   mode: WorkspaceRegionMode;
+  /**
+   * Direction the region splits along when in split mode.
+   * Omitted/legacy layouts default per-region (side/center → column,
+   * top/bottom → row). Set explicitly by drag-split so left/right splits
+   * render as rows even in side regions.
+   */
+  splitAxis?: "row" | "column";
 }
 
 export interface WorkspacePanelLayout {

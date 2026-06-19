@@ -1,4 +1,5 @@
 import type { Project, SessionSummary } from "@pi-web/shared";
+import { Icon } from "./Icon";
 import { ServerRail } from "./ServerRail";
 import { ChannelList } from "./ChannelList";
 
@@ -72,9 +73,14 @@ export function ProjectSessionSidebar(props: ProjectSessionSidebarProps) {
       ) : (
         <div className="project-session-panel">
           <div className="project-session-empty">
-            <div>
-              <strong>Project ledger</strong>
-              <span>Select a project from the left rail to open its session archive.</span>
+            <div className="project-session-empty-ledger">
+              <div className="project-session-empty-ledger-icon">
+                <Icon name="hash" size={22} />
+              </div>
+              <div className="project-session-empty-ledger-title">Project ledger</div>
+              <div className="project-session-empty-ledger-copy">
+                Select a project from the left rail to open its session archive.
+              </div>
             </div>
           </div>
         </div>

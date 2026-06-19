@@ -85,11 +85,13 @@ const GROUP_LABELS: Record<DateGroup, string> = {
 
 function ProjectHeader({
   project,
+  sessionsCount,
   onNewSession,
   onRequestConfirm,
   onDeleteProject,
 }: {
   project: Project;
+  sessionsCount: number;
   onNewSession: () => void;
   onRequestConfirm: (title: string, message: string, onConfirm: () => void) => void;
   onDeleteProject: (project: Project) => void;
@@ -143,6 +145,16 @@ function ProjectHeader({
             label="New session"
             icon={<Icon name="plus" size={10} />}
             onClick={() => { setMenu(null); onNewSession(); }}
+          />
+          <ContextMenuItem
+            label="Copy project path"
+            icon={<Icon name="copy-plain" size={10} />}
+            onClick={() => { setMenu(null); navigator.clipboard?.writeText(project.path).catch(() => {}); }}
+          />
+          <ContextMenuItem
+            label="Reveal path"
+            icon={<Icon name="folder" size={10} />}
+            onClick={() => { setMenu(null); navigator.clipboard?.writeText(project.path).catch(() => {}); }}
           />
           <ContextMenuDivider />
           <ContextMenuItem
@@ -297,7 +309,11 @@ function ChannelItem({
     setIsRenaming(false);
   };
 
-  const displayName = s.name || s.lastMessage || s.firstMessage || "Untitled";
+  const displayName = s.name || s.lastMessage || s.firstMessage || "Untitled session";
+  const preview = s.lastMessage || s.firstMessage || "";
+  const time = formatTimeAgo(s.lastActiveAt || s.timestamp);
+  const showMessages = s.messageCount > 0;
+  const showModel = !!s.model;
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -333,29 +349,45 @@ function ChannelItem({
           />
         ) : (
           <>
-            <span
-              className="project-session-item-hash"
-              aria-hidden
-            >
-              #
-            </span>
-            <span
-              className="project-session-item-title"
-            >
-              {displayName}
-            </span>
-            {isStreaming && (
+            {/* Title row: hash · name · streaming/time */}
+            <div className="project-session-item-row">
               <span
-                className="project-session-streaming-dot"
-                title="PI is running"
-                aria-label="PI is streaming"
-              />
-            )}
-            {!isStreaming && (
-              <span className="project-session-item-meta">
-                {formatTimeAgo(s.lastActiveAt || s.timestamp)}
+                className="project-session-item-hash"
+                aria-hidden
+              >
+                #
               </span>
-            )}
+              <span
+                className="project-session-item-title"
+              >
+                {displayName}
+              </span>
+              {isStreaming ? (
+                <span
+                  className="project-session-streaming-dot"
+                  title="PI is running"
+                  aria-label="PI is streaming"
+                />
+              ) : (
+                <span className="project-session-item-time">{time}</span>
+              )}
+            </div>
+            {/* Preview row: first/last message + meta pills */}
+            <div className="project-session-item-preview">
+              <span className="project-session-item-preview-text">
+                {preview || (s.messageCount === 0 ? "New conversation" : "No messages yet")}
+              </span>
+              {showMessages && (
+                <span className="project-session-item-meta-pill" title={`${s.messageCount} messages`}>
+                  {s.messageCount}
+                </span>
+              )}
+              {showModel && (
+                <span className="project-session-item-meta-pill" title={s.model!}>
+                  {s.model}
+                </span>
+              )}
+            </div>
           </>
         )}
       </button>
@@ -495,12 +527,27 @@ export function ChannelList({
     >
       <ProjectHeader
         project={project}
+        sessionsCount={sessions.length}
         onNewSession={onNewSession}
         onRequestConfirm={onRequestConfirm}
         onDeleteProject={onDeleteProject}
       />
 
       <div className="project-session-hairline mx-3" />
+
+      {/* New session composer button — prominent, full-width */}
+      <button
+        type="button"
+        onClick={onNewSession}
+        className="project-session-new-session"
+        title="Start a new session (⌘N)"
+      >
+        <span className="project-session-new-session-plus" aria-hidden>
+          <Icon name="plus" size={11} />
+        </span>
+        <span>New session</span>
+        <span className="project-session-new-session-kbd" aria-hidden>⌘N</span>
+      </button>
 
       <SearchBox value={search} onChange={onSearch} placeholder="Filter sessions…" />
 
@@ -537,7 +584,7 @@ export function ChannelList({
             </>
           }
         >
-          Sessions
+          Sessions{sessions.length > 0 ? ` · ${sessions.length}` : ""}
         </SectionLabel>
 
         {/* Grouped channels */}

@@ -115,7 +115,7 @@ export function PreviewPanel({
   const backendOrigin = (() => {
     try {
       if (import.meta.env?.DEV) return 'http://localhost:3069';
-    } catch {}
+    } catch { }
     return window.location.origin;
   })();
 
@@ -161,7 +161,7 @@ export function PreviewPanel({
     try {
       await fetch(`/api/preview/${projectId}/${preview.label}/stop`, { method: "POST" });
       onRefresh?.();
-    } catch {}
+    } catch { }
   }, [projectId, preview, onRefresh]);
 
   const handleRefresh = () => {
@@ -179,12 +179,12 @@ export function PreviewPanel({
         body: JSON.stringify({ port: newPort }),
       });
       if (r.ok) onRefresh?.();
-    } catch {}
+    } catch { }
   }, [projectId, preview, onRefresh]);
 
   const handleOpen = () => {
     if (!preview) return;
-    fetch(`/api/preview/${projectId}/${preview.label}/open`, { method: "POST" }).catch(() => {});
+    fetch(`/api/preview/${projectId}/${preview.label}/open`, { method: "POST" }).catch(() => { });
   };
 
   const cycleViewport = () => {
@@ -229,20 +229,20 @@ export function PreviewPanel({
       }}
     >
       {!embedded && (
-      <div
-        onMouseDown={handleMouseDown}
-        className="preview-resize-handle group/handle"
-        data-resizing={isDragging}
-      >
-        <div className="preview-resize-grip" />
-      </div>
+        <div
+          onMouseDown={handleMouseDown}
+          className="preview-resize-handle group/handle"
+          data-resizing={isDragging}
+        >
+          <div className="preview-resize-grip" />
+        </div>
       )}
 
       {/* ── Header bar — matches Git/terminal panel styling ── */}
       <div className={`preview-panel-header ${compactHeader ? "preview-panel-header--compact" : ""}`}>
         <div className="preview-panel-header-copy">
           {!compactHeader && (
-          <div className="preview-panel-eyebrow">Preview</div>
+            <div className="preview-panel-eyebrow">Preview</div>
           )}
           <div className="preview-panel-heading" title={projectName}>
             {projectName}
@@ -287,208 +287,219 @@ export function PreviewPanel({
         </div>
 
         {!embedded && (
-        <button
-          onClick={() => setOpen(false)}
-          className="preview-panel-icon-button"
-          aria-label="Close preview"
-          title="Close"
-        >
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-        </button>
+          <button
+            onClick={() => setOpen(false)}
+            className="preview-panel-icon-button"
+            aria-label="Close preview"
+            title="Close"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+          </button>
         )}
       </div>
 
       {/* ── Content area ── */}
       <div className="preview-panel-content">
 
-        {/* ── Idle / Detecting state (also shown when stopped) ── */}
-        {(!preview || preview.status === "stopped" || isDetecting || isSelecting) && (
+        {/* ── Idle state (truly idle): hero card with source picker + CTA ── */}
+        {(!preview || preview.status === "stopped") && !isDetecting && !isSelecting && (
           <div className="preview-empty-state">
-            {!showPortSelector ? (
-              /* ── Truly idle: show Start button + manual port/URL input ── */
-              <>
-                <div className="flex flex-col items-center gap-3">
-                  <div className="preview-empty-icon">
-                    <PlayIcon />
-                  </div>
-                  <p className="preview-empty-copy">
-                    {inputMode === "url" ? "Proxy to a remote URL" : "Run your dev server"}
-                  </p>
+            <div className="preview-empty-card">
+              <div className="preview-empty-card-head">
+                <div className="preview-empty-icon">
+                  <PlayIcon />
                 </div>
-
-                {/* Input mode toggle */}
-                <div className="preview-segmented" role="tablist" aria-label="Preview source">
-                  <button
-                    type="button"
-                    onClick={() => setInputMode("port")}
-                    role="tab"
-                    data-active={inputMode === "port"}
-                  >
-                    Port
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setInputMode("url")}
-                    role="tab"
-                    data-active={inputMode === "url"}
-                  >
-                    URL
-                  </button>
-                </div>
-
-                {/* Manual port or URL input */}
-                {inputMode === "port" ? (
-                  <div className="preview-form-row">
-                    <input
-                      type="number"
-                      value={manualPort}
-                      onChange={(e) => setManualPort(e.target.value)}
-                      placeholder="Port (auto)"
-                      className="preview-field"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const p = parseInt(manualPort, 10);
-                        startPreview(p > 0 && p < 65536 ? p : undefined);
-                      }}
-                      disabled={starting}
-                      className="preview-button preview-button--primary"
-                    >
-                      {starting ? (
-                        <span className="flex items-center gap-2">
-                          <span className="preview-start-spinner preview-start-spinner--small" />
-                          Launching…
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-2">
-                          <PlayIcon />
-                          Start Preview
-                        </span>
-                      )}
-                    </button>
-                  </div>
-                ) : (
-                  <div className="preview-form-row">
-                    <input
-                      type="text"
-                      value={remoteUrl}
-                      onChange={(e) => setRemoteUrl(e.target.value)}
-                      placeholder="panel.catalystctl.com"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && remoteUrl.trim()) {
-                          startPreview(undefined, remoteUrl.trim());
-                        }
-                      }}
-                      className="preview-field min-w-[16rem]"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (remoteUrl.trim()) startPreview(undefined, remoteUrl.trim());
-                      }}
-                      disabled={starting || !remoteUrl.trim()}
-                      className="preview-button preview-button--primary"
-                    >
-                      {starting ? (
-                        <span className="flex items-center gap-2">
-                          <span className="preview-start-spinner preview-start-spinner--small" />
-                          Connecting…
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-2">
-                          <PlayIcon />
-                          Connect
-                        </span>
-                      )}
-                    </button>
-                  </div>
-                )}
-
-                {startError && (
-                  <p className="preview-error-text">
-                    {startError}
-                  </p>
-                )}
-              </>
-            ) : (
-              /* ── Detecting / selecting: spinner + detected ports ── */
-              <>
-                {isDetecting && <div className="preview-start-spinner" />}
+                <p className="preview-empty-card-title">
+                  {inputMode === "url" ? "Proxy a remote URL" : "Run your dev server"}
+                </p>
                 <p className="preview-empty-copy">
+                  {inputMode === "url"
+                    ? "Forward a deployed URL through the preview pane."
+                    : "Boot a local dev server and preview it inline."}
+                </p>
+              </div>
+
+              <div className="preview-segmented" role="tablist" aria-label="Preview source">
+                <button
+                  type="button"
+                  onClick={() => setInputMode("port")}
+                  role="tab"
+                  data-active={inputMode === "port"}
+                >
+                  Port
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInputMode("url")}
+                  role="tab"
+                  data-active={inputMode === "url"}
+                >
+                  URL
+                </button>
+              </div>
+
+              {inputMode === "port" ? (
+                <div className="preview-form-row">
+                  <input
+                    type="number"
+                    value={manualPort}
+                    onChange={(e) => setManualPort(e.target.value)}
+                    placeholder="Port (auto)"
+                    className="preview-field"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const p = parseInt(manualPort, 10);
+                      startPreview(p > 0 && p < 65536 ? p : undefined);
+                    }}
+                    disabled={starting}
+                    className="preview-button preview-button--primary"
+                  >
+                    {starting ? (
+                      <span className="flex items-center gap-2">
+                        <span className="preview-start-spinner preview-start-spinner--small" />
+                        Launching…
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-2">
+                        <PlayIcon />
+                        Start
+                      </span>
+                    )}
+                  </button>
+                </div>
+              ) : (
+                <div className="preview-form-row">
+                  <input
+                    type="text"
+                    value={remoteUrl}
+                    onChange={(e) => setRemoteUrl(e.target.value)}
+                    placeholder="panel.catalystctl.com"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && remoteUrl.trim()) {
+                        startPreview(undefined, remoteUrl.trim());
+                      }
+                    }}
+                    className="preview-field preview-field--wide"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (remoteUrl.trim()) startPreview(undefined, remoteUrl.trim());
+                    }}
+                    disabled={starting || !remoteUrl.trim()}
+                    className="preview-button preview-button--primary"
+                  >
+                    {starting ? (
+                      <span className="flex items-center gap-2">
+                        <span className="preview-start-spinner preview-start-spinner--small" />
+                        Connecting…
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-2">
+                        <PlayIcon />
+                        Connect
+                      </span>
+                    )}
+                  </button>
+                </div>
+              )}
+
+              {startError && (
+                <p className="preview-error-text">{startError}</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Detecting / Selecting state: spinner + detected ports ── */}
+        {(isDetecting || isSelecting) && (
+          <div className="preview-empty-state">
+            <div className="preview-empty-card">
+              <div className="preview-empty-card-head">
+                {isDetecting && <div className="preview-start-spinner" />}
+                <p className="preview-empty-card-title">
                   {isDetecting && preview?.detectedPorts && preview.detectedPorts.length === 0
                     ? "Detecting ports…"
                     : preview?.detectedPorts && preview.detectedPorts.length > 0
-                    ? "Select a port"
-                    : isSelecting
-                    ? "No listening ports detected"
-                    : "Detecting ports…"}
+                      ? "Select a port"
+                      : isSelecting
+                        ? "No listening ports detected"
+                        : "Detecting ports…"}
                 </p>
+                <p className="preview-empty-copy">
+                  {preview?.detectedPorts && preview.detectedPorts.length > 0
+                    ? "Choose which server to preview."
+                    : "PI is scanning for listening dev servers."}
+                </p>
+              </div>
 
-                {/* Port chips */}
-                {preview?.detectedPorts && preview.detectedPorts.length > 0 ? (
-                  <div className="preview-port-grid">
-                    <p className="preview-found-label">Found</p>
-                    <div className="preview-port-chips">
-                      {preview.detectedPorts.map((p) => (
-                        <button
-                          type="button"
-                          key={p}
-                          onClick={() => selectPort(p)}
-                          className="preview-port-chip"
-                          data-active={preview.port === p}
-                        >
-                          :{p}
-                        </button>
-                      ))}
-                    </div>
+              {preview?.detectedPorts && preview.detectedPorts.length > 0 ? (
+                <div className="preview-port-grid">
+                  <p className="preview-found-label">Found</p>
+                  <div className="preview-port-chips">
+                    {preview.detectedPorts.map((p) => (
+                      <button
+                        type="button"
+                        key={p}
+                        onClick={() => selectPort(p)}
+                        className="preview-port-chip"
+                        data-active={preview.port === p}
+                      >
+                        :{p}
+                      </button>
+                    ))}
                   </div>
-                ) : isSelecting ? (
-                  <div className="preview-form-row">
-                    <input
-                      type="number"
-                      value={manualPort}
-                      onChange={(e) => setManualPort(e.target.value)}
-                      placeholder="Enter port"
-                      className="preview-field"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const p = parseInt(manualPort, 10);
-                        if (p > 0 && p < 65536) selectPort(p);
-                      }}
-                      className="preview-button preview-button--primary"
-                    >
-                      Use Port
-                    </button>
-                  </div>
-                ) : null}
+                </div>
+              ) : isSelecting ? (
+                <div className="preview-form-row">
+                  <input
+                    type="number"
+                    value={manualPort}
+                    onChange={(e) => setManualPort(e.target.value)}
+                    placeholder="Enter port"
+                    className="preview-field"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const p = parseInt(manualPort, 10);
+                      if (p > 0 && p < 65536) selectPort(p);
+                    }}
+                    className="preview-button preview-button--primary"
+                  >
+                    Use Port
+                  </button>
+                </div>
+              ) : null}
 
-                {/* Logs during detection */}
-                {preview?.logs && preview.logs.length > 0 && (
-                  <div className="preview-log-console">
-                    {preview.logs.slice(-6).join("\n")}
-                  </div>
-                )}
-              </>
-            )}
+              {preview?.logs && preview.logs.length > 0 && (
+                <div className="preview-log-console">
+                  {preview.logs.slice(-6).join("\n")}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
         {/* ── Starting state: Spinner + logs ── */}
         {isStarting && (
           <div className="preview-start-state">
-            <div className="preview-start-spinner" />
-            <p className="preview-empty-copy">Starting dev server…</p>
-            {preview?.logs && preview.logs.length > 0 && (
-              <div className="preview-log-console">
-                {preview.logs.slice(-8).join("\n")}
+            <div className="preview-empty-card">
+              <div className="preview-empty-card-head">
+                <div className="preview-start-spinner" />
+                <p className="preview-empty-card-title">Starting dev server…</p>
+                <p className="preview-empty-copy">Booting your app and waiting for it to listen.</p>
               </div>
-            )}
+              {preview?.logs && preview.logs.length > 0 && (
+                <div className="preview-log-console">
+                  {preview.logs.slice(-8).join("\n")}
+                </div>
+              )}
+            </div>
           </div>
         )}
-
         {/* ── Running state: Iframe + toolbar ── */}
         {isRunning && iframeSrc && (
           <>
@@ -607,21 +618,26 @@ export function PreviewPanel({
         {/* ── Crashed state ── */}
         {preview?.status === "crashed" && (
           <div className="preview-crash-state">
-            <div className="preview-crash-icon">
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 5v4M9 12h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+            <div className="preview-empty-card">
+              <div className="preview-empty-card-head">
+                <div className="preview-crash-icon">
+                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 5v4M9 12h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+                </div>
+                <p className="preview-empty-card-title preview-empty-card-title-error">Dev server crashed</p>
+                <p className="preview-empty-copy">Check the logs below and restart when ready.</p>
+              </div>
+              {preview.logs.slice(-5).map((l, i) => (
+                <p key={i} className="preview-crash-log">{l}</p>
+              ))}
+              <button
+                type="button"
+                onClick={() => startPreview()}
+                disabled={starting}
+                className="preview-button preview-button--primary"
+              >
+                {starting ? "Starting…" : "Restart"}
+              </button>
             </div>
-            <p className="preview-error-text">Dev server crashed</p>
-            {preview.logs.slice(-5).map((l, i) => (
-              <p key={i} className="preview-crash-log">{l}</p>
-            ))}
-            <button
-              type="button"
-              onClick={() => startPreview()}
-              disabled={starting}
-              className="preview-button preview-button--primary"
-            >
-              {starting ? "Starting..." : "Restart"}
-            </button>
           </div>
         )}
 

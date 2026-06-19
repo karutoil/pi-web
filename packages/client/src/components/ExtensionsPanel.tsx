@@ -398,9 +398,12 @@ export function ExtensionsPanel({ visible, onClose, embedded, project }: Extensi
   return (
     <div className="extensions-panel flex flex-col h-full min-w-0 overflow-hidden">
       {/* Header */}
-      <div className="extensions-panel-header shrink-0 flex items-center gap-2 px-3 py-2 border-b border-ink-800">
+      <header className="extensions-panel-header shrink-0 flex items-center gap-2">
         <Icon name="puzzle" size={14} className="text-amber-500" />
-        <span className="text-xs font-semibold text-ink-200 uppercase tracking-wider">Extensions</span>
+        <div className="min-w-0">
+          <div className="extensions-panel-eyebrow">Extensions</div>
+          <div className="extensions-panel-heading">Packages &amp; skills</div>
+        </div>
         {/* Persistent indicator that a restart is pending (survives banner dismissal). */}
         {pendingRestart && (
           <span
@@ -418,7 +421,7 @@ export function ExtensionsPanel({ visible, onClose, embedded, project }: Extensi
             <Icon name="close" size={12} />
           </button>
         )}
-      </div>
+      </header>
 
       {/* Action Error Banner */}
       {actionError && (

@@ -188,10 +188,16 @@ function normalizeLayout(input: unknown): WorkspaceLayout {
     const region = Array.isArray(source?.regions) ? source.regions.find(r => r?.id === id) : undefined;
     const size = typeof region?.size === "number" ? region.size : Number(region?.size);
     const mode: WorkspaceLayout["regions"][number]["mode"] = region?.mode === "split" ? "split" : "tabs";
+    // Preserve the drag-set split axis (left/right → row, up/down → column).
+    // Default: side/center regions split as column, top/bottom as row.
+    const splitAxis: "row" | "column" = region?.splitAxis === "row" || region?.splitAxis === "column"
+      ? region.splitAxis
+      : (id === "top" || id === "bottom" ? "row" : "column");
     return {
       id,
       size: Number.isFinite(size) ? Math.max(id === "center" ? 80 : 0, Math.min(size, id === "center" ? 100 : 720)) : fallback.size,
       mode,
+      splitAxis,
     };
   });
 

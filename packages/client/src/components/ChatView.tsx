@@ -714,13 +714,24 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
 
         {allChatMsgs.length === 0 && !liveMsg && !hasHistoricalMessages && (
           <div className="conversation-empty">
-            <Icon name="pi-logo" size={48} className="conversation-empty-icon" />
-            <h3 className="conversation-empty-title">Start a conversation</h3>
+            <div className="conversation-empty-icon">
+              <Icon name="pi-logo" size={28} />
+            </div>
+            <h3 className="conversation-empty-title">
+              {session?.name ? session.name : "How can I help?"}
+            </h3>
             <p className="conversation-empty-copy">
-              Ask PI to read, write, edit, or run commands. Streaming responses appear in real time.
+              Ask PI to read, write, edit, or run commands in
+              {' '}<span className="conversation-warning">{project?.name || "your project"}</span>.
+              Streaming responses, tool calls, and diffs appear in real time.
             </p>
             <div className="conversation-prompt-list">
-              {["List files in this project", "Explain the codebase structure", "Find all TODO comments"].map(s => (
+              {[
+                "List the files in this project",
+                "Explain the codebase structure",
+                "Find all TODO comments",
+                "Summarize the latest git changes",
+              ].map(s => (
                 <button key={s} type="button" onClick={() => handleSend(s)} className="conversation-prompt-button">
                   {s}
                 </button>

@@ -315,10 +315,16 @@ export function TerminalPanel({ visible, onClose, embedded = false, tabs, active
         )}
         {!activeTab && (
           <div className="terminal-empty">
-            <div>
+            <div className="terminal-empty-card">
+              <div className="terminal-empty-icon">
+                <Icon name="terminal" size={22} />
+              </div>
               <strong>No terminals open</strong>
-              <span>Open a shell to run project commands.</span>
-              <button className="modal-button modal-button--primary" onClick={onAddTerminal}>Open Terminal</button>
+              <span>Open a shell to run project commands,<br />run tests, or inspect git state.</span>
+              <button className="modal-button modal-button--primary" onClick={onAddTerminal}>
+                <Icon name="plus" size={12} />
+                Open Terminal
+              </button>
             </div>
           </div>
         )}
@@ -348,6 +354,9 @@ export function TerminalPanelHeader({
   return (
     <div className="terminal-tabs terminal-tabs--embedded" aria-label="Terminal tabs">
       <div className="terminal-tab-scroller custom-scrollbar-x">
+        {tabs.length === 0 && (
+          <span className="terminal-tab-empty-hint">No terminals</span>
+        )}
         {tabs.map(tab => (
           <TabButton
             key={tab.id}
@@ -364,16 +373,18 @@ export function TerminalPanelHeader({
         <button
           type="button"
           onClick={onAddTerminal}
-          className="terminal-icon-button"
+          className="terminal-new-button"
           title="New terminal"
           aria-label="New terminal"
         >
           <Icon name="plus" size={12} />
+          <span>New</span>
         </button>
       </div>
     </div>
   );
 }
+
 
 // ─── Tab Button ───
 
@@ -398,14 +409,20 @@ function TabButton({ tab, isActive, onSelect, onClose, onRename }: {
     setIsRenaming(false);
   };
 
+  // Short cwd label: last path segment so a tab reads "src" not the whole path.
+  const cwdShort = tab.cwd ? tab.cwd.replace(/\\+|\/+/g, "/").split("/").filter(Boolean).pop() || tab.cwd : "";
+
   return (
     <div
       className="terminal-tab"
       data-active={isActive}
       onClick={onSelect}
       onDoubleClick={() => setIsRenaming(true)}
+      title={`${tab.name}${tab.cwd ? "  ·  " + tab.cwd : ""}`}
     >
-      <Icon name="terminal" size={10} className="terminal-tab-icon" />
+      <span className="terminal-tab-glyph" aria-hidden>
+        <Icon name="terminal" size={10} className="terminal-tab-icon" />
+      </span>
       {isRenaming ? (
         <input
           ref={inputRef}
@@ -420,7 +437,10 @@ function TabButton({ tab, isActive, onSelect, onClose, onRename }: {
           className="terminal-tab-input"
         />
       ) : (
-        <span className="terminal-tab-label">{tab.name}</span>
+        <span className="terminal-tab-copy">
+          <span className="terminal-tab-label">{tab.name}</span>
+          {cwdShort && <span className="terminal-tab-cwd">{cwdShort}</span>}
+        </span>
       )}
       <button
         onClick={(e) => { e.stopPropagation(); onClose(); }}

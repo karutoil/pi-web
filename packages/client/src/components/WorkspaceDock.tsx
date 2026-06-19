@@ -83,15 +83,28 @@ function splitPanels(panels: WorkspaceLayout["panels"]) {
 }
 
 function resolveDropPlacement(event: DragEvent, target: DOMRect): DropPlacement {
-  const centerX = target.left + target.width / 2;
-  const centerY = target.top + target.height / 2;
-  const nx = (event.clientX - centerX) / Math.max(target.width / 2, 1);
-  const ny = (event.clientY - centerY) / Math.max(target.height / 2, 1);
-  const centerThreshold = 0.42;
+  // Edge-proximity algorithm (matches VS Code / Codex): the pointer's
+  // distance from each edge is compared in pixels — not normalized — so
+  // wide regions (center/top/bottom trays) still allow left/right splits.
+  // Center ~28% band → dock as a tab; the nearest edge beyond that → split.
+  const x = event.clientX - target.left;
+  const y = event.clientY - target.top;
+  const edge = 0.28;
+  const fromLeft = x / target.width;
+  const fromTop = y / target.height;
+  const fromRight = 1 - fromLeft;
+  const fromBottom = 1 - fromTop;
+  const minDist = Math.min(fromLeft, fromRight, fromTop, fromBottom);
 
-  if (Math.max(Math.abs(nx), Math.abs(ny)) < centerThreshold) return "tab";
-  if (Math.abs(nx) >= Math.abs(ny)) return nx < 0 ? "split-left" : "split-right";
-  return ny < 0 ? "split-up" : "split-down";
+  // Center band → dock as tab.
+  if (minDist > edge) return "tab";
+
+  // Nearest edge wins (pixel-fair: a wide region's left/right edges are
+  // reachable because fromLeft/fromRight are ratios, not biased by size).
+  if (minDist === fromLeft) return "split-left";
+  if (minDist === fromRight) return "split-right";
+  if (minDist === fromTop) return "split-up";
+  return "split-down";
 }
 
 function beforePanelForPlacement(placement: DropPlacement, panels: WorkspaceLayout["panels"]) {
@@ -104,7 +117,8 @@ function isSide(region: WorkspaceRegionId) {
   return region === "left" || region === "right";
 }
 
-function splitAxis(region: WorkspaceRegionId) {
+function splitAxis(region: WorkspaceRegionId, override?: "row" | "column"): "row" | "column" {
+  if (override === "row" || override === "column") return override;
   return region === "top" || region === "bottom" ? "row" : "column";
 }
 
@@ -272,6 +286,7 @@ export function WorkspaceDock({ layout, panels, onMovePanel, onResizeRegion, onR
             region={region}
             panels={panelsByRegion.get(region) ?? []}
             mode={regionMode(region)}
+            splitAxis={layout.regions.find(r => r.id === region)?.splitAxis}
             regionLabel={REGION_LABELS[region]}
             regionShortLabel={REGION_SHORT_LABELS[region]}
             panelConfigById={panelConfigById}
@@ -319,10 +334,11 @@ export function WorkspaceDock({ layout, panels, onMovePanel, onResizeRegion, onR
   );
 }
 
-function RegionDock({ region, panels, mode, regionLabel, regionShortLabel, panelConfigById, draggingPanel, dropTarget, resizingRegion, resizingPanel, onDragStart, onRegionDragOver, onRegionDrop, onPanelDragOver, onDragEnd, onMovePanel, onResizeRegion, onResizePanel, onReset, onRegionResizeMouseDown, onRegionResizeDoubleClick, onPanelResizeMouseDown, saving }: {
+function RegionDock({ region, panels, mode, splitAxis: splitAxisOverride, regionLabel, regionShortLabel, panelConfigById, draggingPanel, dropTarget, resizingRegion, resizingPanel, onDragStart, onRegionDragOver, onRegionDrop, onPanelDragOver, onDragEnd, onMovePanel, onResizeRegion, onResizePanel, onReset, onRegionResizeMouseDown, onRegionResizeDoubleClick, onPanelResizeMouseDown, saving }: {
   region: WorkspaceRegionId;
   panels: WorkspaceLayout["panels"];
   mode: WorkspaceRegionMode;
+  splitAxis?: "row" | "column";
   regionLabel: string;
   regionShortLabel: string;
   panelConfigById: Map<WorkspacePanelKind, WorkspacePanelConfig>;
@@ -373,8 +389,8 @@ function RegionDock({ region, panels, mode, regionLabel, regionShortLabel, panel
         ].join(" ")}
         style={mode === "split" ? {
           flex: `${panel.size} 1 0%`,
-          ...(index < count - 1 && splitAxis(region) === "column" ? { minHeight: 80 } : {}),
-          ...(index < count - 1 && splitAxis(region) === "row" ? { minWidth: 120 } : {}),
+          ...(index < count - 1 && splitAxis(region, splitAxisOverride) === "column" ? { minHeight: 80 } : {}),
+          ...(index < count - 1 && splitAxis(region, splitAxisOverride) === "row" ? { minWidth: 120 } : {}),
         } : undefined}
       >
         {mode !== "tabs" && (
@@ -395,7 +411,7 @@ function RegionDock({ region, panels, mode, regionLabel, regionShortLabel, panel
             onMouseDown={onPanelResizeMouseDown(panel.id, panel.size)}
             onDoubleClick={() => configuredPanels.forEach(item => onResizePanel(item.layout.id, 100 / configuredPanels.length, true))}
             className="workspace-split-handle"
-            data-axis={splitAxis(region)}
+            data-axis={splitAxis(region, splitAxisOverride)}
             data-resizing={resizingPanel?.panelId === panel.id}
             title="Drag to resize split"
           />
@@ -418,6 +434,20 @@ function RegionDock({ region, panels, mode, regionLabel, regionShortLabel, panel
       ].join(" ")}
       style={{ gridArea: region }}
     >
+      {isRegionDrop && dropTarget && (
+        <div
+          className={`workspace-drop-overlay workspace-drop-overlay--${dropTarget.placement}`}
+          aria-hidden="true"
+        >
+          <span className="workspace-drop-overlay-label">
+            {dropTarget.placement === "tab" ? "Dock"
+              : dropTarget.placement === "split-left" ? "Left"
+              : dropTarget.placement === "split-right" ? "Right"
+              : dropTarget.placement === "split-up" ? "Up"
+              : "Down"}
+          </span>
+        </div>
+      )}
       {mode === "tabs" ? (
         <div className="workspace-region-tabs flex flex-col min-w-0 min-h-0 h-full overflow-hidden">
           <div className="workspace-tab-strip">
@@ -491,7 +521,7 @@ function RegionDock({ region, panels, mode, regionLabel, regionShortLabel, panel
       ) : (
         <div
           className="flex min-w-0 min-h-0 h-full"
-          style={{ flexDirection: splitAxis(region) === "column" ? "column" : "row" }}
+          style={{ flexDirection: splitAxis(region, splitAxisOverride) === "column" ? "column" : "row" }}
         >
           {configuredPanels.map((item, index) => renderPanel(item.layout, index, configuredPanels.length))}
           {configuredPanels.length === 0 && (
