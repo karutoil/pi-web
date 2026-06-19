@@ -9,9 +9,10 @@ import { readdir, stat, readFile, writeFile, unlink, rename as renameFs, mkdir }
 import { homedir, platform } from "node:os";
 
 import { addProject, removeProject, listProjects, getProject, touchProject, getLayout, saveLayout, deleteLayout, getProjectSettings, saveProjectSettings } from "./db";
+import { listSubagentRuns, interruptSubagentRun, readSubagentRunOutput, isSubagentExtensionAvailable } from "./pi-subagents";
 import { listProjectSessions, getSessionDetail } from "./pi-sessions";
 import { buildSessionHtmlPretty } from "./sessionExportPretty";
-import { getOrCreateAgent, stopAllAgents, getPoolStats, lookupAgent, detachFromAgent, deleteFromPool, rekeyAgent, setProjectSessionsChangedHandler, broadcastToProjectClients } from "./pi-agent";
+import { getOrCreateAgent, stopAllAgents, getPoolStats, lookupAgent, detachFromAgent, deleteFromPool, stopAgentsForCwd, setProjectSessionsChangedHandler, broadcastToProjectClients } from "./pi-agent";
 import { createTerminal, getTerminal, listTerminals, killTerminal } from "./pi-terminal";
 import { getGitStatus, getGitDiff, getGitDiffForCommit, gitStage, gitUnstage, gitCommit, gitLog, gitCheckout, gitDiscard, gitBranches, gitPush, gitPull, gitFetch, gitCreateBranch, gitDeleteBranch, gitRenameBranch, gitTags, gitCreateTag, gitDeleteTag, gitStashList, gitStashShow, gitStashPush, gitStashPop, gitStashApply, gitStashDrop, gitAmend, gitCherryPick, gitRevert, gitResolveConflict, getGitDiffStats, gitDiffWithRef, gitShowCommit, gitLogSearch, gitBlame, gitRemotes, gitUnstageAll } from "./pi-git";
 import type { GitResult } from "./pi-git";
@@ -278,8 +279,10 @@ app.delete("/api/projects/:id", (c) => {
   const { id } = c.req.param();
   const project = getProject(id);
   if (project) {
-    // Stop any agents for this project
-    deleteFromPool(project.path);
+    // Stop any agents for this project (#REATTACH: stopAgentsForCwd matches the
+    // `${cwd}::sessionPath` key prefix AND stops the PI processes — the old
+    // deleteFromPool(project.path) matched nothing and left agents running.)
+    stopAgentsForCwd(project.path);
     // Kill terminals for this project
     const terms = listTerminals(id);
     for (const t of terms) killTerminal(t.id);
@@ -301,6 +304,28 @@ app.put("/api/projects/:id/settings", async (c) => {
   const { systemPrompt, projectInstructions } = body as { systemPrompt?: string; projectInstructions?: string };
   saveProjectSettings(id, { systemPrompt, projectInstructions });
   return c.json(getProjectSettings(id));
+});
+
+// ─── Subagents (pi-subagents extension) ─────────────────────────────
+// Async/background run state is read from the extension's temp dir on disk
+// (per-run status.json). Interrupt sends the runner's SIGUSR2/SIGBREAK to its PID.
+// These are global to the user (not project-scoped), but we mount them under
+// /api/projects/:id so the client can resolve the server base URL per-project.
+
+app.get("/api/projects/:id/subagents", (c) => {
+  const runs = listSubagentRuns();
+  return c.json({ ...runs, available: isSubagentExtensionAvailable() });
+});
+
+app.post("/api/projects/:id/subagents/:runId/interrupt", (c) => {
+  const { runId } = c.req.param();
+  const result = interruptSubagentRun(runId);
+  return c.json(result, result.ok ? 200 : 400);
+});
+
+app.get("/api/projects/:id/subagents/:runId/output", (c) => {
+  const { runId } = c.req.param();
+  return c.json(readSubagentRunOutput(runId));
 });
 
 app.get("/api/layout", (c) => {
@@ -2394,12 +2419,21 @@ app.get(
           const cwd = project.path;
           touchProject(project.id);
 
-          const { agent, isNew } = getOrCreateAgent(cwd, sessionPath || null, provider || undefined, model || undefined);
+          // #4: pass newSessionId so concurrent new sessions get distinct pool keys
+          // (`${cwd}::__new__:${uuid}`) instead of colliding on one `__new__` agent.
+          const { agent, isNew } = getOrCreateAgent(cwd, sessionPath || null, newSessionId, provider || undefined, model || undefined);
           const raw = (ws as any).raw as ServerWebSocket;
 
           // Track which agent this WS belongs to — keyed by (cwd, sessionPath) tuple
           const agentKey = agent.getKey();
           wsToAgent.set(raw, agentKey);
+
+          // #4: when a pending new session resolves to its real file path, the
+          // server rekeys the agent pool; keep wsToAgent in sync so in-flight
+          // sends keep routing to the same agent.
+          agent.setRekeyHandler((oldKey, newKey) => {
+            for (const [w, k] of wsToAgent) if (k === oldKey) wsToAgent.set(w, newKey);
+          });
 
           // Attach this client to the pooled agent
           agent.attach(raw);
@@ -2411,10 +2445,17 @@ app.get(
               await agent.start();
             } catch (err: any) {
               console.error("Failed to start agent:", err.message || err);
+              // #2: detach + close the WS so the client's onclose fires and it
+              // reconnects (instead of leaving a zombie WS whose sends get
+              // silently dropped by lookupAgent()==null).
+              detachFromAgent(agentKey, raw);
+              wsToAgent.delete(raw);
               deleteFromPool(agentKey);
               try { if (ws.readyState === 1) ws.send(JSON.stringify({ type: "error", message: `Failed to start agent: ${err.message}` })); } catch {}
+              try { ws.close(); } catch {}
             }
           }
+
 
           // If client requested a new session (fresh WS connection), tell pi to create one
           if (newSessionId) {
@@ -2448,23 +2489,6 @@ app.get(
             case "new_session": agent.send({ type: "new_session" }); break;
             case "load_session": agent.loadSession(msg.sessionPath); break;
             case "switch_session": agent.switchSession((msg as any).sessionPath); break;
-            case "rekey_session": {
-              // Client is telling us the agent's session path has changed
-              // (typically from `__new__` to the real path reported by PI).
-              const { oldKey, newKey } = msg as { oldKey: string; newKey: string };
-              const moved = rekeyAgent(oldKey, newKey);
-              if (moved) {
-                wsToAgent.set(raw, newKey);
-                try {
-                  if (ws.readyState === 1) ws.send(JSON.stringify({ type: "response", command: "rekey_session", success: true, id: (msg as any).id }));
-                } catch {}
-              } else {
-                try {
-                  if (ws.readyState === 1) ws.send(JSON.stringify({ type: "response", command: "rekey_session", success: false, error: "rekey failed", id: (msg as any).id }));
-                } catch {}
-              }
-              break;
-            }
             case "set_model": agent.send({ type: "set_model", provider: msg.provider, modelId: msg.modelId }); break;
             case "cycle_model": agent.send({ type: "cycle_model" }); break;
             case "set_thinking": {
@@ -2649,8 +2673,28 @@ const server = Bun.serve({
   websocket,
 });
 
-// Graceful shutdown — kill all preview processes
-process.on("SIGINT", () => { stopAllPreviews().catch(() => {}); process.exit(0); });
-process.on("SIGTERM", () => { stopAllPreviews().catch(() => {}); process.exit(0); });
+// Graceful shutdown — stop PI agents (so they flush session files) and previews.
+// #6: previously only previews were stopped, leaving PI children to be killed
+// mid-write by the parent exit (risk of truncated .jsonl session lines).
+let shuttingDown = false;
+async function gracefulShutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[server] ${signal} received, shutting down…`);
+  try { await Promise.race([stopAllAgents(), new Promise(r => setTimeout(r, 3000))]); } catch {}
+  try { await stopAllPreviews(); } catch {}
+  process.exit(0);
+}
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+
+// #5: never let one bad promise/exception take down the server (and every
+// pooled PI session with it). Log and keep running.
+process.on("unhandledRejection", (reason) => {
+  console.error("[server] unhandledRejection:", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[server] uncaughtException:", err);
+});
 
 console.log(`PI Web server running at http://${hostname}:${server.port}`);

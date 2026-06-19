@@ -29,11 +29,15 @@ interface Props {
   onToggleExtensions?: () => void;
   extensionsOpen?: boolean;
   /** Skills panel toggle */
+  /** Skills panel toggle */
   onToggleSkills?: () => void;
   skillsOpen?: boolean;
+  /** Subagents panel toggle */
+  onToggleSubagents?: () => void;
+  subagentsOpen?: boolean;
 }
 
-export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar, onSessionActions, onToggleTerminal, showTerminal, onBack, onTogglePreview, previewOpen, onToggleGit, gitOpen, onToggleFiles, filesOpen, onToggleExtensions, extensionsOpen, onToggleSkills, skillsOpen }: Props) {
+export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar, onSessionActions, onToggleTerminal, showTerminal, onBack, onTogglePreview, previewOpen, onToggleGit, gitOpen, onToggleFiles, filesOpen, onToggleExtensions, extensionsOpen, onToggleSkills, skillsOpen, onToggleSubagents, subagentsOpen }: Props) {
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(sessionName || "");
   const isMobile = useIsMobile();
@@ -66,7 +70,7 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar,
   if (isMobile) {
     return (
       <div className="conversation-mobile-header shrink-0 max-h-[35vh] overflow-y-auto mobile-safe-top">
-        <div className="conversation-mobile-title-row">
+        <div className="conversation-mobile-title-row flex-wrap">
           {onBack && (
             <button type="button" onClick={onBack} className="p-1.5 -ml-1 rounded-md hover:bg-ink-800 text-ink-400" aria-label="Back" title="Back">
               <Icon name="chevron-left" size={18} />
@@ -106,7 +110,7 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar,
             </span>
           )}
 
-          <div className="flex items-center gap-0.5 ml-auto">
+          <div className="flex flex-wrap items-center gap-0.5 ml-auto min-w-0">
             {onToggleTerminal && (
               <button type="button" onClick={onToggleTerminal} className={`p-1.5 rounded-md ${showTerminal ? 'text-amber-500 bg-amber-500/10' : 'text-ink-400 hover:bg-ink-800'}`} aria-label="Terminal" title="Terminal">
                 <Icon name="terminal" size={14} />
@@ -135,6 +139,11 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar,
             {onToggleSkills && (
               <button type="button" onClick={onToggleSkills} className={`p-1.5 rounded-md ${skillsOpen ? 'text-amber-500 bg-amber-500/10' : 'text-ink-400 hover:bg-ink-800'}`} aria-label="Skills" title="Skills">
                 <Icon name="spark" size={14} />
+              </button>
+            )}
+            {onToggleSubagents && (
+              <button type="button" onClick={onToggleSubagents} className={`p-1.5 rounded-md ${subagentsOpen ? 'text-amber-500 bg-amber-500/10' : 'text-ink-400 hover:bg-ink-800'}`} aria-label="Subagents" title="Subagents (background runs)">
+                <Icon name="fork" size={14} />
               </button>
             )}
             {onSessionActions && (
@@ -277,6 +286,17 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar,
             title="Skills"
           >
             <Icon name="spark" size={14} />
+          </button>
+        )}
+        {onToggleSubagents && (
+          <button
+            type="button"
+            onClick={onToggleSubagents}
+            className={`conversation-toolbar-pill ${subagentsOpen ? "conversation-toolbar-pill-active" : ""}`}
+            aria-label="Toggle subagents"
+            title="Subagents"
+          >
+            <Icon name="fork" size={14} />
           </button>
         )}
       </div>

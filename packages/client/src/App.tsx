@@ -21,6 +21,7 @@ import { useWorkspaceLayout } from "./hooks/useWorkspaceLayout";
 import { useIsMobile } from "./hooks/useIsMobile";
 import { ExtensionsPanel } from "./components/ExtensionsPanel";
 import { SkillsPanel } from "./components/SkillsPanel";
+import { SubagentsPanel } from "./components/SubagentsPanel";
 import { WorkspaceDock } from "./components/WorkspaceDock";
 import { MobileShell } from "./components/MobileShell";
 import { Icon } from "./components/Icon";
@@ -78,6 +79,12 @@ export default function App() {
   // Timer refs for setTimeout callbacks — cleared on unmount (#62)
   const timersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
 
+  // #LIVE: persist the active (project, session) across refresh / leave so the
+  // client reconnects to the still-running PI process instead of dropping the
+  // user onto the empty projects view. sessionStorage survives refresh and is
+  // cleared when the tab closes — exactly the lifetime of a "live connection".
+  const LIVE_SESSION_KEY = "pi-web:live-session";
+  const restoreAttemptedRef = useRef(false);
   function safeTimeout(fn: () => void, ms: number): ReturnType<typeof setTimeout> {
     const id = setTimeout(fn, ms);
     timersRef.current.add(id);
@@ -177,7 +184,10 @@ export default function App() {
       // getOrConnect() finds the existing conn under its new key.
       if (ws && session.filePath) {
         const oldKey = ws.key;
-        const newKey = `${selectedProject?.id || ""}::${session.filePath}`;
+        // #4b: use the SAME three-segment key format as getOrConnect
+        // (`${projectId}::${sessionPath}::${newSessionId}`) so the rekeyed conn
+        // is found on the next render instead of leaking a duplicate WS.
+        const newKey = `${selectedProject?.id || ""}::${session.filePath}::`;
         if (oldKey !== newKey) ws.rekey(newKey);
       }
       setActiveSession(prev => prev ? {
@@ -253,6 +263,7 @@ export default function App() {
   const filesOpen = rightPanel.isOpen("files");
   const extensionsOpen = rightPanel.isOpen("extensions");
   const skillsOpen = rightPanel.isOpen("skills");
+  const subagentsOpen = rightPanel.isOpen("subagents");
 
   // Sync preview store → right panel store
   useEffect(() => {
@@ -317,6 +328,7 @@ export default function App() {
     if (panelId === "files") rightPanel.open("files");
     if (panelId === "extensions") rightPanel.open("extensions");
     if (panelId === "skills") rightPanel.open("skills");
+    if (panelId === "subagents") rightPanel.open("subagents");
     if (panelId === "terminal") setTerminalOpen(true);
   }, [rightPanel]);
 
@@ -380,7 +392,20 @@ export default function App() {
   useEffect(() => {
     fetch("/api/projects")
       .then(r => r.json())
-      .then(d => setProjects(d.projects || []))
+      .then(d => {
+        const list = d.projects || [];
+        setProjects(list);
+        // #LIVE: restore the project that owned the last live session so a
+        // refresh reconnects to the still-running PI process instead of
+        // landing on the empty projects view.
+        try {
+          const saved = JSON.parse(sessionStorage.getItem(LIVE_SESSION_KEY) || "null");
+          if (saved?.projectId) {
+            const proj = list.find((p: Project) => p.id === saved.projectId);
+            if (proj) setSelectedProject(proj);
+          }
+        } catch {}
+      })
       .catch(console.error);
   }, []);
 
@@ -389,6 +414,52 @@ export default function App() {
     if (!selectedProject) return;
     fetchSessions();
   }, [selectedProject, fetchSessions]);
+
+  // #LIVE: restore the last active session so a refresh reconnects to the
+  // running PI instead of dropping the user on the empty projects view. Runs
+  // at most once. We restore by the saved sessionPath DIRECTLY (not just via
+  // the disk-scanned sessions list) because a brand-new session's .jsonl
+  // doesn't exist on disk until PI persists its first message — requiring the
+  // session to be in `sessions` would orphan the live booting PI on a refresh
+  // before the first prompt. getOrConnect reattaches to the pooled agent by
+  // sessionPath regardless of whether the file is on disk yet.
+  useEffect(() => {
+    if (restoreAttemptedRef.current || !selectedProject) return;
+    let saved: { projectId?: string; sessionPath?: string } | null = null;
+    try { saved = JSON.parse(sessionStorage.getItem(LIVE_SESSION_KEY) || "null"); } catch {}
+    if (!saved?.sessionPath || saved.projectId !== selectedProject.id) return;
+    const fromList = sessions.find(s => s.filePath === saved.sessionPath);
+    if (fromList) {
+      restoreAttemptedRef.current = true;
+      setActiveSession(fromList);
+      setView("chat");
+    } else {
+      // The session file isn't on disk yet (new session, pre-first-message).
+      // Reattach anyway — the agent is still in the server pool under this path.
+      restoreAttemptedRef.current = true;
+      setActiveSession({
+        id: "", filePath: saved.sessionPath, cwd: selectedProject.path,
+        timestamp: new Date().toISOString(), name: null,
+        messageCount: 0, lastMessage: null, model: null, firstMessage: null,
+        createdAt: new Date().toISOString(), lastActiveAt: new Date().toISOString(),
+        tokenCount: 0, cost: 0, isRecentlyActive: true,
+      });
+      setView("chat");
+    }
+  }, [selectedProject, sessions]);
+
+  // #LIVE: persist the active (project, session) whenever it changes so a
+  // refresh can restore it. Cleared when leaving the chat view for good
+  // (e.g. switching projects) so we don't restore a stale selection.
+  useEffect(() => {
+    try {
+      if (view === "chat" && selectedProject && activeSession?.filePath) {
+        sessionStorage.setItem(LIVE_SESSION_KEY, JSON.stringify({ projectId: selectedProject.id, sessionPath: activeSession.filePath }));
+      } else if (!activeSession) {
+        sessionStorage.removeItem(LIVE_SESSION_KEY);
+      }
+    } catch {}
+  }, [view, selectedProject, activeSession]);
 
   const handleSelectProject = useCallback((project: Project) => {
     setSelectedProject(project);
@@ -499,12 +570,20 @@ export default function App() {
       setView("sessions");
       setActiveSession(null);
       setSessionDetail(null);
+      if (isMobile) {
+        setActiveMobilePanel("chat");
+        setSidebarOpen(false);
+      }
     } else if (view === "sessions") {
       setView("projects");
       setSelectedProject(null);
       setSessions([]);
+      if (isMobile) {
+        setActiveMobilePanel("chat");
+        setSidebarOpen(false);
+      }
     }
-  }, [view]);
+  }, [view, isMobile]);
 
   // New: "go home" — collapse everything, no project selected
   const handleGoHome = useCallback(() => {
@@ -513,8 +592,11 @@ export default function App() {
     setActiveSession(null);
     setSessionDetail(null);
     setSessions([]);
-  }, []);
-
+    if (isMobile) {
+      setActiveMobilePanel("chat");
+      setSidebarOpen(false);
+    }
+  }, [isMobile]);
   const handleAddProject = useCallback(async (path: string, name: string) => {
     setIsAddingProject(true);
     try {
@@ -564,6 +646,10 @@ export default function App() {
         if (activeSession?.id === session.id) {
           setActiveSession(null);
           setView("sessions");
+          if (isMobile) {
+            setActiveMobilePanel("chat");
+            setSidebarOpen(false);
+          }
         }
       } else {
         alert("Failed to delete session");
@@ -572,7 +658,7 @@ export default function App() {
       console.error("Failed to delete session:", e);
       alert("Failed to delete session");
     }
-  }, [activeSession]);
+  }, [activeSession, isMobile]);
 
   // Rename session
   const handleRenameSession = useCallback(async (session: SessionSummary, name: string) => {
@@ -660,7 +746,11 @@ export default function App() {
               project={selectedProject}
               session={activeSession}
               showSidebar={sidebarOpen}
-              onToggleSidebar={() => setSidebarOpen((v) => !v)}
+              onToggleSidebar={() => {
+                const next = !sidebarOpen;
+                setSidebarOpen(next);
+                if (isMobile && next) setActiveMobilePanel("channels");
+              }}
               onBack={handleBack}
               onToggleTerminal={() => { setTerminalOpen(v => !v); if (!terminalOpen && isMobile) setActiveMobilePanel("terminal"); }}
               onTogglePreview={() => { const wasOpen = rightPanel.isOpen("preview"); rightPanel.toggle("preview"); if (!wasOpen && isMobile) setActiveMobilePanel("preview"); }}
@@ -668,7 +758,9 @@ export default function App() {
               onToggleFiles={() => { const wasOpen = filesOpen; rightPanel.toggle("files"); if (!wasOpen && isMobile) setActiveMobilePanel("files"); }}
               onToggleExtensions={() => { const wasOpen = extensionsOpen; rightPanel.toggle("extensions"); if (!wasOpen && isMobile) setActiveMobilePanel("extensions"); }}
               onToggleSkills={() => { const wasOpen = skillsOpen; rightPanel.toggle("skills"); if (!wasOpen && isMobile) setActiveMobilePanel("skills"); }}
+              onToggleSubagents={() => { const wasOpen = subagentsOpen; rightPanel.toggle("subagents"); if (!wasOpen && isMobile) setActiveMobilePanel("subagents"); }}
               skillsOpen={skillsOpen}
+              subagentsOpen={subagentsOpen}
               terminalOpen={terminalOpen}
               previewOpen={rightPanel.isOpen("preview")}
               gitOpen={gitOpen}
@@ -770,6 +862,21 @@ export default function App() {
         />
       ),
       onClose: () => rightPanel.close("skills"),
+    }] : []),
+    ...(subagentsOpen ? [{
+      id: "subagents" as const,
+      title: "Subagents",
+      icon: <Icon name="fork" size={12} />,
+      children: (
+        <SubagentsPanel
+          visible={true}
+          project={selectedProject}
+          onSendPrompt={(text) => { if (ws) ws.send({ type: "prompt", message: text }); }}
+          onClose={() => rightPanel.close("subagents")}
+          embedded
+        />
+      ),
+      onClose: () => rightPanel.close("subagents"),
     }] : []),
     ...(terminalOpen ?[{
       id: "terminal" as const,

@@ -4,6 +4,7 @@ import type { WSClientMessage, WSServerMessage, AgentState, ChatMessage, Session
 import type { ToolEvent, WSBridge } from "../lib/types";
 export type { ToolEvent, WSBridge };
 import { NOTIFY_TIMEOUT_MS } from "../lib/constants";
+import { reconnectDelay as computeReconnectDelay, mergeMessagesOnReconnect } from "../lib/ws-pool-logic";
 
 export interface WSConnection extends WSBridge {
   key: string;
@@ -96,29 +97,34 @@ function createConnection(
   // new-session connections would stay under their newSessionId key forever
   // and `handleSelectSession` could never find them again.
   let pendingNewSession = !sessionPath;
+  // Mutable reconnect params — updated by rekey() when a pending new session
+  // resolves to its real file path, so a dropped+reconnected WS reattaches to
+  // the SAME resolved agent instead of spawning a fresh new-session agent (#4).
+  let currentSessionPath = sessionPath;
+  let currentNewSessionId = newSessionId;
   const notify = () => listeners.forEach(l => l());
 
   // Auto-reconnect with exponential backoff
   let reconnectAttempts = 0;
-  const MAX_RECONNECT = 10;
-  const BASE_DELAY = 1000;
+  const MAX_RECONNECT = 10;          // fast exponential-backoff attempts; then slow-forever (see ws-pool-logic)
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let intentionallyClosed = false;
 
   function connect() {
     const params = new URLSearchParams();
     if (projectId) params.set("projectId", projectId);
-    if (sessionPath) params.set("sessionPath", sessionPath);
-    if (newSessionId) params.set("newSessionId", newSessionId);
+    if (currentSessionPath) params.set("sessionPath", currentSessionPath);
+    if (currentNewSessionId) params.set("newSessionId", currentNewSessionId);
     const protocol = location.protocol === "https:" ? "wss" : "ws";
     ws = new WebSocket(`${protocol}://${location.host}/ws?${params}`);
     ws.onopen = () => {
       data.isConnected = true;
       data.lastError = null;
       reconnectAttempts = 0;
-      // Clear stale messages on reconnect — server may have different history
-      messagesRef = [];
-      data.messages = [];
+      // #7: keep messagesRef across reconnect — a user prompt sent just before
+      // the WS dropped may not be persisted by PI yet. Wiping it here made the
+      // message vanish from the UI (and a re-type would duplicate it in PI).
+      // messages_result below merges the server's persisted history back in.
       data.liveMessages = new Map();
       notify();
       // Request current state, message history, and commands on connect
@@ -135,9 +141,14 @@ function createConnection(
       data.isStreaming = false;
       notify();
       // Auto-reconnect unless intentionally closed
-      if (!intentionallyClosed && reconnectAttempts < MAX_RECONNECT) {
-        const delay = BASE_DELAY * Math.pow(1.5, reconnectAttempts);
-        console.log(`[ws] reconnecting in ${Math.round(delay)}ms (attempt ${reconnectAttempts + 1})`);
+      // #3: Auto-reconnect forever — fast exponential backoff for the first
+      // MAX_RECONNECT attempts, then a slow fixed cadence so a long server
+      // outage/deploy still recovers instead of leaving the client dead.
+      // The 'Offline' badge (ChatHeader) reflects !isConnected the whole time.
+      if (!intentionallyClosed) {
+        const fast = reconnectAttempts < MAX_RECONNECT;
+        const delay = computeReconnectDelay(reconnectAttempts);
+        console.log(`[ws] reconnecting in ${Math.round(delay)}ms (attempt ${reconnectAttempts + 1}${fast ? "" : ", slow"})`);
         reconnectTimer = setTimeout(() => {
           reconnectAttempts++;
           connect();
@@ -354,7 +365,10 @@ function createConnection(
         // Restore history after reconnect so the user sees everything that
         // happened while the WebSocket was away.
         const restored = (msg.messages || []).filter((m) => m.role === "user" || m.role === "assistant" || m.role === "toolResult");
-        messagesRef = restored;
+        // #7: merge instead of replace — keep any user messages we added locally
+        // that PI hasn't persisted yet (e.g. a prompt sent right before the WS
+        // dropped). Server messages come first; local-only user messages append.
+        messagesRef = mergeMessagesOnReconnect(restored, messagesRef);
         data.messages = [...messagesRef];
         break;
       }
@@ -525,6 +539,13 @@ function createConnection(
      */
     rekey: (newKey: string) => {
       if (newKey === currentKey) return;
+      // #4: update reconnect params so a dropped WS reattaches to the resolved
+      // agent. Key format is `${projectId}::${sessionPath}::${newSessionId}`;
+      // after resolve it's `${projectId}::${filePath}::` (empty newSessionId).
+      // sessionPath is a ~/.pi file path (no `::`), so split is safe.
+      const parts = newKey.split("::");
+      currentSessionPath = parts[1] || null;
+      currentNewSessionId = parts[2] || null;
       // Only unregister from old key if we're still the registered conn there
       if (pool.current.get(currentKey) === conn) {
         pool.current.delete(currentKey);

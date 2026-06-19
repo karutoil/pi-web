@@ -169,7 +169,6 @@ export type WSClientMessage =
   | { type: "new_session" }
   | { type: "load_session"; sessionPath: string }
   | { type: "switch_session"; sessionPath: string }
-  | { type: "rekey_session"; oldKey: string; newKey: string; id?: string }
   | { type: "set_model"; provider: string; modelId: string }
   | { type: "cycle_model" }
   | { type: "set_thinking"; level: string }
@@ -360,9 +359,92 @@ export interface APIProjectsResponse {
   projects: Project[];
 }
 
+// ─── Subagent async runs (pi-subagents extension) ───
+
+/** Matches a single step in AsyncStatus.steps from the extension's status.json. */
+export interface SubagentRunStep {
+  index?: number;
+  agent: string;
+  phase?: string;
+  label?: string;
+  outputName?: string;
+  status: "pending" | "running" | "complete" | "completed" | "failed" | "paused";
+  activityState?: "active_long_running" | "needs_attention";
+  lastActivityAt?: number;
+  currentTool?: string;
+  currentToolArgs?: string;
+  currentToolStartedAt?: number;
+  currentPath?: string;
+  turnCount?: number;
+  toolCount?: number;
+  durationMs?: number;
+  tokens?: { input: number; output: number; total: number };
+  skills?: string[];
+  model?: string;
+  error?: string;
+}
+
+export interface SubagentParallelGroup {
+  start: number;
+  count: number;
+  stepIndex: number;
+}
+
+/**
+ * Summary of one async/background subagent run, derived from the extension's
+ * `{asyncDir}/status.json`. Read server-side and surfaced to the Subagents panel.
+ */
+export interface SubagentAsyncRun {
+  runId: string;
+  asyncDir: string;
+  sessionId?: string;
+  state: "queued" | "running" | "complete" | "failed" | "paused";
+  activityState?: "active_long_running" | "needs_attention";
+  lastActivityAt?: number;
+  currentTool?: string;
+  currentToolStartedAt?: number;
+  currentPath?: string;
+  turnCount?: number;
+  toolCount?: number;
+  mode: "single" | "parallel" | "chain";
+  agent?: string;
+  agents?: string[];
+  cwd?: string;
+  pid?: number;
+  startedAt: number;
+  endedAt?: number;
+  lastUpdate?: number;
+  currentStep?: number;
+  chainStepCount?: number;
+  parallelGroups?: SubagentParallelGroup[];
+  steps: SubagentRunStep[];
+  outputFile?: string;
+  sessionFile?: string;
+  totalTokens?: { input: number; output: number; total: number };
+  error?: string;
+}
+
+export interface SubagentRunListResponse {
+  runs: SubagentAsyncRun[];
+  /** Absolute root dir the server scanned (for diagnostics). */
+  asyncDirRoot: string;
+}
+
+export interface SubagentInterruptResponse {
+  runId: string;
+  ok: boolean;
+  message: string;
+}
+
+export interface SubagentRunOutputResponse {
+  runId: string;
+  lines: string[];
+  truncated: boolean;
+}
+
 // ─── Workspace layout ───
 
-export type WorkspacePanelKind = "chat" | "preview" | "git" | "terminal" | "rail" | "channels" | "files" | "extensions" | "skills" | "search" | "outline";
+export type WorkspacePanelKind = "chat" | "preview" | "git" | "terminal" | "rail" | "channels" | "files" | "extensions" | "skills" | "search" | "outline" | "subagents";
 export type WorkspaceRegionId = "left" | "center" | "right" | "top" | "bottom";
 export type WorkspaceRegionMode = "tabs" | "split";
 

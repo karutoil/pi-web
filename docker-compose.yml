@@ -10,7 +10,7 @@ services:
       HOST: "0.0.0.0"
       PORT: "3069"
       HOME: "${HOME}"
-      PATH: "/host-pi-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      PATH: "/host-pi-bin:/app/node_modules/.bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     ports:
       - "33647:3069"
     volumes:

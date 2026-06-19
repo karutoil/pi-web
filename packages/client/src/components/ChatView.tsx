@@ -33,7 +33,6 @@ function SessionLoadingOverlay() {
     </div>
   );
 }
-
 interface ChatViewProps {
   ws: WSBridge;
   sessionDetail: { entries: SessionEntry[]; cwd: string } | null;
@@ -48,12 +47,14 @@ interface ChatViewProps {
   onToggleFiles?: () => void;
   onToggleExtensions?: () => void;
   onToggleSkills?: () => void;
+  onToggleSubagents?: () => void;
   terminalOpen?: boolean;
   previewOpen?: boolean;
   gitOpen?: boolean;
   filesOpen?: boolean;
   extensionsOpen?: boolean;
   skillsOpen?: boolean;
+  subagentsOpen?: boolean;
 }
 
 function extractMsgText(msg: ChatMessage): string {
@@ -68,7 +69,35 @@ function extractMsgText(msg: ChatMessage): string {
   return "";
 }
 
-export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar, showSidebar, onBack, onToggleTerminal, onTogglePreview, onToggleGit, onToggleFiles, onToggleExtensions, onToggleSkills, terminalOpen, previewOpen, gitOpen, filesOpen, extensionsOpen, skillsOpen }: ChatViewProps) {
+
+/** Render a styled notice for pi-subagents custom messages (completion + control). */
+function renderSubagentNotice(entry: SessionEntry) {
+  if (entry.type !== "custom_message" || !entry.customType) return null;
+  const isNotify = entry.customType === "subagent-notify";
+  const isControl = entry.customType === "subagent_control_notice" || entry.customType === "subagent-control-notice";
+  if (!isNotify && !isControl) {
+    // Generic custom message with display content — render plainly so it isn't hidden.
+    const text = typeof entry.content === "string" ? entry.content : "";
+    if (!text || entry.display === false) return null;
+    return (
+      <div className="conversation-subagent-notice">
+        <span className="conversation-subagent-notice-label">{entry.customType}</span>
+        <div className="whitespace-pre-wrap">{text}</div>
+      </div>
+    );
+  }
+  const text = typeof entry.content === "string" ? entry.content : "";
+  const data = (entry.data ?? undefined) as { event?: { type?: string } } | undefined;
+  const needsAttention = data?.event?.type === "needs_attention" || text.includes("Needs Attention");
+  const label = isControl ? (needsAttention ? "Subagent needs attention" : "Subagent control") : "Background task";
+  return (
+    <div className={`conversation-subagent-notice${needsAttention ? " needs-attention" : ""}`}>
+      <span className="conversation-subagent-notice-label">{label}</span>
+      <div className="whitespace-pre-wrap">{text}</div>
+    </div>
+  );
+}
+export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar, showSidebar, onBack, onToggleTerminal, onTogglePreview, onToggleGit, onToggleFiles, onToggleExtensions, onToggleSkills, onToggleSubagents, terminalOpen, previewOpen, gitOpen, filesOpen, extensionsOpen, skillsOpen, subagentsOpen }: ChatViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showThinking, setShowThinking] = useState(true);
   const [srAnnouncement, setSrAnnouncement] = useState('');
@@ -109,18 +138,20 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
   const lastAutoCompactionEnabledRef = useRef<boolean | null>(null);
   const lastCommandResponseKeyRef = useRef<string | null>(null);
 
-  // Virtualization: only render the last RENDER_LIMIT messages
-  const [renderLimit, setRenderLimit] = useState(200);
-  const allHistorical = (sessionDetail?.entries || [])
-    .filter((e: SessionEntry) => e.message && e.type !== "compaction" && e.type !== "branch_summary");
-  const hasMoreHistory = allHistorical.length > renderLimit;
-  const historicalEntries = hasMoreHistory ? allHistorical.slice(-renderLimit) : allHistorical;
-
+  // Render ALL history — no button, no limit. Perf is handled by React.memo
+  // on MessageBubble (historical bubbles skip re-render during streaming)
+  // + content-visibility:auto in CSS (browser skips off-screen paint).
+  // Memoized so derived maps (toolResultsMap, inlineToolCallIds, turnGroups)
+  // stay referentially stable and don't break MessageBubble's memo.
+  const allHistorical = useMemo(() =>
+    (sessionDetail?.entries || [])
+      .filter((e: SessionEntry) => (e.message || (e.type === "custom_message" && e.customType)) && e.type !== "compaction" && e.type !== "branch_summary"),
+    [sessionDetail?.entries]
+  );
   const historySearchLower = historySearch.trim().toLowerCase();
   const visibleHistoricalEntries = historySearchLower
-    ? historicalEntries.filter(e => e.message && extractMsgText(e.message).toLowerCase().includes(historySearchLower))
-    : historicalEntries;
-
+    ? allHistorical.filter(e => e.message && extractMsgText(e.message).toLowerCase().includes(historySearchLower))
+    : allHistorical;
   useEffect(() => () => {
     if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
   }, []);
@@ -367,6 +398,17 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
     }
   }, [ws.isConnected, ws.state, ws.isStreaming]);
 
+
+  // Non-destructive recovery: if we're connected but PI never sent `state`
+  // (a long-lived subagent run can be slow to answer get_state, or the
+  // attach-time RPC was dropped), quietly re-request it. Never kills the
+  // agent — the session stays visible from HTTP history regardless.
+  useEffect(() => {
+    if (!ws.isConnected || ws.state) return;
+    const t1 = setTimeout(() => ws.send({ type: "get_state" }), 5000);
+    const t2 = setTimeout(() => ws.send({ type: "get_state" }), 12000);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [ws.isConnected, ws.state]);
   const liveMsg = ws.liveMessages.get("current");
   const cwd = sessionDetail?.cwd || project?.path || "";
 
@@ -395,7 +437,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
 
   // Group messages into turns for context menu copy
   // A turn = user message + all toolResults + final assistant response
-  const historicalMsgs = allHistorical.map(e => e.message!);
+  const historicalMsgs = useMemo(() => allHistorical.map(e => e.message).filter((m): m is ChatMessage => Boolean(m)), [allHistorical]);
   const liveMsgs = ws.messages;
 
   // Deduplicate live messages against historical entries so the same persisted
@@ -428,9 +470,13 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
     return liveMsgs.slice(overlap);
   }, [historicalMsgs, liveMsgs, messageSignature]);
 
-  const allChatMsgs = [...historicalMsgs, ...uniqueLiveMsgs];
+  const allChatMsgs = useMemo(() => [...historicalMsgs, ...uniqueLiveMsgs], [historicalMsgs, uniqueLiveMsgs]);
 
-  const isLoading = !ws.isConnected || !ws.state;
+  // Show the loading overlay only while we have NOTHING to show: not connected
+  // AND no history yet. History loads over HTTP (sessionDetail) and live messages
+  // stream over the WS, so the session stays visible the moment either arrives —
+  // a wedged get_state can never blank a live (e.g. multi-subagent) session.
+  const isLoading = !ws.isConnected && !sessionDetail;
 
   // Build toolCallId → toolResult message map for inline tool result rendering
   const toolResultsMap = useMemo(() => {
@@ -524,14 +570,23 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
     copyToClipboard(turnToMarkdown(turn));
   }, []);
 
+
+  // Stable copy-turn handler keyed by message reference. Taking the message
+  // (not a precomputed turn) keeps this callback referentially stable so
+  // MessageBubble's React.memo isn't busted by a fresh arrow on each render.
+  const handleCopyTurnForMsg = useCallback((msg: ChatMessage) => {
+    const idx = allChatMsgs.indexOf(msg);
+    if (idx < 0) return;
+    copyTurn(getTurnForMsg(idx));
+  }, [allChatMsgs, copyTurn, getTurnForMsg]);
   return (
     <div className="conversation-shell">
-      <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} onToggleSidebar={onToggleSidebar} showSidebar={showSidebar} onSessionActions={() => setShowSessionActions(true)} onBack={onBack} onToggleTerminal={onToggleTerminal} onTogglePreview={onTogglePreview} onToggleGit={onToggleGit} onToggleFiles={onToggleFiles} onToggleExtensions={onToggleExtensions} onToggleSkills={onToggleSkills} showTerminal={terminalOpen} previewOpen={previewOpen} gitOpen={gitOpen} filesOpen={filesOpen} extensionsOpen={extensionsOpen} skillsOpen={skillsOpen} />
+      <ChatHeader ws={ws} cwd={cwd} sessionName={sessionName} onToggleSidebar={onToggleSidebar} showSidebar={showSidebar} onSessionActions={() => setShowSessionActions(true)} onBack={onBack} onToggleTerminal={onToggleTerminal} onTogglePreview={onTogglePreview} onToggleGit={onToggleGit} onToggleFiles={onToggleFiles} onToggleExtensions={onToggleExtensions} onToggleSkills={onToggleSkills} onToggleSubagents={onToggleSubagents} showTerminal={terminalOpen} previewOpen={previewOpen} gitOpen={gitOpen} filesOpen={filesOpen} extensionsOpen={extensionsOpen} skillsOpen={skillsOpen} subagentsOpen={subagentsOpen} />
 
       <div aria-live="polite" className="sr-only">{srAnnouncement}</div>
 
       {historySearchOpen && (
-        <div className="shrink-0 px-3 py-1.5 border-b border-ink-800 flex items-center gap-2">
+        <div className="shrink-0 px-3 py-1.5 border-b border-ink-800 flex flex-wrap items-center gap-2">
           <Icon name="search" size={12} className="text-ink-500" />
           <input
             ref={historySearchRef}
@@ -553,7 +608,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
           />
           {historySearch && (
             <span className="text-xs text-ink-500">
-              {visibleHistoricalEntries.length} / {historicalEntries.length}
+              {visibleHistoricalEntries.length} / {allHistorical.length}
             </span>
           )}
           {historySearch && (
@@ -581,7 +636,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
       )}
 
       <div className="flex-1 flex min-h-0 min-w-0 overflow-hidden relative">
-        {/* Loading overlay — blurs + blocks interaction until connected + state received */}
+        {/* Loading overlay — only while disconnected with no history yet */}
         {isLoading && <SessionLoadingOverlay />}
 
         {/* Chat column — takes remaining space after terminal panel */}
@@ -599,22 +654,17 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
           />
         )}
         <div ref={contentRef} className="conversation-message-stack">
-          {/* Load earlier messages */}
-          {hasMoreHistory && (
-            <button
-              onClick={() => setRenderLimit(n => n + 200)}
-              className="conversation-load-more"
-            >
-              ↑ Load {Math.min(200, allHistorical.length - renderLimit)} earlier messages
-            </button>
-          )}
 
-          {/* Historical messages (virtualized) */}
+          {/* Historical messages — all rendered; off-screen ones skipped by
+             content-visibility:auto (see .conversation-message-row CSS) */}
           {visibleHistoricalEntries.map((entry: SessionEntry, displayIdx: number) => {
+            if (entry.type === "custom_message" && entry.customType && !entry.message) {
+              const notice = renderSubagentNotice(entry);
+              if (notice) return <div key={entry.id || displayIdx} className="conversation-message-row">{notice}</div>;
+              return null;
+            }
             if (!entry.message) return null;
-            const originalIdx = allHistorical.indexOf(entry);
             const isUser = entry.message.role === "user";
-            const turn = getTurnForMsg(originalIdx >= 0 ? originalIdx : 0);
             return (
               <MessageBubble
                 key={entry.id || displayIdx}
@@ -622,11 +672,13 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
                 showThinking={showThinking}
                 toolResultsMap={toolResultsMap}
                 inlineToolCallIds={inlineToolCallIds}
-                runningTools={ws.runningTools}
+                // Historical bubbles never have in-flight tools; passing undefined
+                // keeps this prop stable so tool events don't re-render history.
+                runningTools={undefined}
                 isHistorical={true}
                 entryId={isUser ? entry.id : undefined}
                 onFork={isUser ? handleFork : undefined}
-                onCopyTurn={() => copyTurn(turn)}
+                onCopyTurn={handleCopyTurnForMsg}
               />
             );
           })}
@@ -641,11 +693,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
               inlineToolCallIds={inlineToolCallIds}
               runningTools={ws.runningTools}
               isHistorical={false}
-              onCopyTurn={() => {
-                const histLen = historicalMsgs.length;
-                const turn = getTurnForMsg(histLen + i);
-                copyTurn(turn);
-              }}
+              onCopyTurn={handleCopyTurnForMsg}
             />
           ))}
 

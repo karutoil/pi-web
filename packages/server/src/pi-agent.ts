@@ -1,14 +1,24 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { join, delimiter } from "node:path";
+import { join, delimiter, normalize } from "node:path";
 import { platform, homedir } from "node:os";
 import type { WSServerMessage } from "@pi-web/shared";
 import type { ServerWebSocket } from "bun";
+import treeKill from "tree-kill";
 
 // ─── Pooled Agent ───
 // Wraps a PIAgent with multi-client broadcast + idle cleanup.
 // Survives WebSocket disconnects — agents keep running until idle timeout.
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+// #LIVE: watchdog for wedged PI processes. A run that is "streaming" but has
+// produced no message activity for this long AND has no clients is treated as
+// hung (e.g. PI blocked on an unanswered extension_ui_request whose client
+// disconnected, or a stuck tool / hung model call). Left un-reaped it lingers
+// forever — the "server requires a reboot" failure mode. Force-stopped here.
+const STALE_STREAMING_MS = 10 * 60 * 1000; // 10 minutes
+// #LIVE: cadence at which the watchdog sweeps a single agent. Kept coarse so
+// the per-agent timer is cheap; STALE_STREAMING_MS is what bounds recovery.
+const WATCHDOG_TICK_MS = 60 * 1000; // 1 minute
 
 export interface IPIAgent {
   setHandler(handler: (msg: WSServerMessage) => void): void;
@@ -30,8 +40,28 @@ export class PooledAgent {
   private runningTools = new Set<string>();
   private lastActivityAt = Date.now();
   private idleTimeoutMs: number;
+  // #LIVE: how long an active run with no activity + no clients is tolerated.
+  private staleStreamingMs: number;
   private isPendingNewSession: boolean;
-
+  // #CLONE: after a clone, PI rebinds to a new forked session file ASYNC and
+  // never notifies us of the new path (no pushed state, no session_start to
+  // subscribers, and clone_result carries no sessionPath). We poll get_state
+  // and rekey to whatever new sessionFile comes back. Cleared on first rekey
+  // or after the poll budget runs out.
+  private isPendingCloneRekey: boolean = false;
+  // #LIVE: the last *blocking* extension_ui_request (select/confirm/input/editor)
+  // that PI is waiting on. Replayed to a reconnecting client on attach so a
+  // disconnect mid-dialog can't wedge PI forever.
+  private pendingDialog: WSServerMessage | null = null;
+  // #LIVE: watchdog timer. While an agent is active we keep this ticking; if it
+  // goes stale (no activity, no clients) the watchdog force-stops the run.
+  private watchdogTimer: Timer | null = null;
+  // #REATTACH: the newSessionId this agent was created with (for pending new
+  // sessions). After the session resolves and the agent is rekeyed to its real
+  // sessionFile, a client that reconnects with the ORIGINAL newSessionId (its WS
+  // dropped before it processed the rekey) must still reattach to THIS agent
+  // instead of spawning a duplicate. See getOrCreateAgent's reverse lookup.
+  readonly originalNewSessionId: string | null;
   /** Get the current pool key for this agent. */
   getKey(): string {
     return this.agentKey;
@@ -42,15 +72,25 @@ export class PooledAgent {
     this.agentKey = newKey;
   }
 
+  private rekeyHandler: ((oldKey: string, newKey: string) => void) | null = null;
+  /** Set a callback invoked when this agent's pool key changes (pending-new -> resolved). */
+  setRekeyHandler(cb: ((oldKey: string, newKey: string) => void) | null) { this.rekeyHandler = cb; }
+
   constructor(
     agentKey: string,
     options: PIAgentOptions,
-    createAgent: (options: PIAgentOptions) => IPIAgent = (opts) => new PIAgent(opts),
-    idleTimeoutMs = IDLE_TIMEOUT_MS,
-  ) {
+  createAgent: (options: PIAgentOptions) => IPIAgent = (opts) => new PIAgent(opts),
+  idleTimeoutMs = IDLE_TIMEOUT_MS,
+  // #LIVE: test seam for the watchdog window.
+  staleStreamingMs = STALE_STREAMING_MS,
+) {
     this.agentKey = agentKey;
     this.idleTimeoutMs = idleTimeoutMs;
+    this.staleStreamingMs = staleStreamingMs;
     this.isPendingNewSession = !options.sessionPath;
+    // Extract the newSessionId from a pending `__new__:<uuid>` key (if any) so a
+    // stale-newSessionId reconnect can reattach after rekey (#REATTACH).
+    this.originalNewSessionId = this.isPendingNewSession ? extractNewSessionId(agentKey) : null;
     this.createAgent = createAgent;
     this.agent = createAgent(options);
 
@@ -59,15 +99,30 @@ export class PooledAgent {
 
     // Handle unexpected PI exit
     this.agent.setExitHandler((code) => {
-      console.log(`[pool] agent ${agentKey} exited (code ${code})`);
+      console.log(`[pool] agent ${this.agentKey} exited (code ${code})`);
       this.broadcast({ type: "error", message: `PI agent exited (code ${code}).` });
-      // Remove from pool — will be recreated if someone reconnects
-      agentPool.delete(agentKey);
+      // #1: Close every attached client WS so the client's onclose fires and
+      // its reconnect logic kicks in. Without this the WS stays 'open' while
+      // the agent is gone from the pool — every subsequent send is silently
+      // dropped and the user thinks they're talking to a live agent.
+      this.closeClients();
+      // #LIVE: drop any orphaned dialog + stop the watchdog — the process is gone.
+      this.pendingDialog = null;
+      this.cancelWatchdog();
+      // #REKEY-EXIT: delete by the CURRENT key (this.agentKey), not the closure
+      // `agentKey` captured at construction. A new-session agent is rekeyed
+      // from `__new__:<uuid>` to the resolved `${cwd}::${sessionFile}` once PI
+      // reports the sessionFile; deleting the stale original key left the
+      // rekeyed entry in the pool with a dead PI underneath — a reconnect
+      // reused the dead agent and every send was silently dropped. That is
+      // the "server requires a reboot" failure mode.
+      agentPool.delete(this.agentKey);
     });
   }
 
   async start(): Promise<void> {
     await this.agent.start();
+    this.startWatchdog();
     // Send initial state to any already-attached clients
     setTimeout(() => this.agent.getState(), 300);
   }
@@ -78,6 +133,14 @@ export class PooledAgent {
     this.cancelIdleTimer();
     // Send current state to the newly attached client
     setTimeout(() => this.agent.getState(), 100);
+    // #LIVE: replay any blocking dialog PI is still waiting on. Without this,
+    // a refresh while a modal is open leaves PI blocked forever — the dialog
+    // was broadcast to the now-gone client and never re-delivered (the
+    // "requires a reboot" failure mode). Fire-and-forget UI events (notify,
+    // setStatus, ...) are intentionally NOT replayed.
+    if (this.pendingDialog) {
+      try { if (ws.readyState === 1) ws.send(JSON.stringify(this.pendingDialog)); } catch {}
+    }
   }
 
   /** Detach a WebSocket client. Starts idle timer only when no clients remain and agent is idle. */
@@ -92,6 +155,19 @@ export class PooledAgent {
   /** Forward a command to the underlying agent */
   send(msg: unknown) {
     this.agent.doSend(msg);
+  }
+
+  /**
+   * Close every attached client WebSocket and drop them from the client set.
+   * Used when the underlying PI process dies — closing the WS makes the
+   * client's onclose fire so it reconnects (and either reattaches to a
+   * still-running agent or spawns a fresh one that reloads the session).
+   */
+  closeClients() {
+    for (const ws of this.clients) {
+      try { if ((ws as any).readyState === 1) ws.close(); } catch {}
+    }
+    this.clients.clear();
   }
 
   /** Restart the agent with a new session path. Detaches all clients first. */
@@ -109,6 +185,7 @@ export class PooledAgent {
     this.agent.setExitHandler((code) => {
       console.log(`[pool] agent ${this.agentKey} exited (code ${code})`);
       this.broadcast({ type: "error", message: `PI agent exited (code ${code}).` });
+      this.closeClients();
       agentPool.delete(this.agentKey);
     });
     await this.agent.start();
@@ -146,6 +223,8 @@ export class PooledAgent {
   /** Explicitly stop the agent (e.g., server shutdown) */
   async stop() {
     this.cancelIdleTimer();
+    this.cancelWatchdog();
+    this.pendingDialog = null;
     await this.agent.stop();
     agentPool.delete(this.agentKey);
   }
@@ -171,28 +250,122 @@ export class PooledAgent {
   private handleAgentMessage(msg: WSServerMessage) {
     this.noteActivity(msg);
     this.broadcast(msg);
-    if (projectSessionsChangedHandler) {
-      const cwd = agentKeyCwd(this.agentKey);
-      if (!cwd) return;
+    // #LIVE: remember the last *blocking* extension_ui_request so we can
+    // replay it to a client that reconnects after a refresh/leave. PI blocks
+    // on these until answered; losing the only client that saw the request
+    // would otherwise wedge the run forever.
+    if (msg.type === "extension_ui_request") {
+      const method = (msg as any).ui?.method;
+      if (["select", "confirm", "input", "editor"].includes(method)) {
+        this.pendingDialog = msg;
+      }
+    }
+    // #REATTACH: rekey UNCONDITIONALLY (not gated on the sessions-changed
+    // handler being registered) — the rekey is what keeps a reconnect
+    // attached to the right agent; depending on the UI-refresh handler for it
+    // would silently desync the keys if that handler were ever null.
+    const cwd = agentKeyCwd(this.agentKey);
+    if (cwd) {
       if (msg.type === "state") {
         const sessionFile = (msg as any).data?.sessionFile;
         if (this.isPendingNewSession && sessionFile) {
           this.isPendingNewSession = false;
-          projectSessionsChangedHandler(cwd);
+          // #4: Rekey the server pool from the pending `__new__:<uuid>` key to
+          // the resolved `${cwd}::${sessionFile}` so a client reconnecting
+          // after resolution reattaches to THIS agent instead of spawning a
+          // fresh new-session agent.
+          this.rekeyToSessionPath(cwd, sessionFile);
+          projectSessionsChangedHandler?.(cwd);
+        } else if (this.isPendingCloneRekey) {
+          // #CLONE: PI rebinding to the forked session reports it via get_state.
+          // Rekey to the NEW path the moment it differs from our current key so a
+          // reconnect lands on THIS agent (PI is now live on the forked file).
+          const currentPath = agentKeySessionPath(this.agentKey);
+          if (sessionFile && sessionFile !== currentPath) {
+            this.isPendingCloneRekey = false;
+            this.rekeyToSessionPath(cwd, sessionFile);
+            projectSessionsChangedHandler?.(cwd);
+          }
         }
+      } else if (msg.type === "session_loaded") {
+        // #REATTACH: switch_session / load_session switch the PI process to a
+        // DIFFERENT session in-place (used by the clone flow). The client
+        // rekeys its pool entry to the loaded filePath (App.handleSessionLoaded),
+        // so the SERVER must rekey too — otherwise the keys desync and a
+        // reconnect spawns a fresh agent, orphaning this in-process-switched PI
+        // (and running two PIs on the cloned session file -> corruption).
+        const loadedPath = (msg as any).session?.filePath;
+        if (loadedPath) this.rekeyToSessionPath(cwd, loadedPath);
+        projectSessionsChangedHandler?.(cwd);
+      } else if (msg.type === "clone_result") {
+        // #CLONE: PI forks to a new session file async and never reports the path;
+        // arm the poll so a reconnect lands on THIS agent (see rekeyAfterClone).
+        // ponytail: !cancelled gates it (a failed clone just polls harmlessly; the
+        // state branch's sessionFile!==currentPath guard blocks any spurious rekey).
+        if (!msg.cancelled) this.rekeyAfterClone();
       } else if (msg.type === "session_name_changed" || msg.type === "agent_end") {
-        projectSessionsChangedHandler(cwd);
+        projectSessionsChangedHandler?.(cwd);
       }
     }
   }
 
+  /**
+   * Rekey this agent's pool entry from its current key to
+   * `${cwd}::${normalizeSessionPath(sessionPath)}`. Used for new-session
+   * resolution (state.sessionFile) AND in-process session switches
+   * (session_loaded from switch_session/load_session). Keeps wsToAgent in
+   * sync via the rekey handler so in-flight client sends keep routing here.
+   * No-op if the key is unchanged; refuses to clobber a different agent at
+   * the target key (rekeyAgent returns null). #REATTACH
+   */
+  private rekeyToSessionPath(cwd: string, sessionPath: string) {
+    const oldKey = this.agentKey;
+    const newKey = buildAgentKey(cwd, sessionPath);
+    if (newKey === oldKey) return;
+    if (rekeyAgent(oldKey, newKey)) {
+      this.rekeyHandler?.(oldKey, newKey);
+    }
+  }
+
+  /**
+   * #CLONE: after a successful clone, PI asynchronously rebinds to the forked
+   * session file. It never pushes the new path, so poll get_state a few times
+   * and rekey to the first sessionFile that differs from our current key.
+   * The actual rekey happens in handleAgentMessage (state branch) via the
+   * isPendingCloneRekey flag; this method just arms the flag and drives the
+   * polls. Bounded: stops after a few attempts so a stuck PI can't loop us.
+   */
+  private rekeyAfterClone() {
+    if (this.isPendingCloneRekey) return;
+    this.isPendingCloneRekey = true;
+    // PI's rebind is async — the first get_state may still report the OLD path,
+    // so retry a handful of times with short delays until the forked path lands.
+    let attempts = 0;
+    const poll = () => {
+      if (!this.isPendingCloneRekey || attempts++ >= 10) {
+        this.isPendingCloneRekey = false;
+        return;
+      }
+      this.agent.getState();
+      // Re-check shortly; if the state handler rekeyed it cleared the flag and
+      // we stop. Otherwise try again.
+      setTimeout(poll, 400);
+    };
+    setTimeout(poll, 200);
+  }
   private noteActivity(msg: WSServerMessage) {
     this.lastActivityAt = Date.now();
     if (msg.type === "agent_start") {
       this.streaming = true;
+      // #LIVE: begin watching for a wedged run (no activity + no clients).
+      this.startWatchdog();
     } else if (msg.type === "agent_end") {
       this.streaming = false;
       this.runningTools.clear();
+      // #LIVE: the run finished — any blocking dialog is moot now, and the
+      // watchdog has nothing left to watch.
+      this.pendingDialog = null;
+      this.cancelWatchdog();
       this.maybeStartIdleTimer();
     } else if (msg.type === "tool_start") {
       this.runningTools.add(msg.toolCallId);
@@ -234,6 +407,46 @@ export class PooledAgent {
       this.idleTimer = null;
     }
   }
+
+  // #LIVE: watchdog — reaps a PI process that is "streaming" but has gone
+  // silent with no clients attached. The idle timer can't catch this (it only
+  // arms when !isActive()); without the watchdog a hung run lingers in the
+  // pool forever, holding the session, and the only recovery is a server
+  // reboot. The watchdog self-cancels once the run goes idle or a client
+  // reattaches; if it goes stale it force-stops the agent.
+  private startWatchdog() {
+    this.cancelWatchdog();
+    // Tick at most once per minute, but no coarser than the stale window so a
+    // tiny test window still trips the watchdog promptly.
+    const tick = Math.min(WATCHDOG_TICK_MS, this.staleStreamingMs);
+    this.watchdogTimer = setInterval(() => {
+      const stale = Date.now() - this.lastActivityAt > this.staleStreamingMs;
+      if (stale && this.clients.size === 0 && this.isActive()) {
+        console.warn(`[pool] agent ${this.agentKey} wedged (streaming, no activity, no clients) — force-stopping`);
+        this.pendingDialog = null;
+        this.forceStopAndRemove();
+      }
+    }, tick);
+  }
+
+  private cancelWatchdog() {
+    if (this.watchdogTimer) {
+      clearInterval(this.watchdogTimer);
+      this.watchdogTimer = null;
+    }
+  }
+
+  // #LIVE: stop a possibly-unresponsive PI process and drop it from the
+  // pool. Uses tree-kill on the SIGKILL escalation so PI's own child
+  // processes (bash, dev servers, …) don't survive the kill and leak.
+  private async forceStopAndRemove() {
+    this.cancelWatchdog();
+    this.cancelIdleTimer();
+    try { await this.agent.stop(); } catch (err: any) {
+      console.error(`[pool] force-stop error for ${this.agentKey}:`, err.message);
+    }
+    agentPool.delete(this.agentKey);
+  }
 }
 
 // ─── Agent Pool ───
@@ -246,13 +459,33 @@ const agentPool = new Map<string, PooledAgent>();
 
 let projectSessionsChangedHandler: ((cwd: string) => void) | null = null;
 
-export function setProjectSessionsChangedHandler(handler: (cwd: string) => void) {
-  projectSessionsChangedHandler = handler;
+/**
+ * Register the project-sessions-changed handler. The handler may be async;
+ * we wrap it so a rejection can never become an unhandledRejection that
+ * crashes the whole server (and every other pooled agent with it). #5
+ */
+export function setProjectSessionsChangedHandler(handler: (cwd: string) => void | Promise<void>) {
+  projectSessionsChangedHandler = (cwd) => {
+    try {
+      Promise.resolve(handler(cwd)).catch(e => console.error('[sessions] handler rejected', e));
+    } catch (e) {
+      console.error('[sessions] handler threw', e);
+    }
+  };
 }
 
 function agentKeyCwd(key: string): string | null {
   const parts = key.split("::");
   return parts[0] || null;
+}
+// #CLONE: the sessionPath half of a pool key (everything after the first `::`).
+// Used to detect when a post-clone get_state reports a DIFFERENT path than the
+// one we're keyed under, so we can rekey to the forked session.
+function agentKeySessionPath(key: string): string | null {
+  const idx = key.indexOf("::");
+  if (idx < 0) return null;
+  const rest = key.slice(idx + 2);
+  return rest.startsWith("__new__") ? null : rest;
 }
 
 export function broadcastToProjectClients(cwd: string, msg: WSServerMessage) {
@@ -265,22 +498,66 @@ export function broadcastToProjectClients(cwd: string, msg: WSServerMessage) {
   }
 }
 
-/** Build the pool key for a (cwd, sessionPath) pair. */
-export function buildAgentKey(cwd: string, sessionPath: string | null | undefined): string {
-  return `${cwd}::${sessionPath || "__new__"}`;
+/**
+ * Build the pool key for a (cwd, sessionPath) pair.
+ * ponytail: pending-new-session keys embed newSessionId so two concurrent
+ * new sessions in the same project don't collapse onto one `__new__` agent.
+ * On resolution the agent is rekeyed to the real sessionFile path (see
+ * handleAgentMessage).
+ * #REATTACH: sessionPath is normalized (trailing slash / `//` / `./` collapsed)
+ * so a client that reconnects with a path-equivalent string reattaches to the
+ * SAME agent instead of spawning a duplicate that orphans the live one.
+ */
+export function buildAgentKey(cwd: string, sessionPath: string | null | undefined, newSessionId?: string | null): string {
+  if (sessionPath) return `${cwd}::${normalizeSessionPath(sessionPath)}`;
+  return `${cwd}::__new__${newSessionId ? `:${newSessionId}` : ""}`;
 }
+
+/** Normalize a sessionPath for pool keying: collapse `//`, `./`, resolve `..`,
+ * strip trailing slashes. Two path-equivalent strings must produce the same
+ * key so a reconnect always finds the existing agent (#REATTACH). */
+function normalizeSessionPath(p: string): string {
+  // path.normalize handles `//`, `./`, `../`, redundant segments; then drop any
+  // trailing slash it leaves behind so `/a/b.json` and `/a/b.json/` collide.
+  return normalize(p).replace(/\/+$/, "") || p;
+}
+
+/** Pull the <uuid> out of a pending `__new__:<uuid>` key (or null). */
+function extractNewSessionId(key: string): string | null {
+  const i = key.indexOf("__new__:");
+  return i === -1 ? null : key.slice(i + "__new__:".length);
+}
+
 
 export function getOrCreateAgent(
   cwd: string,
   sessionPath: string | null,
+  newSessionId?: string | null,
   provider?: string,
   model?: string,
+  // ponytail: test injection — lets tests drive the real module pool with a
+  // FakeAgent instead of spawning the `pi` binary. Defaults to the real PIAgent.
+  createAgent?: (options: PIAgentOptions) => IPIAgent,
 ): { agent: PooledAgent; isNew: boolean } {
-  const key = buildAgentKey(cwd, sessionPath);
+  const key = buildAgentKey(cwd, sessionPath, newSessionId);
   const existing = agentPool.get(key);
   if (existing) {
     console.log(`[pool] reusing existing agent ${key} (${existing.clientCount} clients)`);
     return { agent: existing, isNew: false };
+  }
+
+  // #REATTACH: a pending new session may have already resolved and been rekeyed
+  // from `__new__:<uuid>` to its real sessionFile. A client whose WS dropped
+  // before it processed the rekey will reconnect with the ORIGINAL newSessionId;
+  // without this reverse lookup it would spawn a 2nd agent and orphan the live
+  // one. Scan is O(pool size) — small, and only hit on the rare stale reconnect.
+  if (!sessionPath && newSessionId) {
+    for (const a of agentPool.values()) {
+      if (a.originalNewSessionId === newSessionId) {
+        console.log(`[pool] reattaching to rekeyed agent by newSessionId=${newSessionId} -> ${a.getKey()}`);
+        return { agent: a, isNew: false };
+      }
+    }
   }
 
   console.log(`[pool] creating new agent ${key}`);
@@ -289,7 +566,7 @@ export function getOrCreateAgent(
     sessionPath: sessionPath || undefined,
     provider: provider || undefined,
     model: model || undefined,
-  });
+  }, createAgent);
   agentPool.set(key, pooled);
   return { agent: pooled, isNew: true };
 }
@@ -310,9 +587,36 @@ export function detachFromAgent(agentKey: string, ws: ServerWebSocket) {
   if (agent) agent.detach(ws);
 }
 
-/** Delete an agent from the pool (#12: for cleanup on start failure) */
+/**
+ * Delete an agent from the pool AND stop its underlying PI process.
+ * #REATTACH: previously this only removed the pool entry without stopping PI,
+ * leaving a live PI process with no pool entry — the client could NEVER
+ * reattach (a reconnect would spawn a duplicate). Now it stops the agent so
+ * no orphaned PI lingers. Callers: start-failure cleanup, project deletion.
+ */
 export function deleteFromPool(agentKey: string) {
+  const agent = agentPool.get(agentKey);
   agentPool.delete(agentKey);
+  if (agent) {
+    // Fire-and-forget the async stop; the pool entry is already gone so a
+    // reconnect won't reuse it. Stopping kills the PI tree (tree-kill).
+    agent.stop().catch((e) => console.error(`[pool] deleteFromPool stop error for ${agentKey}:`, e));
+  }
+}
+
+/** Stop every agent whose key starts with `${cwd}::` (project deletion).
+ * #REATTACH: project deletion previously called deleteFromPool(project.path)
+ * with the BARE cwd, but keys are `${cwd}::${sessionPath}` — so it matched
+ * nothing and left every agent for the project running in the pool (and its PI
+ * processes alive). This stops them all cleanly. */
+export function stopAgentsForCwd(cwd: string) {
+  const prefix = `${cwd}::`;
+  for (const [key, agent] of Array.from(agentPool.entries())) {
+    if (key.startsWith(prefix)) {
+      agentPool.delete(key);
+      agent.stop().catch((e) => console.error(`[pool] stopAgentsForCwd stop error for ${key}:`, e));
+    }
+  }
 }
 
 /**
@@ -345,9 +649,17 @@ export function getPoolStats() {
 }
 
 /** Stop all agents (for graceful shutdown) */
+/** Stop all agents (for graceful shutdown) */
 export async function stopAllAgents() {
   const promises = Array.from(agentPool.values()).map(a => a.stop());
   await Promise.all(promises);
+}
+
+// ponytail: test-only escape hatch so the pool's module-level state can be
+// reset between tests. Not for production use.
+export function _resetPoolForTesting() {
+  for (const a of agentPool.values()) { try { a.closeClients(); } catch {} }
+  agentPool.clear();
 }
 
 // ─── PIAgent (internal, wraps PI RPC process) ───
@@ -521,6 +833,7 @@ class PIAgent {
     const handler = this.onMessage;
     if (!handler) return;
 
+
     try {
       switch (event.type) {
         case "agent_start":
@@ -675,9 +988,10 @@ class PIAgent {
         case "switch_session":
           if (event.data && !event.data.cancelled) handler({ type: "session_loaded", session: event.data });
           break;
-        case "clone":
+        case "clone": {
           handler({ type: "clone_result", cancelled: event.data?.cancelled || false, sessionPath: event.data?.sessionPath });
           break;
+        }
         case "export_html":
           handler({ type: "export_html_result", path: event.data?.path || "" });
           break;
@@ -768,8 +1082,14 @@ class PIAgent {
       } catch {}
       await new Promise(r => setTimeout(r, 300));
       try {
-        if (this.proc && !this.proc.killed) {
-          this.proc.kill("SIGKILL");
+        if (this.proc && !this.proc.killed && this.proc.pid) {
+          // #LIVE: tree-kill the whole process group on the SIGKILL escalation
+          // so PI's own children (bash, dev servers, …) don't survive and
+          // leak — a leftover child holding the session file / port is what
+          // makes a restart wedge and "require a reboot".
+          await new Promise<void>((resolve) => {
+            treeKill(this.proc!.pid!, "SIGKILL", () => resolve());
+          });
         }
       } catch {}
       this.proc = null;

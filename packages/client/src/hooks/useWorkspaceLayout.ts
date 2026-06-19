@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { WorkspaceLayout, WorkspacePanelKind, WorkspaceRegionId, WorkspaceRegionMode } from "@pi-web/shared";
 
 const REGION_IDS: WorkspaceRegionId[] = ["left", "center", "right", "top", "bottom"];
-const PANEL_IDS: WorkspacePanelKind[] = ["channels", "chat", "terminal", "preview", "git", "files", "extensions", "skills", "rail"];
+const PANEL_IDS: WorkspacePanelKind[] = ["channels", "chat", "terminal", "preview", "git", "files", "extensions", "skills", "subagents", "rail"];
 
 const DEFAULT_REGIONS: WorkspaceLayout["regions"] = [
   { id: "left", size: 352, mode: "split" },
@@ -21,6 +21,7 @@ const DEFAULT_PANELS: WorkspaceLayout["panels"] = [
   { id: "files", region: "right", order: 2, size: 100 },
   { id: "extensions", region: "right", order: 3, size: 100 },
   { id: "skills", region: "right", order: 4, size: 100 },
+  { id: "subagents", region: "right", order: 5, size: 100 },
 ];
 
 type DropPlacement = "tab" | "split-left" | "split-right" | "split-up" | "split-down";

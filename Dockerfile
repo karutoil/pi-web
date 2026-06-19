@@ -1,7 +1,12 @@
 FROM oven/bun:1.2
 
-# Install git, bash, ripgrep, and networking tools for pi agents, terminals, and search
-RUN apt-get update && apt-get install -y git bash lsof procps iproute2 ripgrep && rm -rf /var/lib/apt/lists/*
+# Install tools for pi agents, terminals, search, and git over HTTPS/SSH.
+# ca-certificates + openssh-client are pulled in transitively by git today,
+# but listed explicitly so HTTPS clone / git@ / ssh:// keep working if that
+# dependency ever changes. curl covers pi's install.sh and common dev workflows.
+RUN apt-get update && apt-get install -y \
+      git ca-certificates openssh-client curl bash lsof procps iproute2 ripgrep \
+    && rm -rf /var/lib/apt/lists/*
 
 # The bundled @earendil-works/pi-coding-agent dependency provides a `pi` CLI shim
 # with a `#!/usr/bin/env node` shebang. Make the image self-contained by

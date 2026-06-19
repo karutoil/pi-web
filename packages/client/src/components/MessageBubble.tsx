@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSanitize from "rehype-sanitize";
@@ -27,7 +27,7 @@ interface MessageBubbleProps {
    * Copy the entire turn (last user message → final assistant response) as
    * raw markdown. Parent owns the turn context.
    */
-  onCopyTurn?: () => void;
+  onCopyTurn?: (msg: ChatMessage) => void;
 }
 
 function toolAccentKind(name?: string): string {
@@ -126,7 +126,7 @@ function TextWithSkills({ text, isStreaming }: { text: string; isStreaming?: boo
   );
 }
 
-export function MessageBubble({ message, showThinking, toolResultsMap, inlineToolCallIds, runningTools, isHistorical, isStreaming, entryId, onFork, onCopyTurn }: MessageBubbleProps) {
+function MessageBubbleImpl({ message, showThinking, toolResultsMap, inlineToolCallIds, runningTools, isHistorical, isStreaming, entryId, onFork, onCopyTurn }: MessageBubbleProps) {
   const role = message.role;
   const isUser = role === "user";
   const isAssistant = role === "assistant";
@@ -246,7 +246,7 @@ export function MessageBubble({ message, showThinking, toolResultsMap, inlineToo
             label={ctxMenu.copied === "turn" ? "Copied ✓" : "Copy entire turn"}
             icon={<Icon name="copy-join" size={10} />}
             onClick={() => {
-              onCopyTurn?.();
+              onCopyTurn?.(message);
               flashCopied("turn");
             }}
           />
@@ -255,6 +255,10 @@ export function MessageBubble({ message, showThinking, toolResultsMap, inlineToo
     </div>
   );
 }
+
+// Memoized so historical bubbles skip re-render during streaming. Stable
+// props (memoized maps + stable onCopyTurn) keep this effective.
+export const MessageBubble = memo(MessageBubbleImpl);
 
 function UserBubble({ message, entryId, onFork }: { message: ChatMessage; entryId?: string; onFork?: (id: string) => void }) {
   const text = extractTextContent(message.content);
