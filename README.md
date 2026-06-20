@@ -14,7 +14,8 @@ Built with **Bun + Hono + React 19 + Tailwind CSS v4** and PI's native RPC mode 
 - **Markdown Rendering** — Full GFM with code highlighting
 - **Steer & Abort** — Steer conversations mid-stream or abort long operations
 - **Historical Sessions** — Load and browse past sessions with full message history
-
+- **Usage Tracking** — Aggregate token/cost roll-up across all sessions, per project and per model, in Settings → Usage
+- **Full PI Settings UI** — Structured editor for every PI settings.json option (model, compaction, retry, resources, subagents, …) plus a raw JSON escape hatch
 ## Tech Stack
 
 | Layer    | Technology                    |
@@ -80,7 +81,7 @@ The cross-platform source runs natively on Windows with Bun. A few host-side wor
 
 The following tools must be available on the host system or inside the image:
 
-- **`pi`** — the PI coding agent CLI (`pi --mode rpc`). The server spawns this process for every chat session. The packaged Docker image bundles it via the `@earendil-works/pi-coding-agent` dependency and makes `/app/node_modules/.bin/pi` discoverable, so no host installation is required.
+- **`pi`** — the PI coding agent. The server drives PI's SDK (`@earendil-works/pi-coding-agent`) **in-process** via `AgentSession` + `AgentSessionRuntime` — no subprocess, no stdin/stdout JSONL. The Docker image bundles the dependency so no host installation is required.
 - **`git`** — required for all Git panels and project status.
 - **`ripgrep` (`rg`)** — required by the in-app **Find in files** search feature.
 - **`bash`** (or `cmd.exe` on Windows) — required for the in-app terminal and for PI's bash tool.
@@ -90,12 +91,12 @@ The packaged Docker image installs all of these automatically.
 ## Architecture
 
 ```
-Browser (React) ←── HTTP/WS ──→ Bun + Hono Server ←── stdin/stdout (JSONL) ──→ pi --mode rpc
-     │                                    │                                              │
-     │  /api/projects                    │  SQLite (.pi-web.db)                         │
-     │  /api/projects/:id/sessions       │  PI session files (~/.pi/agent/sessions/)   │
-     │  /api/sessions/detail             │                                              │
-     │  /ws/chat (WebSocket)             │  PIAgent (spawns pi process)                │
+Browser (React) ←── HTTP/WS ──→ Bun + Hono Server ── in-process SDK ──→ AgentSession
+     │                                    │                                (AgentSessionRuntime)
+     │  /api/projects                    │  SQLite (.pi-web.db)             │
+     │  /api/projects/:id/sessions       │  PI session files (~/.pi/agent/)  │
+     │  /api/sessions/detail             │                                  │
+     │  /ws (WebSocket)                 │  SDKAgent (AgentSession + runtime)│
 ```
 
 ## API Endpoints
@@ -107,6 +108,7 @@ Browser (React) ←── HTTP/WS ──→ Bun + Hono Server ←── stdin/st
 | POST   | `/api/projects`                 | Add a project directory      |
 | DELETE | `/api/projects/:id`             | Remove a project             |
 | GET    | `/api/projects/:id/sessions`    | List sessions for a project  |
+| GET    | `/api/usage`                    | Aggregate token/cost usage across all sessions |
 | GET    | `/api/sessions/detail?path=...` | Get session detail (entries) |
 | WS     | `/ws/chat`                      | Real-time chat WebSocket     |
 

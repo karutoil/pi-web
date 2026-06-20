@@ -53,6 +53,27 @@ describe("App — static regression guard for session-switch bug", () => {
     expect(match, "handleNewSession not found in App.tsx").toBeTruthy();
 
     const body = match![0];
+    // The bug pattern: any `ws.newSession(` call inside handleNewSession
     expect(body).not.toMatch(/ws\.newSession\s*\(/);
+  });
+
+  // REGRESSION GUARD for the "refresh loses the live PI session" bug.
+  //
+  // The original persistence effect had an `else if (!activeSession)` branch
+  // that cleared sessionStorage on the INITIAL MOUNT — before the restore
+  // effect could read it. So a refresh landed the user on the empty projects
+  // view instead of reattaching to the still-running PI. The fix gates the
+  // clear on `restoreAttemptedRef.current` so the mount window preserves the
+  // seed. This guard asserts that gate stays in place.
+  it("persistence effect does NOT clear sessionStorage before restore has run", () => {
+    // Find the LIVE_SESSION persistence useEffect.
+    const match = appSrc.match(/\/\/\s*#LIVE:[\s\S]*?useEffect\(\(\)\s*=>\s*\{[\s\S]*?sessionStorage[\s\S]*?\},\s*\[view,\s*selectedProject,\s*activeSession\]\);/);
+    expect(match, "LIVE_SESSION persistence effect not found").toBeTruthy();
+    const body = match![0];
+    // The clear branch must be gated on restoreAttemptedRef.current — the
+    // old `else if (!activeSession)` (unguarded) is the bug.
+    expect(body).toMatch(/restoreAttemptedRef\.current/);
+    // The old buggy pattern must be gone: an unguarded `!activeSession` clear.
+    expect(body).not.toMatch(/else\s+if\s*\(!activeSession\)\s*\{[^}]*removeItem/);
   });
 });

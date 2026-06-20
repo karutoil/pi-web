@@ -3466,13 +3466,21 @@ code {
   align-items: flex-start;
   gap: 0.65rem;
   min-width: 0;
-  animation: fade-in-up 0.28s ease-out both;
   /* ponytail: skip layout/paint for off-screen messages so thousands of DOM
      nodes stay cheap. All history is rendered (no button, no limit); the
      browser only paints what's visible. intrinsic-size keeps the scrollbar
-     stable when a row hasn't been rendered yet. */
+     stable when a row hasn't been rendered yet.
+     Animation is scoped to :not([data-historical]) below so hundreds of
+     history rows don't animate at once on load (major jank source). */
   content-visibility: auto;
   contain-intrinsic-size: auto 8rem;
+}
+
+/* Animate only freshly appended (live/streaming) rows. Historical rows
+   render instantly — animating them all on session load is what made long
+   chats janky on first open. */
+.conversation-message-row:not([data-historical="true"]) {
+  animation: fade-in-up 0.28s ease-out both;
 }
 
 .conversation-message-row[data-user="true"] {
@@ -3845,13 +3853,18 @@ code {
 }
 
 .conversation-jump-wrap {
-  position: sticky;
+  /* Out of flow so appearing/disappearing can't resize the scrollbar
+     (sticky was in-flow and toggled scrollHeight — thumb flickered).
+     .conversation-scroll is position: relative, so absolute pins to the
+     visible bottom of the scroll region and ignores content scroll. */
+  position: absolute;
+  left: 0;
+  right: 0;
   bottom: 0.75rem;
   z-index: 10;
   display: flex;
   justify-content: center;
   pointer-events: none;
-  margin-top: -2.5rem;
 }
 
 .conversation-live-dot {
@@ -9032,6 +9045,97 @@ code {
   background: var(--color-ink-800);
 }
 
+.files-context-menu-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.files-context-menu-item:disabled:hover {
+  background: transparent;
+}
+
+.files-context-menu-item svg {
+  display: inline-block;
+  vertical-align: -2px;
+  margin-right: 6px;
+}
+
+.files-context-menu-separator {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--color-ink-800);
+}
+
+.files-context-menu-item-danger {
+  color: var(--color-rose-400);
+}
+
+.files-context-menu-item-danger:hover {
+  background: color-mix(in srgb, var(--color-rose-500) 12%, var(--color-ink-900));
+}
+
+/* Inline rename input rendered by @pierre/trees */
+.files-panel-tree [data-item-rename-input] {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 1px 4px;
+  border: 1px solid var(--files-accent);
+  border-radius: 3px;
+  background: var(--files-bg);
+  color: var(--files-text);
+  outline: none;
+  width: 100%;
+  min-width: 80px;
+}
+
+.files-panel-toast {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 90%;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--color-ink-900);
+  border: 1px solid var(--color-rose-500);
+  color: var(--color-rose-200);
+  font-size: 12px;
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--color-ink-950) 60%, transparent);
+  animation: files-toast-in 0.15s ease-out;
+}
+
+.files-panel-toast span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.files-panel-toast-close {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.files-panel-toast-close:hover { opacity: 1; }
+
+@keyframes files-toast-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
 /* ─── Extensions Panel ─── */
 
 .extensions-panel {
@@ -10356,7 +10460,10 @@ button.pkg-name-clickable:focus-visible {
 /* ── Scroll region + message column ────────────────────────────────────── */
 .conversation-scroll {
   padding: 1.5rem 1rem 1rem;
-  scroll-behavior: smooth;
+  /* ponytail: no scroll-behavior: smooth — programmatic scrollTop (auto-
+     scroll pin + jump-to-bottom) must be instant. Smooth + content-
+     visibility height changes made the view shoot up and down during
+     streaming and made jump-to-bottom land short. */
 }
 
 .conversation-message-stack {
@@ -10370,6 +10477,10 @@ button.pkg-name-clickable:focus-visible {
 .conversation-message-row {
   gap: 0.75rem;
   padding: 0.35rem 0;
+}
+
+/* Animate only freshly appended rows; history renders instantly. */
+.conversation-message-row:not([data-historical="true"]) {
   animation: fade-in-up 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 

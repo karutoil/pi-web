@@ -5,12 +5,12 @@ import type { ServerWebSocket } from "bun";
 import { join, basename, resolve, normalize, relative, isAbsolute, delimiter, dirname } from "node:path";
 import { existsSync, statSync, lstatSync, readdirSync, realpathSync } from "node:fs";
 import type { Dirent } from "node:fs";
-import { readdir, stat, readFile, writeFile, unlink, rename as renameFs, mkdir } from "node:fs/promises";
+import { readdir, stat, readFile, writeFile, unlink, rename as renameFs, mkdir, rm } from "node:fs/promises";
 import { homedir, platform } from "node:os";
 
 import { addProject, removeProject, listProjects, getProject, touchProject, getLayout, saveLayout, deleteLayout, getProjectSettings, saveProjectSettings } from "./db";
 import { listSubagentRuns, interruptSubagentRun, readSubagentRunOutput, isSubagentExtensionAvailable } from "./pi-subagents";
-import { listProjectSessions, getSessionDetail } from "./pi-sessions";
+import { listProjectSessions, getSessionDetail, buildUsageSummary, computeProjectUsage } from "./pi-sessions";
 import { buildSessionHtmlPretty } from "./sessionExportPretty";
 import { getOrCreateAgent, stopAllAgents, getPoolStats, lookupAgent, detachFromAgent, deleteFromPool, stopAgentsForCwd, setProjectSessionsChangedHandler, broadcastToProjectClients } from "./pi-agent";
 import { createTerminal, getTerminal, listTerminals, killTerminal } from "./pi-terminal";
@@ -52,7 +52,7 @@ function checkWriteRateLimit(projectId: string): boolean {
 
 const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>();
 
-const app = new Hono();
+export const app = new Hono();
 
 app.onError((err, c) => {
   console.error("[server] unhandled error", err);
@@ -248,7 +248,14 @@ function normalizeLayout(input: unknown): WorkspaceLayout {
 // List projects
 app.get("/api/projects", async (c) => {
   const projects = listProjects();
-  return c.json({ projects });
+  // Enrich with real session/token/cost totals (index cache keeps this cheap).
+  const enriched = await Promise.all(projects.map(async p => {
+    let sessions: import("@pi-web/shared").SessionSummary[] = [];
+    try { sessions = await listProjectSessions(p.path); } catch {}
+    const u = computeProjectUsage(sessions);
+    return { ...p, sessionCount: u.sessionCount, totalTokens: u.totalTokens, totalCost: u.totalCost };
+  }));
+  return c.json({ projects: enriched });
 });
 
 // Add project (#43: check isDirectory)
@@ -360,7 +367,10 @@ app.get("/api/projects/:id/favicon", async (c) => {
   const project = getProject(c.req.param("id"));
   if (!project) return c.json({ error: "Project not found" }, 404);
 
-  const base = realpathSync(project.path);
+  // Stale projects (directory deleted after being added) should 404, not 500.
+  let base: string;
+  try { base = realpathSync(project.path); }
+  catch { return c.json({ dataUrl: null }); }
   const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build", ".next", "target", "__pycache__", ".pi", ".cache", ".bun", ".turbo"]);
   const MAX_DEPTH = 8;
   // prefer favicon.svg, fall back to favicon.ico anywhere in the project
@@ -407,6 +417,13 @@ app.get("/api/projects/:id/sessions", async (c) => {
   
   const sessions = await listProjectSessions(project.path);
   return c.json({ sessions, total: sessions.length });
+});
+
+// Aggregate usage across all known projects/sessions
+app.get("/api/usage", async (c) => {
+  const projects = listProjects().map(p => ({ id: p.id, name: p.name, path: p.path }));
+  const summary = await buildUsageSummary(projects);
+  return c.json(summary);
 });
 
 // Get session detail (#2: validate path)
@@ -647,6 +664,88 @@ app.put("/api/fs/write", async (c) => {
   }
 });
 
+// Resolve and validate a path inside a project. Returns the real, safe
+// absolute path or throws with a message suitable for HTTP 400/403.
+function resolveProjectPath(projectId: string, rawPath: string, opts: { mustExist?: boolean } = {}): string {
+  const project = getProject(projectId);
+  if (!project) throw new Error("Project not found");
+  const projectBase = realpathSync(project.path);
+  const expanded = rawPath.startsWith("~") ? join(homedir(), rawPath.slice(1)) : rawPath;
+  const resolved = isAbsolute(rawPath)
+    ? resolve(normalize(expanded))
+    : resolve(projectBase, normalize(expanded));
+  // Parent must be real and inside the project (blocks traversal + broken symlinks).
+  const realParent = realpathSync(join(resolved, ".."));
+  if (!isInside(projectBase, realParent)) {
+    throw new Error("Path is outside project directory");
+  }
+  let lstat;
+  try { lstat = lstatSync(resolved); } catch { lstat = null; }
+  if (lstat) {
+    const real = realpathSync(resolved);
+    if (!isInside(projectBase, real)) {
+      throw new Error("Path resolves outside project directory");
+    }
+    return real;
+  }
+  if (opts.mustExist) {
+    throw new Error("Path does not exist");
+  }
+  return resolved;
+}
+
+// Delete a file or directory (recursive for directories)
+app.delete("/api/fs/delete", async (c) => {
+  const { path: filePath, projectId } = await c.req.json();
+  if (typeof filePath !== "string" || !filePath) return c.json({ error: "path required" }, 400);
+  if (!projectId) return c.json({ error: "projectId required" }, 400);
+  try {
+    const safePath = resolveProjectPath(projectId, filePath, { mustExist: true });
+    await rm(safePath, { recursive: true, force: true });
+    return c.json({ success: true });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 403);
+  }
+});
+
+// Rename or move a file/folder. `destination` is the full target path.
+app.post("/api/fs/rename", async (c) => {
+  const { path: filePath, destination, projectId } = await c.req.json();
+  if (typeof filePath !== "string" || !filePath) return c.json({ error: "path required" }, 400);
+  if (typeof destination !== "string" || !destination) return c.json({ error: "destination required" }, 400);
+  if (!projectId) return c.json({ error: "projectId required" }, 400);
+  try {
+    const safeFrom = resolveProjectPath(projectId, filePath, { mustExist: true });
+    const safeTo = resolveProjectPath(projectId, destination);
+    if (safeFrom === safeTo) return c.json({ success: true, noop: true });
+    if (existsSync(safeTo)) return c.json({ error: "A file or folder with that name already exists" }, 409);
+    await renameFs(safeFrom, safeTo);
+    return c.json({ success: true });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 403);
+  }
+});
+
+// Create a new file or folder. `kind` selects which.
+app.post("/api/fs/create", async (c) => {
+  const { path: filePath, projectId, kind = "file" } = await c.req.json();
+  if (typeof filePath !== "string" || !filePath) return c.json({ error: "path required" }, 400);
+  if (!projectId) return c.json({ error: "projectId required" }, 400);
+  if (kind !== "file" && kind !== "folder") return c.json({ error: "kind must be 'file' or 'folder'" }, 400);
+  try {
+    const safePath = resolveProjectPath(projectId, filePath);
+    if (existsSync(safePath)) return c.json({ error: "A file or folder with that name already exists" }, 409);
+    if (kind === "folder") {
+      await mkdir(safePath, { recursive: true });
+    } else {
+      await mkdir(join(safePath, ".."), { recursive: true });
+      await writeFile(safePath, "", "utf-8");
+    }
+    return c.json({ success: true });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 403);
+  }
+});
 // ── Project-wide search ───────────────────────────────────
 app.get("/api/search", async (c) => {
   const projectId = c.req.query("projectId");
@@ -1235,7 +1334,7 @@ app.get("/api/fs/search-files", (c) => {
 });
 
 // Health
-app.get("/api/health", (c) => c.json({ status: "ok", time: Date.now(), pool: getPoolStats(), port: server.port }));
+app.get("/api/health", (c) => c.json({ status: "ok", time: Date.now(), pool: getPoolStats(), port: server?.port ?? null }));
 
 // ==================== PI config files ====================
 
@@ -2672,12 +2771,8 @@ setProjectSessionsChangedHandler(refreshProjectSessions);
 const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 0;
 const hostname = process.env.HOST || "127.0.0.1";
 
-const server = Bun.serve({
-  port,
-  hostname,
-  fetch: app.fetch,
-  websocket,
-});
+const server = import.meta.main ? Bun.serve({ port, hostname, fetch: app.fetch, websocket }) : null;
+if (server) {
 
 // Graceful shutdown — stop PI agents (so they flush session files) and previews.
 // #6: previously only previews were stopped, leaving PI children to be killed
@@ -2704,3 +2799,4 @@ process.on("uncaughtException", (err) => {
 });
 
 console.log(`PI Web server running at http://${hostname}:${server.port}`);
+}

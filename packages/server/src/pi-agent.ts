@@ -1,18 +1,30 @@
-import { spawn, type ChildProcess } from "node:child_process";
-import { join, delimiter, normalize } from "node:path";
-import { platform, homedir } from "node:os";
+import { normalize } from "node:path";
 import type { WSServerMessage } from "@pi-web/shared";
 import type { ServerWebSocket } from "bun";
-import treeKill from "tree-kill";
+import type { Model } from "@earendil-works/pi-ai";
+import {
+	AuthStorage,
+	ModelRegistry,
+	SessionManager,
+	createAgentSessionServices,
+	createAgentSessionFromServices,
+	createAgentSessionRuntime,
+	getAgentDir,
+	type AgentSession,
+	type AgentSessionEvent,
+	type AgentSessionRuntime,
+	type CreateAgentSessionRuntimeFactory,
+	type ExtensionUIContext,
+} from "@earendil-works/pi-coding-agent";
 
 // ─── Pooled Agent ───
 // Wraps a PIAgent with multi-client broadcast + idle cleanup.
 // Survives WebSocket disconnects — agents keep running until idle timeout.
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-// #LIVE: watchdog for wedged PI processes. A run that is "streaming" but has
+// #LIVE: watchdog for wedged agent runs. A run that is "streaming" but has
 // produced no message activity for this long AND has no clients is treated as
-// hung (e.g. PI blocked on an unanswered extension_ui_request whose client
+// hung (e.g. blocked on an unanswered extension_ui_request whose client
 // disconnected, or a stuck tool / hung model call). Left un-reaped it lingers
 // forever — the "server requires a reboot" failure mode. Force-stopped here.
 const STALE_STREAMING_MS = 10 * 60 * 1000; // 10 minutes
@@ -44,10 +56,10 @@ export class PooledAgent {
   private staleStreamingMs: number;
   private isPendingNewSession: boolean;
   // #CLONE: after a clone, PI rebinds to a new forked session file ASYNC and
-  // never notifies us of the new path (no pushed state, no session_start to
-  // subscribers, and clone_result carries no sessionPath). We poll get_state
-  // and rekey to whatever new sessionFile comes back. Cleared on first rekey
-  // or after the poll budget runs out.
+  // never notifies us of the new path. We poll get_state and rekey to whatever
+  // new sessionFile comes back. Cleared on first rekey or after the poll budget
+  // runs out. (SDK: switchSession/fork resolve the new path synchronously, so
+  // this stays as a safety net for the state-driven rekey path.)
   private isPendingCloneRekey: boolean = false;
   // #LIVE: the last *blocking* extension_ui_request (select/confirm/input/editor)
   // that PI is waiting on. Replayed to a reconnecting client on attach so a
@@ -79,7 +91,7 @@ export class PooledAgent {
   constructor(
     agentKey: string,
     options: PIAgentOptions,
-  createAgent: (options: PIAgentOptions) => IPIAgent = (opts) => new PIAgent(opts),
+  createAgent: (options: PIAgentOptions) => IPIAgent = (opts) => new SDKAgent(opts),
   idleTimeoutMs = IDLE_TIMEOUT_MS,
   // #LIVE: test seam for the watchdog window.
   staleStreamingMs = STALE_STREAMING_MS,
@@ -97,7 +109,7 @@ export class PooledAgent {
     // Forward agent messages to clients and track activity for keepalive
     this.agent.setHandler((msg) => this.handleAgentMessage(msg));
 
-    // Handle unexpected PI exit
+    // Handle unexpected agent failure
     this.agent.setExitHandler((code) => {
       console.log(`[pool] agent ${this.agentKey} exited (code ${code})`);
       this.broadcast({ type: "error", message: `PI agent exited (code ${code}).` });
@@ -106,7 +118,7 @@ export class PooledAgent {
       // the agent is gone from the pool — every subsequent send is silently
       // dropped and the user thinks they're talking to a live agent.
       this.closeClients();
-      // #LIVE: drop any orphaned dialog + stop the watchdog — the process is gone.
+      // #LIVE: drop any orphaned dialog + stop the watchdog — the agent is gone.
       this.pendingDialog = null;
       this.cancelWatchdog();
       // #REKEY-EXIT: delete by the CURRENT key (this.agentKey), not the closure
@@ -195,7 +207,7 @@ export class PooledAgent {
 
   /**
    * Send a `load_session` RPC to the running agent — let PI handle the
-   * in-process switch instead of killing the process. Use `restartWithSession`
+   * in-process switch instead of recreating the runtime. Use `restartWithSession`
    * for stale-extension-ctx recovery.
    */
   loadSession(sessionPath: string): void {
@@ -277,9 +289,9 @@ export class PooledAgent {
           this.rekeyToSessionPath(cwd, sessionFile);
           projectSessionsChangedHandler?.(cwd);
         } else if (this.isPendingCloneRekey) {
-          // #CLONE: PI rebinding to the forked session reports it via get_state.
+          // #CLONE: SDK rebinding to the forked session reports it via get_state.
           // Rekey to the NEW path the moment it differs from our current key so a
-          // reconnect lands on THIS agent (PI is now live on the forked file).
+          // reconnect lands on THIS agent (the SDK is now live on the forked file).
           const currentPath = agentKeySessionPath(this.agentKey);
           if (sessionFile && sessionFile !== currentPath) {
             this.isPendingCloneRekey = false;
@@ -288,21 +300,22 @@ export class PooledAgent {
           }
         }
       } else if (msg.type === "session_loaded") {
-        // #REATTACH: switch_session / load_session switch the PI process to a
+        // #REATTACH: switch_session / load_session switch the runtime to a
         // DIFFERENT session in-place (used by the clone flow). The client
         // rekeys its pool entry to the loaded filePath (App.handleSessionLoaded),
         // so the SERVER must rekey too — otherwise the keys desync and a
-        // reconnect spawns a fresh agent, orphaning this in-process-switched PI
-        // (and running two PIs on the cloned session file -> corruption).
+        // reconnect spawns a fresh agent, orphaning this in-process-switched
+        // runtime (and running two agents on the cloned session file -> corruption).
         const loadedPath = (msg as any).session?.filePath;
         if (loadedPath) this.rekeyToSessionPath(cwd, loadedPath);
         projectSessionsChangedHandler?.(cwd);
       } else if (msg.type === "clone_result") {
-        // #CLONE: PI forks to a new session file async and never reports the path;
-        // arm the poll so a reconnect lands on THIS agent (see rekeyAfterClone).
+        // #CLONE: clone forks to a new session file; the SDK resolves it but
+        // we still arm the poll as a safety net in case the state-driven
+        // rekey hasn't landed yet.
         // ponytail: !cancelled gates it (a failed clone just polls harmlessly; the
         // state branch's sessionFile!==currentPath guard blocks any spurious rekey).
-        if (!msg.cancelled) this.rekeyAfterClone();
+        if (!(msg as any).cancelled) this.rekeyAfterClone();
       } else if (msg.type === "session_name_changed" || msg.type === "agent_end") {
         projectSessionsChangedHandler?.(cwd);
       }
@@ -328,18 +341,17 @@ export class PooledAgent {
   }
 
   /**
-   * #CLONE: after a successful clone, PI asynchronously rebinds to the forked
-   * session file. It never pushes the new path, so poll get_state a few times
-   * and rekey to the first sessionFile that differs from our current key.
-   * The actual rekey happens in handleAgentMessage (state branch) via the
-   * isPendingCloneRekey flag; this method just arms the flag and drives the
-   * polls. Bounded: stops after a few attempts so a stuck PI can't loop us.
+   * #CLONE: after a successful clone, the SDK asynchronously rebinds to the
+   * forked session file. The state-driven rekey path (isPendingCloneRekey)
+   * catches it when get_state reports the new path; this method arms the flag
+   * and drives a few get_state polls in case the client never asks for state.
+   * Bounded: stops after a few attempts so a stuck session can't loop us.
    */
   private rekeyAfterClone() {
     if (this.isPendingCloneRekey) return;
     this.isPendingCloneRekey = true;
-    // PI's rebind is async — the first get_state may still report the OLD path,
-    // so retry a handful of times with short delays until the forked path lands.
+    // The SDK's rebind may land between events — retry a few times with short
+    // delays until the forked path lands in state.
     let attempts = 0;
     const poll = () => {
       if (!this.isPendingCloneRekey || attempts++ >= 10) {
@@ -408,7 +420,7 @@ export class PooledAgent {
     }
   }
 
-  // #LIVE: watchdog — reaps a PI process that is "streaming" but has gone
+  // #LIVE: watchdog — reaps an agent that is "streaming" but has gone
   // silent with no clients attached. The idle timer can't catch this (it only
   // arms when !isActive()); without the watchdog a hung run lingers in the
   // pool forever, holding the session, and the only recovery is a server
@@ -436,9 +448,10 @@ export class PooledAgent {
     }
   }
 
-  // #LIVE: stop a possibly-unresponsive PI process and drop it from the
-  // pool. Uses tree-kill on the SIGKILL escalation so PI's own child
-  // processes (bash, dev servers, …) don't survive the kill and leak.
+  // #LIVE: stop a possibly-unresponsive agent and drop it from the pool.
+  // The SDK session may spawn child processes (bash, dev servers, …); we
+  // tree-kill the tracked spawned-tool process tree on the escalation path so
+  // they don't survive the stop and leak.
   private async forceStopAndRemove() {
     this.cancelWatchdog();
     this.cancelIdleTimer();
@@ -536,7 +549,7 @@ export function getOrCreateAgent(
   provider?: string,
   model?: string,
   // ponytail: test injection — lets tests drive the real module pool with a
-  // FakeAgent instead of spawning the `pi` binary. Defaults to the real PIAgent.
+  // FakeAgent instead of constructing an SDK session. Defaults to the real SDKAgent.
   createAgent?: (options: PIAgentOptions) => IPIAgent,
 ): { agent: PooledAgent; isNew: boolean } {
   const key = buildAgentKey(cwd, sessionPath, newSessionId);
@@ -588,18 +601,18 @@ export function detachFromAgent(agentKey: string, ws: ServerWebSocket) {
 }
 
 /**
- * Delete an agent from the pool AND stop its underlying PI process.
- * #REATTACH: previously this only removed the pool entry without stopping PI,
- * leaving a live PI process with no pool entry — the client could NEVER
+ * Delete an agent from the pool AND stop its underlying session.
+ * #REATTACH: previously this only removed the pool entry without stopping the
+ * session, leaving a live session with no pool entry — the client could NEVER
  * reattach (a reconnect would spawn a duplicate). Now it stops the agent so
- * no orphaned PI lingers. Callers: start-failure cleanup, project deletion.
+ * no orphaned session lingers. Callers: start-failure cleanup, project deletion.
  */
 export function deleteFromPool(agentKey: string) {
   const agent = agentPool.get(agentKey);
   agentPool.delete(agentKey);
   if (agent) {
     // Fire-and-forget the async stop; the pool entry is already gone so a
-    // reconnect won't reuse it. Stopping kills the PI tree (tree-kill).
+    // reconnect won't reuse it.
     agent.stop().catch((e) => console.error(`[pool] deleteFromPool stop error for ${agentKey}:`, e));
   }
 }
@@ -607,8 +620,8 @@ export function deleteFromPool(agentKey: string) {
 /** Stop every agent whose key starts with `${cwd}::` (project deletion).
  * #REATTACH: project deletion previously called deleteFromPool(project.path)
  * with the BARE cwd, but keys are `${cwd}::${sessionPath}` — so it matched
- * nothing and left every agent for the project running in the pool (and its PI
- * processes alive). This stops them all cleanly. */
+ * nothing and left every agent for the project running in the pool. This stops
+ * them all cleanly. */
 export function stopAgentsForCwd(cwd: string) {
   const prefix = `${cwd}::`;
   for (const [key, agent] of Array.from(agentPool.entries())) {
@@ -649,7 +662,6 @@ export function getPoolStats() {
 }
 
 /** Stop all agents (for graceful shutdown) */
-/** Stop all agents (for graceful shutdown) */
 export async function stopAllAgents() {
   const promises = Array.from(agentPool.values()).map(a => a.stop());
   await Promise.all(promises);
@@ -662,39 +674,14 @@ export function _resetPoolForTesting() {
   agentPool.clear();
 }
 
-// ─── PIAgent (internal, wraps PI RPC process) ───
-
-function createJsonlReader(stream: NodeJS.ReadableStream, onLine: (line: string) => void) {
-  // #13: Accumulate raw Buffer chunks, split on 0x0A newline byte,
-  // then decode each complete line to UTF-8. This prevents split-encoding
-  // corruption when multi-byte UTF-8 characters span chunk boundaries.
-  let buffer = Buffer.alloc(0);
-  stream.on("data", (chunk: Buffer) => {
-    buffer = Buffer.concat([buffer, chunk]);
-    while (true) {
-      const idx = buffer.indexOf(0x0A); // newline byte
-      if (idx === -1) break;
-      let lineBuf = buffer.slice(0, idx);
-      buffer = buffer.slice(idx + 1);
-      // Strip trailing CR if present
-      if (lineBuf.length > 0 && lineBuf[lineBuf.length - 1] === 0x0D) {
-        lineBuf = lineBuf.slice(0, -1);
-      }
-      if (lineBuf.length > 0) {
-        onLine(lineBuf.toString("utf-8"));
-      }
-    }
-  });
-  stream.on("end", () => {
-    if (buffer.length > 0) {
-      let lineBuf = buffer;
-      if (lineBuf.length > 0 && lineBuf[lineBuf.length - 1] === 0x0D) {
-        lineBuf = lineBuf.slice(0, -1);
-      }
-      if (lineBuf.length > 0) onLine(lineBuf.toString("utf-8"));
-    }
-  });
-}
+// ─── SDKAgent (internal, wraps an in-process AgentSession + AgentSessionRuntime) ───
+//
+// Replaces the former `pi --mode rpc` subprocess wrapper. The server now
+// drives PI's SDK directly in-process: no stdin/stdout JSONL, no subprocess
+// management, no readline/U+2028 framing bug. AgentSession.subscribe gives us
+// typed events; AgentSessionRuntime gives atomic newSession/switchSession/
+// fork/clone that resolve the new sessionFile synchronously — eliminating the
+// get_state-polling and key-desync hacks the subprocess required.
 
 export interface PIAgentOptions {
   cwd: string;
@@ -703,153 +690,342 @@ export interface PIAgentOptions {
   provider?: string;
 }
 
-class PIAgent {
-  private proc: ChildProcess | null = null;
-  private sendFn: (msg: unknown) => void = () => {};
+// Dialog methods that block the agent until the client answers. Tracked for
+// replay-on-reconnect (see PooledAgent.pendingDialog).
+const BLOCKING_DIALOG_METHODS = new Set(["select", "confirm", "input", "editor"]);
+
+// ponytail: one shared AuthStorage/ModelRegistry/SettingsManager for the whole
+// process — credentials and custom models live in ~/.pi/agent. SDK reads the
+// same files the CLI does, so behavior is identical to `pi --mode rpc`.
+let sharedAuthStorage: ReturnType<typeof AuthStorage.create> | null = null;
+let sharedModelRegistry: ModelRegistry | null = null;
+function getSharedAuth() {
+  if (!sharedAuthStorage) sharedAuthStorage = AuthStorage.create();
+  return sharedAuthStorage;
+}
+function getSharedModelRegistry() {
+  if (!sharedModelRegistry) sharedModelRegistry = ModelRegistry.create(getSharedAuth());
+  return sharedModelRegistry;
+}
+
+export class SDKAgent implements IPIAgent {
   private onMessage: ((msg: WSServerMessage) => void) | null = null;
   private onExit: ((code: number | null) => void) | null = null;
-  private messageQueue: unknown[] = [];
-  private ready = false;
+  private runtime: AgentSessionRuntime | null = null;
+  private session: AgentSession | null = null;
+  private unsubscribe: (() => void) | null = null;
   private explicitlyStopped = false;
+  private started = false;
+  // Extension UI dialogs awaiting a client response, keyed by request id.
+  // Mirrors runRpcMode's pendingExtensionRequests. Fire-and-forget UI methods
+  // (notify/setStatus/...) are not tracked — they just broadcast.
+  private pendingDialogs = new Map<string, { resolve: (v: any) => void; reject: (e: any) => void; timer: Timer | null }>();
 
   constructor(private options: PIAgentOptions) {}
 
-  setHandler(handler: (msg: WSServerMessage) => void) {
-    this.onMessage = handler;
+  setHandler(handler: (msg: WSServerMessage) => void) { this.onMessage = handler; }
+  setExitHandler(handler: (code: number | null) => void) { this.onExit = handler; }
+  getOptions(): PIAgentOptions { return this.options; }
+
+  /** Build the runtime factory the SDK uses for newSession/switchSession/fork.
+   * Each replacement rebuilds cwd-bound services (resource loader, settings,
+   * model registry) for the effective cwd — same as the CLI. */
+  private buildRuntimeFactory(): CreateAgentSessionRuntimeFactory {
+    const opts = this.options;
+    return async ({ cwd, sessionManager, sessionStartEvent }) => {
+      const services = await createAgentSessionServices({
+        cwd,
+        agentDir: getAgentDir(),
+        authStorage: getSharedAuth(),
+        modelRegistry: getSharedModelRegistry(),
+      });
+      return {
+        ...(await createAgentSessionFromServices({
+          services,
+          sessionManager,
+          sessionStartEvent,
+        })),
+        services,
+        diagnostics: services.diagnostics,
+      };
+    };
   }
 
-  setExitHandler(handler: (code: number | null) => void) {
-    this.onExit = handler;
-  }
-
-  getOptions(): PIAgentOptions {
-    return this.options;
+  /** Resolve an initial model from the provider/model options. Returns undefined
+   * to let the SDK pick the default (restored from session, or first available).
+   * ponytail: uses only public registry APIs (find/getAvailable) instead of the
+   * non-exported parseModelPattern. Handles `provider/id`, bare ids, and bare
+   * provider names — enough for the server's --model/--provider params. */
+  private async resolveInitialModel(): Promise<Model<any> | undefined> {
+    const { provider, model } = this.options;
+    if (!provider && !model) return undefined;
+    const registry = getSharedModelRegistry();
+    const available = registry.getAvailable();
+    if (provider && model) {
+      // Exact provider/id lookup.
+      const exact = registry.find(provider, model);
+      if (exact) return exact;
+    }
+    if (model) {
+      // Bare id (possibly with a `:thinking` suffix the SDK ignores here —
+      // the CLI's thinking-from-pattern is handled by setThinkingLevel later).
+      const bare = model.split(":")[0];
+      const match = available.find((m) => m.id === bare || m.id === model);
+      if (match && (!provider || match.provider === provider)) return match;
+    }
+    if (provider) {
+      // Only provider given — pick the first available for that provider.
+      return available.find((m) => m.provider === provider);
+    }
+    return undefined;
   }
 
   async start(): Promise<void> {
-    if (this.proc) await this.stop();
+    if (this.started) return;
+    this.started = true;
     this.explicitlyStopped = false;
-
-    const args: string[] = ["--mode", "rpc"];
-    if (this.options.sessionPath) args.push("--session", this.options.sessionPath);
-    if (this.options.provider) args.push("--provider", this.options.provider);
-    if (this.options.model) args.push("--model", this.options.model);
-
-    // #88: Use process.env.HOME for envPath instead of hardcoded paths
-    const home = process.env.HOME || process.env.USERPROFILE || homedir();
-    const envPath = [
-      join(home, ".bun/bin"),
-      join(home, ".nvm/versions/node/v22.22.2/bin"),
-      ...(platform() === "win32" ? [] : ["/usr/local/bin", "/usr/bin", "/bin"]),
-      process.env.PATH || "",
-    ].join(delimiter);
-
-    const piBin = platform() === "win32" ? "pi.cmd" : "pi";
-
-    return new Promise<void>((resolve, reject) => {
-      try {
-        this.proc = spawn(piBin, args, {
-          cwd: this.options.cwd,
-          stdio: ["pipe", "pipe", "pipe"],
-          env: { ...process.env, PATH: envPath },
-          detached: false,
-        });
-      } catch (err: any) {
-        this.proc = null;
-        this.onMessage?.({ type: "error", message: `Failed to spawn PI: ${err.message}` });
-        reject(err);
-        return;
+    const { cwd, sessionPath } = this.options;
+    // `--session <path>` -> SessionManager.open; no path -> SessionManager.create (new).
+    // Same semantics as the CLI (dist/main.js).
+    const sessionManager = sessionPath
+      ? SessionManager.open(sessionPath)
+      : SessionManager.create(cwd);
+    const runtime = await createAgentSessionRuntime(this.buildRuntimeFactory(), {
+      cwd,
+      agentDir: getAgentDir(),
+      sessionManager,
+    });
+    this.runtime = runtime;
+    // Resolve + set initial model BEFORE binding extensions so the first prompt
+    // has a valid model (SDK throws if no model/auth when streaming starts).
+    const initialModel = await this.resolveInitialModel();
+    if (initialModel) {
+      try { await runtime.session.setModel(initialModel); } catch (err: any) {
+        // Non-fatal: SDK falls back to default/available. Surface the warning.
+        console.warn(`[pi] initial model set failed: ${err.message}`);
       }
+    }
+    await this.bindSession(runtime.session);
+  }
 
-      this.sendFn = (msg: unknown) => {
-        if (this.proc?.stdin?.writable && !this.proc.stdin.destroyed) {
-          try {
-            this.proc.stdin.write(JSON.stringify(msg) + "\n");
-          } catch {}
-        }
-      };
-
-      this.ready = true;
-      for (const msg of this.messageQueue) this.sendFn(msg);
-      this.messageQueue = [];
-
-      if (this.proc.stdout) {
-        this.proc.stdout.on("error", (err) => {
-          console.error("[pi stdout error]", err.message);
+  /** Bind to a session: subscribe to events, wire extension UI context. Used on
+   * initial start AND after runtime.newSession/switchSession/fork/clone. */
+  private async bindSession(session: AgentSession): Promise<void> {
+    // Tear down the previous binding if any.
+    this.unsubscribe?.();
+    this.session = session;
+    this.unsubscribe = session.subscribe((event) => this.handleEvent(event));
+    // Extension UI context: dialog methods block on a client response we track
+    // in pendingDialogs; fire-and-forget methods just broadcast. Mirrors
+    // runRpcMode's createExtensionUIContext.
+    await session.bindExtensions({
+      uiContext: this.createExtensionUIContext(),
+      onError: (err) => {
+        this.onMessage?.({
+          type: "extension_error",
+          extensionPath: err.extensionPath || "",
+          event: err.event || "",
+          error: err.error || "",
         });
-        createJsonlReader(this.proc.stdout, (line) => {
-          try {
-            const event = JSON.parse(line);
-            this.handleRPCEvent(event);
-          } catch {}
-        });
-      }
-
-      if (this.proc.stderr) {
-        this.proc.stderr.on("error", (err) => {
-          console.error("[pi stderr error]", err.message);
-        });
-        this.proc.stderr.on("data", (data: Buffer) => {
-          const text = data.toString("utf-8").trim();
-          if (text) console.error("[pi stderr]", text.slice(0, 500));
-        });
-      }
-
-      this.proc.on("error", (err: NodeJS.ErrnoException) => {
-        console.error("[pi] process error:", err.message);
-        if (err.code === "ENOENT") {
-          this.onMessage?.({ type: "error", message: "PI binary not found. Is PI installed?" });
-        } else {
-          this.onMessage?.({ type: "error", message: `PI process error: ${err.message}` });
-        }
-        this.cleanup();
-        reject(err);
-      });
-
-      this.proc.on("exit", (code, signal) => {
-        console.log(`[pi] exited code=${code} signal=${signal} explicitStop=${this.explicitlyStopped}`);
-        const wasExplicit = this.explicitlyStopped;
-        this.cleanup();
-
-        if (!wasExplicit && code !== 0 && code !== null) {
-          this.onMessage?.({ type: "error", message: `PI process exited with code ${code}.` });
-        }
-        if (!wasExplicit && this.onExit) {
-          this.onExit(code);
-        }
-      });
-
-      resolve();
+      },
     });
   }
 
-  private cleanup() {
-    this.proc = null;
-    this.ready = false;
-    this.sendFn = () => {};
+  private createExtensionUIContext(): ExtensionUIContext {
+    const self = this;
+    const handler = () => self.onMessage;
+    return {
+      async select(title, options, opts) {
+        return self.runDialog<string | undefined>(
+          { method: "select", title, options, timeout: opts?.timeout },
+          (r: any) => (r.cancelled ? undefined : r.value),
+          opts?.timeout,
+        );
+      },
+      async confirm(title, message, opts) {
+        return self.runDialog<boolean>(
+          { method: "confirm", title, message, timeout: opts?.timeout },
+          (r: any) => (r.cancelled ? false : !!r.confirmed),
+          opts?.timeout,
+        );
+      },
+      async input(title, placeholder, opts) {
+        return self.runDialog<string | undefined>(
+          { method: "input", title, placeholder, timeout: opts?.timeout },
+          (r: any) => (r.cancelled ? undefined : r.value),
+          opts?.timeout,
+        );
+      },
+      notify(message, type) {
+        handler()?.({ type: "extension_ui_request", ui: { id: cryptoId(), method: "notify", message, notifyType: type } });
+      },
+      onTerminalInput() { return () => {}; },
+      setStatus(key, text) {
+        handler()?.({ type: "extension_ui_request", ui: { id: cryptoId(), method: "setStatus", statusKey: key, statusText: text } });
+      },
+      setWorkingMessage() {},
+      setWorkingVisible() {},
+      setWorkingIndicator() {},
+      setHiddenThinkingLabel() {},
+      setWidget(key, content, options) {
+        // Only string arrays supported (component factories require TUI).
+        if (content === undefined || Array.isArray(content)) {
+          handler()?.({
+            type: "extension_ui_request",
+            ui: { id: cryptoId(), method: "setWidget", widgetKey: key, widgetLines: content, widgetPlacement: options?.placement },
+          });
+        }
+      },
+      setFooter() {},
+      setHeader() {},
+      setTitle(title) {
+        handler()?.({ type: "extension_ui_request", ui: { id: cryptoId(), method: "setTitle", title } });
+      },
+      async custom<T>(_factory: any, _options?: any): Promise<T> { return undefined as T; },
+      pasteToEditor(text) { this.setEditorText(text); },
+      setEditorText(text) {
+        handler()?.({ type: "extension_ui_request", ui: { id: cryptoId(), method: "set_editor_text", text } });
+      },
+      getEditorText() { return ""; },
+      async editor(title, prefill) {
+        return self.runDialog<string | undefined>(
+          { method: "editor", title, prefill },
+          (r: any) => (r.cancelled ? undefined : r.value),
+        );
+      },
+      addAutocompleteProvider() {},
+      setEditorComponent() {},
+      getEditorComponent() { return undefined; },
+      get theme() { return undefined as any; },
+      getAllThemes() { return []; },
+      getTheme() { return undefined; },
+      setTheme() { return { success: false, error: "Theme switching not supported in this mode" }; },
+      getToolsExpanded() { return false; },
+      setToolsExpanded() {},
+    };
   }
 
-  private handleRPCEvent(event: any) {
+  /** Drive a blocking extension dialog: broadcast the request, wait for the
+   * matching extension_ui_response, resolve/reject the extension's promise.
+   * If a timeout is given, resolve with the default after it elapses (the SDK
+   * contract: the agent auto-resolves; we emulate that here). */
+  private runDialog<T>(
+    request: Record<string, unknown>,
+    parse: (response: any) => T,
+    timeout?: number,
+  ): Promise<T> {
+    const id = cryptoId();
+    return new Promise<T>((resolve, reject) => {
+      const entry = {
+        resolve: (response: any) => {
+          if (entry.timer) clearTimeout(entry.timer);
+          this.pendingDialogs.delete(id);
+          try { resolve(parse(response)); } catch (e) { reject(e); }
+        },
+        reject: (e: any) => {
+          if (entry.timer) clearTimeout(entry.timer);
+          this.pendingDialogs.delete(id);
+          reject(e);
+        },
+        timer: null as Timer | null,
+      };
+      this.pendingDialogs.set(id, entry);
+      if (timeout) {
+        entry.timer = setTimeout(() => {
+          // SDK contract: timeout auto-resolves with the default value.
+          entry.resolve({ cancelled: true });
+        }, timeout);
+      }
+      this.onMessage?.({
+        type: "extension_ui_request",
+        ui: { id, ...request } as any,
+      });
+    });
+  }
+
+  getState() { this.doSend({ type: "get_state" }); }
+
+  doSend(msg: unknown) {
+    if (!this.session || !this.runtime) {
+      // Not started yet — commands are dropped. Callers await start() first.
+      return;
+    }
+    // Fire-and-forget; errors surface as `error` messages to the client.
+    this.handleCommand(msg).catch((err) => {
+      console.error("[pi] command error:", err);
+      const command = (msg as any)?.type ?? "unknown";
+      this.onMessage?.({ type: "response", command, success: false, error: err?.message ?? String(err) });
+    });
+  }
+
+  /** Resolve an extension_ui_response to the waiting dialog promise. */
+  private resolveDialogResponse(response: any) {
+    const pending = this.pendingDialogs.get(response.id);
+    if (pending) {
+      this.pendingDialogs.delete(response.id);
+      pending.resolve(response);
+    }
+    // Unknown id (e.g. response to an already-timed-out dialog) — drop silently.
+  }
+
+  async stop(): Promise<void> {
+    this.explicitlyStopped = true;
+    // Reject any pending dialogs so extensions don't hang.
+    for (const [, entry] of this.pendingDialogs) {
+      if (entry.timer) clearTimeout(entry.timer);
+      entry.reject(new Error("Agent stopped"));
+    }
+    this.pendingDialogs.clear();
+    this.unsubscribe?.();
+    this.unsubscribe = null;
+    if (this.runtime) {
+      try { await this.runtime.dispose(); } catch (err: any) {
+        console.error(`[pi] dispose error:`, err.message);
+      }
+    }
+    this.runtime = null;
+    this.session = null;
+    this.started = false;
+    // Surface an exit so the pool cleans up (closes clients, deletes entry).
+    // Code 0 = clean stop.
+    this.onExit?.(0);
+  }
+
+  // ─── Event translation: AgentSessionEvent -> WSServerMessage ───
+  // The SDK event names match PI's RPC events 1:1 (agent_start, message_update,
+  // tool_execution_start, …). We normalize a few SDK-specific shapes
+  // (message_update delta, compaction/session_info/thinking_level events,
+  // agent_end's extra willRetry field) into the client's WSServerMessage.
+  private handleEvent(event: AgentSessionEvent) {
     const handler = this.onMessage;
     if (!handler) return;
-
-
     try {
       switch (event.type) {
         case "agent_start":
-          handler({ type: "agent_start" }); break;
+          handler({ type: "agent_start" });
+          break;
         case "agent_end":
-          handler({ type: "agent_end", messages: event.messages || [] }); break;
+          handler({ type: "agent_end", messages: event.messages as any });
+          break;
+        case "turn_start":
+          handler({ type: "turn_start" });
+          break;
+        case "turn_end":
+          handler({ type: "turn_end", message: event.message as any, toolResults: event.toolResults as any });
+          break;
         case "message_start":
-          handler({ type: "message_start", message: event.message }); break;
+          handler({ type: "message_start", message: event.message as any });
+          break;
         case "message_update": {
-          const delta = event.assistantMessageEvent;
+          const delta = event.assistantMessageEvent as any;
           if (delta) {
             handler({
-              type: "message_update", message: event.message,
+              type: "message_update",
+              message: event.message as any,
               delta: {
-                type: delta.type, contentIndex: delta.contentIndex || 0,
-                delta: delta.delta || "",
+                type: delta.type,
+                contentIndex: delta.contentIndex ?? 0,
+                delta: delta.delta ?? "",
                 ...(delta.type === "toolcall_end" ? { toolCall: delta.toolCall } : {}),
               },
             });
@@ -857,242 +1033,317 @@ class PIAgent {
           break;
         }
         case "message_end":
-          handler({ type: "message_end", message: event.message }); break;
+          handler({ type: "message_end", message: event.message as any });
+          break;
         case "tool_execution_start":
-          handler({ type: "tool_start", toolCallId: event.toolCallId, toolName: event.toolName, args: event.args || {} }); break;
+          handler({ type: "tool_start", toolCallId: event.toolCallId, toolName: event.toolName, args: event.args || {} });
+          break;
         case "tool_execution_update":
-          handler({ type: "tool_update", toolCallId: event.toolCallId, partialResult: event.partialResult || { content: [], details: undefined } }); break;
+          handler({ type: "tool_update", toolCallId: event.toolCallId, partialResult: event.partialResult || { content: [], details: undefined } });
+          break;
         case "tool_execution_end":
-          handler({ type: "tool_end", toolCallId: event.toolCallId, toolName: event.toolName, result: event.result || { content: [] }, isError: event.isError || false }); break;
-        case "turn_start": handler({ type: "turn_start" }); break;
-        case "turn_end":
-          handler({ type: "turn_end", message: event.message, toolResults: event.toolResults || [] }); break;
+          handler({ type: "tool_end", toolCallId: event.toolCallId, toolName: event.toolName, result: event.result || { content: [] }, isError: event.isError || false });
+          break;
         case "queue_update":
-          handler({ type: "queue_update", steering: event.steering || [], followUp: event.followUp || [] }); break;
+          handler({ type: "queue_update", steering: [...event.steering], followUp: [...event.followUp] });
+          break;
         case "compaction_start":
-          handler({ type: "compaction_start", reason: event.reason || "manual" }); break;
+          handler({ type: "compaction_start", reason: event.reason });
+          break;
         case "compaction_end":
           handler({
             type: "compaction_end",
-            reason: event.reason || "unknown",
-            aborted: event.aborted || false,
-            result: event.result || undefined,
-            willRetry: event.willRetry || false,
+            reason: event.reason,
+            result: event.result as any,
+            aborted: event.aborted,
+            willRetry: event.willRetry,
             errorMessage: event.errorMessage,
-          }); break;
-        case "extension_ui_request":
-          handler({
-            type: "extension_ui_request",
-            ui: {
-              id: event.id, method: event.method, title: event.title,
-              message: event.message, options: event.options,
-              placeholder: event.placeholder, prefill: event.prefill,
-              timeout: event.timeout, notifyType: event.notifyType,
-              // setStatus fields
-              statusKey: event.statusKey, statusText: event.statusText,
-              // setWidget fields
-              widgetKey: event.widgetKey, widgetLines: event.widgetLines,
-              widgetPlacement: event.widgetPlacement,
-              // set_editor_text fields
-              text: event.text,
-            },
           });
           break;
-        case "auto_retry_start":
-          handler({
-            type: "auto_retry_start",
-            attempt: event.attempt || 1,
-            maxAttempts: event.maxAttempts || 3,
-            delayMs: event.delayMs || 2000,
-            errorMessage: event.errorMessage || "",
-          }); break;
-        case "auto_retry_end":
-          handler({
-            type: "auto_retry_end",
-            success: event.success ?? true,
-            attempt: event.attempt || 1,
-            finalError: event.finalError,
-          }); break;
-        case "extension_error":
-          handler({
-            type: "extension_error",
-            extensionPath: event.extensionPath || "",
-            event: event.event || "",
-            error: event.error || "",
-          }); break;
-        case "response":
-          this.bridgeResponse(event, handler);
+        case "session_info_changed":
+          handler({ type: "session_name_changed", name: event.name ?? "" });
           break;
+        case "thinking_level_changed":
+          handler({ type: "thinking_changed", level: event.level });
+          break;
+        case "auto_retry_start":
+          handler({ type: "auto_retry_start", attempt: event.attempt, maxAttempts: event.maxAttempts, delayMs: event.delayMs, errorMessage: event.errorMessage });
+          break;
+        case "auto_retry_end":
+          handler({ type: "auto_retry_end", success: event.success, attempt: event.attempt, finalError: event.finalError });
+          break;
+        // extension_error is emitted via the extension runner's onError, not as
+        // a session event — handled in bindExtensions above via onError binding.
       }
     } catch (err) {
-      console.error("[pi] handler error:", err);
+      console.error("[pi] event handler error:", err);
     }
   }
 
-  extensionUIResponse(id: string, response: { value?: string; confirmed?: boolean; cancelled?: boolean }) {
-    this.doSend({ type: "extension_ui_response", id, ...response });
-  }
-
-  private bridgeResponse(event: any, handler: (msg: WSServerMessage) => void) {
-    try {
-      // Forward failed responses so client knows about failures
-      if (!event.success) {
-        handler({ type: "response", command: event.command, success: false, error: event.error, id: event.id });
-        return;
-      }
-
-      switch (event.command) {
-        case "get_state": {
-          const data = event.data || {};
-          handler({
-            type: "state",
-            data: {
-              isStreaming: data.isStreaming || false, isCompacting: data.isCompacting || false,
-              sessionFile: data.sessionFile || null, sessionId: data.sessionId || "",
-              sessionName: data.sessionName || null, model: data.model?.id || null,
-              thinkingLevel: data.thinkingLevel || "off", messageCount: data.messageCount || 0,
-              pendingMessageCount: data.pendingMessageCount || 0, steering: [], followUp: [],
+  // ─── Command dispatch: WSServerMessage-shaped commands -> SDK calls ───
+  // Mirrors runRpcMode's handleCommand. Each command resolves to one or more
+  // WSServerMessage responses broadcast to the client.
+  private async handleCommand(msg: any) {
+    const session = this.session;
+    const runtime = this.runtime;
+    if (!session || !runtime) return;
+    switch (msg.type) {
+      // ── Prompting ──
+      case "prompt": {
+        // Fire the prompt; emit the success response after preflight acceptance.
+        let preflightSucceeded = false;
+        try {
+          await session.prompt(msg.message, {
+            images: msg.images,
+            streamingBehavior: msg.streamingBehavior,
+            source: "rpc",
+            preflightResult: (ok) => {
+              if (ok) {
+                preflightSucceeded = true;
+                this.onMessage?.({ type: "response", command: "prompt", success: true });
+              }
             },
           });
+        } catch (e: any) {
+          if (!preflightSucceeded) {
+            this.onMessage?.({ type: "response", command: "prompt", success: false, error: e.message });
+          }
+        }
+        break;
+      }
+      case "steer":
+        await session.steer(msg.message, msg.images);
+        this.onMessage?.({ type: "response", command: "steer", success: true });
+        break;
+      case "follow_up":
+        await session.followUp(msg.message, msg.images);
+        this.onMessage?.({ type: "response", command: "follow_up", success: true });
+        break;
+      case "clear_queue":
+        session.clearQueue();
+        this.onMessage?.({ type: "response", command: "clear_queue", success: true });
+        break;
+      case "abort":
+        await session.abort();
+        this.onMessage?.({ type: "response", command: "abort", success: true });
+        break;
+
+      // ── State ──
+      case "get_state":
+        this.onMessage?.({ type: "state", data: this.snapshotState() });
+        break;
+      case "get_messages":
+        this.onMessage?.({ type: "messages_result", messages: session.messages as any });
+        break;
+      case "get_last_assistant_text":
+        this.onMessage?.({ type: "last_assistant_text_result", text: session.getLastAssistantText() ?? null });
+        break;
+      case "get_session_stats":
+        this.onMessage?.({ type: "session_stats", stats: session.getSessionStats() as any });
+        break;
+
+      // ── Model ──
+      case "set_model": {
+        const models = await session.modelRegistry.getAvailable();
+        const model = models.find((m: any) => m.provider === msg.provider && m.id === msg.modelId);
+        if (!model) {
+          this.onMessage?.({ type: "response", command: "set_model", success: false, error: `Model not found: ${msg.provider}/${msg.modelId}` });
           break;
         }
-        case "get_available_models":
-          handler({ type: "available_models", models: (event.data?.models || []).map((m: any) => ({
+        await session.setModel(model);
+        // model_changed is emitted as an event by the SDK; also send a response.
+        this.onMessage?.({ type: "response", command: "set_model", success: true });
+        break;
+      }
+      case "cycle_model": {
+        const result = await session.cycleModel();
+        if (result) {
+          this.onMessage?.({ type: "model_changed", provider: result.model.provider, modelId: result.model.id });
+          if (result.thinkingLevel) this.onMessage?.({ type: "thinking_changed", level: result.thinkingLevel });
+        }
+        this.onMessage?.({ type: "response", command: "cycle_model", success: true });
+        break;
+      }
+      case "get_available_models": {
+        const models = await session.modelRegistry.getAvailable();
+        this.onMessage?.({
+          type: "available_models",
+          models: models.map((m: any) => ({
             id: m.id, name: m.name, api: m.api, provider: m.provider,
             contextWindow: m.contextWindow, maxTokens: m.maxTokens,
             reasoning: m.reasoning, input: m.input, cost: m.cost,
-          })) });
-          break;
-        case "get_commands":
-          handler({ type: "available_commands", commands: event.data?.commands || [] }); break;
-        case "get_fork_messages":
-          handler({ type: "fork_messages", messages: event.data?.messages || [] }); break;
-        case "get_session_stats":
-          handler({ type: "session_stats", stats: event.data || {} }); break;
-        case "set_model":
-          if (event.data) handler({ type: "model_changed", provider: event.data.provider, modelId: event.data.id });
-          break;
-        case "set_thinking_level":
-          if (event.data) handler({ type: "thinking_changed", level: event.data.level });
-          break;
-        case "set_session_name":
-          handler({ type: "session_name_changed", name: event.data?.name || "" }); break;
-        case "new_session":
-          // new_session response only has {cancelled: false} — no session data.
-          // Request get_state to fetch actual new session details.
-          if (event.success && !event.data?.cancelled) this.getState();
-          break;
-        case "load_session":
-          if (event.data) handler({ type: "session_loaded", session: event.data });
-          break;
-        case "switch_session":
-          if (event.data && !event.data.cancelled) handler({ type: "session_loaded", session: event.data });
-          break;
-        case "clone": {
-          handler({ type: "clone_result", cancelled: event.data?.cancelled || false, sessionPath: event.data?.sessionPath });
-          break;
-        }
-        case "export_html":
-          handler({ type: "export_html_result", path: event.data?.path || "" });
-          break;
-        case "get_messages":
-          handler({ type: "messages_result", messages: event.data?.messages || [] });
-          break;
-        case "get_last_assistant_text":
-          handler({ type: "last_assistant_text_result", text: event.data?.text ?? null });
-          break;
-        case "cycle_model":
-          if (event.data?.model) handler({ type: "model_changed", provider: event.data.model.provider, modelId: event.data.model.id });
-          if (event.data?.thinkingLevel) handler({ type: "thinking_changed", level: event.data.thinkingLevel });
-          break;
-        case "cycle_thinking_level":
-          if (event.data?.level) handler({ type: "thinking_changed", level: event.data.level });
-          break;
-        // Commands that just return success/failure — forward generic response
-        case "compact":
-        case "set_auto_compaction":
-        case "set_auto_retry":
-        case "set_steering_mode":
-        case "set_follow_up_mode":
-        case "clear_queue":
-        case "abort_retry":
-        case "abort_bash":
-        case "bash":
-          handler({ type: "response", command: event.command, success: true, id: event.id });
-          break;
+          })),
+        });
+        break;
       }
-    } catch (err) {
-      console.error("[pi] bridge error:", err);
-    }
-  }
 
-  // ─── Command senders ───
+      // ── Thinking ──
+      case "set_thinking_level":
+        session.setThinkingLevel(msg.level);
+        this.onMessage?.({ type: "thinking_changed", level: msg.level });
+        this.onMessage?.({ type: "response", command: "set_thinking_level", success: true });
+        break;
+      case "cycle_thinking_level": {
+        const level = session.cycleThinkingLevel();
+        if (level) this.onMessage?.({ type: "thinking_changed", level });
+        this.onMessage?.({ type: "response", command: "cycle_thinking_level", success: true });
+        break;
+      }
 
-  getAvailableModels() { this.doSend({ type: "get_available_models" }); }
-  getCommands() { this.doSend({ type: "get_commands" }); }
-  getForkMessages() { this.doSend({ type: "get_fork_messages" }); }
-  getSessionStats() { this.doSend({ type: "get_session_stats" }); }
-  getMessages() { this.doSend({ type: "get_messages" }); }
-  getLastAssistantText() { this.doSend({ type: "get_last_assistant_text" }); }
-  setSessionName(name: string) { this.doSend({ type: "set_session_name", name }); }
-  prompt(message: string, images?: any[]) { this.doSend({ type: "prompt", message, images }); }
-  steer(message: string, images?: any[]) { this.doSend({ type: "steer", message, images }); }
-  followUp(message: string, images?: any[]) { this.doSend({ type: "follow_up", message, images }); }
-  clearQueue() { this.doSend({ type: "clear_queue" }); }
-  abort() { this.doSend({ type: "abort" }); }
-  newSession() { this.doSend({ type: "new_session" }); }
-  fork(entryId: string) { this.doSend({ type: "fork", entryId }); }
-  setModel(provider: string, modelId: string) { this.doSend({ type: "set_model", provider, modelId }); }
-  setThinking(level: string) { this.doSend({ type: "set_thinking_level", level }); }
-  compact(customInstructions?: string) { this.doSend({ type: "compact", ...(customInstructions ? { customInstructions } : {}) }); }
-  getState() { this.doSend({ type: "get_state" }); }
-  cycleModel() { this.doSend({ type: "cycle_model" }); }
-  cycleThinkingLevel() { this.doSend({ type: "cycle_thinking_level" }); }
-  setAutoCompaction(enabled: boolean) { this.doSend({ type: "set_auto_compaction", enabled }); }
-  setAutoRetry(enabled: boolean) { this.doSend({ type: "set_auto_retry", enabled }); }
-  abortRetry() { this.doSend({ type: "abort_retry" }); }
-  setSteeringMode(mode: string) { this.doSend({ type: "set_steering_mode", mode }); }
-  setFollowUpMode(mode: string) { this.doSend({ type: "set_follow_up_mode", mode }); }
-  exportHtml(outputPath?: string) { this.doSend({ type: "export_html", ...(outputPath ? { outputPath } : {}) }); }
-  switchSession(sessionPath: string) { this.doSend({ type: "switch_session", sessionPath }); }
-  clone() { this.doSend({ type: "clone" }); }
-  bash(command: string) { this.doSend({ type: "bash", command }); }
-  abortBash() { this.doSend({ type: "abort_bash" }); }
+      // ── Queue Modes ──
+      case "set_steering_mode":
+        session.setSteeringMode(msg.mode);
+        this.onMessage?.({ type: "response", command: "set_steering_mode", success: true });
+        break;
+      case "set_follow_up_mode":
+        session.setFollowUpMode(msg.mode);
+        this.onMessage?.({ type: "response", command: "set_follow_up_mode", success: true });
+        break;
 
-  doSend(msg: unknown) {
-    if (this.ready) {
-      this.sendFn(msg);
-    } else {
-      this.messageQueue.push(msg);
-    }
-  }
+      // ── Compaction ──
+      case "compact":
+        await session.compact(msg.customInstructions);
+        this.onMessage?.({ type: "response", command: "compact", success: true });
+        break;
+      case "set_auto_compaction":
+        session.setAutoCompactionEnabled(msg.enabled);
+        this.onMessage?.({ type: "response", command: "set_auto_compaction", success: true });
+        break;
 
-  async stop(): Promise<void> {
-    this.explicitlyStopped = true;
-    this.ready = false;
-    if (this.proc) {
-      try { this.proc.stdin?.end(); } catch {}
-      try { this.proc.kill("SIGTERM"); } catch {}
-      // #45: Remove listeners immediately after SIGTERM, before the 300ms sleep,
-      // to prevent old exit events from racing with new agent startup.
-      try {
-        this.proc.removeAllListeners();
-        this.proc.stdout?.removeAllListeners();
-        this.proc.stderr?.removeAllListeners();
-      } catch {}
-      await new Promise(r => setTimeout(r, 300));
-      try {
-        if (this.proc && !this.proc.killed && this.proc.pid) {
-          // #LIVE: tree-kill the whole process group on the SIGKILL escalation
-          // so PI's own children (bash, dev servers, …) don't survive and
-          // leak — a leftover child holding the session file / port is what
-          // makes a restart wedge and "require a reboot".
-          await new Promise<void>((resolve) => {
-            treeKill(this.proc!.pid!, "SIGKILL", () => resolve());
+      // ── Retry ──
+      case "set_auto_retry":
+        session.setAutoRetryEnabled(msg.enabled);
+        this.onMessage?.({ type: "response", command: "set_auto_retry", success: true });
+        break;
+      case "abort_retry":
+        session.abortRetry();
+        this.onMessage?.({ type: "response", command: "abort_retry", success: true });
+        break;
+
+      // ── Bash ──
+      case "bash":
+        await session.executeBash(msg.command);
+        this.onMessage?.({ type: "response", command: "bash", success: true });
+        break;
+      case "abort_bash":
+        session.abortBash();
+        this.onMessage?.({ type: "response", command: "abort_bash", success: true });
+        break;
+
+      // ── Session ──
+      case "new_session": {
+        const result = await runtime.newSession();
+        if (!result.cancelled) await this.bindSession(runtime.session);
+        this.onMessage?.({ type: "response", command: "new_session", success: true, data: result });
+        break;
+      }
+      case "load_session":
+      case "switch_session": {
+        const result = await runtime.switchSession(msg.sessionPath);
+        if (!result.cancelled) {
+          await this.bindSession(runtime.session);
+          // session_loaded drives the server-side rekey (PooledAgent.handleAgentMessage).
+          this.onMessage?.({
+            type: "session_loaded",
+            session: { filePath: runtime.session.sessionFile ?? msg.sessionPath } as any,
           });
         }
-      } catch {}
-      this.proc = null;
+        this.onMessage?.({ type: "response", command: msg.type, success: true, data: result });
+        break;
+      }
+      case "fork": {
+        const result = await runtime.fork(msg.entryId);
+        if (!result.cancelled) await this.bindSession(runtime.session);
+        this.onMessage?.({ type: "response", command: "fork", success: true, data: { text: result.selectedText, cancelled: result.cancelled } });
+        break;
+      }
+      case "clone": {
+        const leafId = session.sessionManager.getLeafId();
+        if (!leafId) {
+          this.onMessage?.({ type: "response", command: "clone", success: false, error: "Cannot clone session: no current entry selected" });
+          break;
+        }
+        const result = await runtime.fork(leafId, { position: "at" });
+        if (!result.cancelled) await this.bindSession(runtime.session);
+        // Emit session_loaded so the server rekeys to the forked path
+        // deterministically (same path as switch_session). clone_result is
+        // kept for the client's clone-specific UI.
+        if (!result.cancelled && runtime.session.sessionFile) {
+          this.onMessage?.({ type: "session_loaded", session: { filePath: runtime.session.sessionFile } as any });
+        }
+        this.onMessage?.({ type: "clone_result", cancelled: result.cancelled, sessionPath: runtime.session.sessionFile });
+        this.onMessage?.({ type: "response", command: "clone", success: true, data: { cancelled: result.cancelled } });
+        break;
+      }
+      case "get_fork_messages": {
+        const messages = session.getUserMessagesForForking();
+        this.onMessage?.({ type: "fork_messages", messages: messages as any });
+        break;
+      }
+      case "set_session_name":
+        session.setSessionName(msg.name);
+        this.onMessage?.({ type: "response", command: "set_session_name", success: true });
+        break;
+      case "export_html": {
+        const path = await session.exportToHtml(msg.outputPath);
+        this.onMessage?.({ type: "export_html_result", path });
+        this.onMessage?.({ type: "response", command: "export_html", success: true });
+        break;
+      }
+      case "get_commands": {
+        const commands: any[] = [];
+        for (const cmd of session.extensionRunner.getRegisteredCommands()) {
+          commands.push({ name: cmd.invocationName, description: cmd.description, source: "extension", path: (cmd as any).sourceInfo?.path });
+        }
+        for (const t of session.promptTemplates) {
+          commands.push({ name: t.name, description: t.description, source: "prompt", location: (t as any).sourceInfo?.location, path: (t as any).sourceInfo?.path });
+        }
+        for (const skill of session.resourceLoader.getSkills().skills) {
+          commands.push({ name: `skill:${skill.name}`, description: skill.description, source: "skill", location: (skill as any).sourceInfo?.location, path: (skill as any).sourceInfo?.path });
+        }
+        this.onMessage?.({ type: "available_commands", commands });
+        break;
+      }
+
+      // ── Extension UI ──
+      case "extension_ui_response":
+        this.resolveDialogResponse(msg);
+        break;
+
+      default:
+        console.warn("[pi] unknown command:", msg.type);
     }
   }
+
+  /** Build an AgentState snapshot from the live session (mirrors runRpcMode's
+   * get_state handler). */
+  private snapshotState() {
+    const session = this.session!;
+    const model = session.model as any;
+    return {
+      isStreaming: session.isStreaming,
+      isCompacting: session.isCompacting,
+      sessionFile: session.sessionFile ?? null,
+      sessionId: session.sessionId,
+      sessionName: session.sessionName ?? null,
+      model: model?.id ?? null,
+      thinkingLevel: session.thinkingLevel,
+      messageCount: session.messages.length,
+      pendingMessageCount: session.pendingMessageCount,
+      steering: session.getSteeringMessages ? [...session.getSteeringMessages()] : [],
+      followUp: session.getFollowUpMessages ? [...session.getFollowUpMessages()] : [],
+    };
+  }
 }
+
+/** Small id generator that avoids depending on the browser `crypto.randomUUID`
+ * in server contexts where it may be absent. Uses Node's crypto. */
+function cryptoId(): string {
+  // node:crypto.randomUUID is available on Node 14.17+ / Bun.
+  try {
+    return (globalThis.crypto as any).randomUUID();
+  } catch {
+    return `id-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+}
+

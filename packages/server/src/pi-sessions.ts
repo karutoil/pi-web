@@ -1,7 +1,7 @@
 import { readdir, stat, readFile, writeFile, mkdir, rename } from "node:fs/promises";
 import { join, basename, resolve, normalize } from "node:path";
 import { homedir, tmpdir } from "node:os";
-import type { SessionSummary, SessionDetail, SessionEntry, ChatMessage } from "@pi-web/shared";
+import type { SessionSummary, SessionDetail, SessionEntry, ChatMessage, ProjectUsage, UsageSummary } from "@pi-web/shared";
 
 // ─── Index Cache ───
 // Stores parsed summaries keyed by filePath+mtime to avoid re-parsing unchanged files.
@@ -341,4 +341,69 @@ function sanitizePath(p: string): string {
   let s = abs.replace(/^[\\/]/, "").replace(/[\\/]$/, "");
   s = s.replace(/[\\/:]/g, "-");
   return `--${s || "root"}--`;
+}
+
+// ─── Aggregate usage across sessions ───
+// Sums token/cost/message counts from the per-project session index cache.
+
+export function computeProjectUsage(sessions: SessionSummary[]): { sessionCount: number; totalTokens: number; totalCost: number; totalMessages: number } {
+  let totalTokens = 0;
+  let totalCost = 0;
+  let totalMessages = 0;
+  for (const s of sessions) {
+    totalTokens += s.tokenCount || 0;
+    totalCost += s.cost || 0;
+    totalMessages += s.messageCount || 0;
+  }
+  return { sessionCount: sessions.length, totalTokens, totalCost, totalMessages };
+}
+
+/**
+ * Build an aggregate UsageSummary across all known projects.
+ * Reuses the per-project session index cache so repeated calls are cheap.
+ */
+export async function buildUsageSummary(projects: { id: string; name: string; path: string }[]): Promise<UsageSummary> {
+  const perProject: ProjectUsage[] = [];
+  let totalTokens = 0;
+  let totalCost = 0;
+  let totalSessions = 0;
+  const byModel = new Map<string, { tokens: number; cost: number; sessions: number }>();
+
+  // Iterate projects sequentially to avoid stampeding the index cache with
+  // N concurrent full parses on a cold start.
+  for (const p of projects) {
+    let sessions: SessionSummary[] = [];
+    try {
+      sessions = await listProjectSessions(p.path);
+    } catch {
+      sessions = [];
+    }
+    const u = computeProjectUsage(sessions);
+    perProject.push({ id: p.id, name: p.name, path: p.path, ...u });
+    totalTokens += u.totalTokens;
+    totalCost += u.totalCost;
+    totalSessions += u.sessionCount;
+    for (const s of sessions) {
+      const model = s.model || "unknown";
+      const entry = byModel.get(model) || { tokens: 0, cost: 0, sessions: 0 };
+      entry.tokens += s.tokenCount || 0;
+      entry.cost += s.cost || 0;
+      entry.sessions += 1;
+      byModel.set(model, entry);
+    }
+  }
+
+  perProject.sort((a, b) => b.totalTokens - a.totalTokens);
+  const byModelList = Array.from(byModel.entries())
+    .map(([model, v]) => ({ model, ...v }))
+    .sort((a, b) => b.tokens - a.tokens);
+
+  return {
+    totalSessions,
+    totalTokens,
+    totalCost,
+    projects: perProject,
+    byModel: byModelList,
+    fetchedAt: new Date().toISOString(),
+  };
 }

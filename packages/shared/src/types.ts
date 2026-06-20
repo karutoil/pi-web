@@ -29,6 +29,30 @@ export interface SessionSummary {
   isRecentlyActive: boolean;
 }
 
+// ─── Aggregate usage across sessions (#usage) ───
+
+export interface ProjectUsage {
+  id: string;
+  name: string;
+  path: string;
+  sessionCount: number;
+  totalTokens: number;
+  totalCost: number;
+  totalMessages: number;
+}
+
+/** Token + cost roll-up across all known projects/sessions. */
+export interface UsageSummary {
+  totalSessions: number;
+  totalTokens: number;
+  totalCost: number;
+  projects: ProjectUsage[];
+  /** Per-model token totals (model id → tokens). Empty map if unavailable. */
+  byModel: { model: string; tokens: number; cost: number; sessions: number }[];
+  /** ISO timestamp this snapshot was computed. */
+  fetchedAt: string;
+}
+
 // ─── App version / update-checker (#160) ───
 export interface VersionInfo {
   /** Short commit hash (7 chars) of HEAD, e.g. "52471ca". */

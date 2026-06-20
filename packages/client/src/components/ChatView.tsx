@@ -137,6 +137,12 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
   const lastCloneCancelledRef = useRef<boolean | null>(null);
   const lastAutoCompactionEnabledRef = useRef<boolean | null>(null);
   const lastCommandResponseKeyRef = useRef<string | null>(null);
+  // True while a scroll position change was caused by us (jump-to-bottom or
+  // ResizeObserver auto-pin), not by the user. The scroll handler reads this
+  // to avoid mis-toggling autoScroll off and reigniting the
+  // jump-button-flicker / shoot-up-and-down loop on long chats.
+  const programmaticScrollRef = useRef(false);
+  const programmaticClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Render ALL history — no button, no limit. Perf is handled by React.memo
   // on MessageBubble (historical bubbles skip re-render during streaming)
@@ -162,6 +168,24 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
     statusTimerRef.current = setTimeout(() => setSessionActionStatus(null), 4500);
   }, []);
 
+  // Pin scrollTop to the bottom and mark the resulting scroll event as
+  // programmatic. Without this, the throttled scroll handler reads the
+  // post-pin position, and on long chats content-visibility makes scrollHeight
+  // grow as bottom rows render — so it computes "not near bottom" and flips
+  // autoScroll back off. That toggled the jump button on/off and made the
+  // view shoot up and down. The flag auto-clears shortly after pinning quiets
+  // so genuine user scrolls are still respected.
+  const pinToBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    programmaticScrollRef.current = true;
+    el.scrollTop = el.scrollHeight;
+    if (programmaticClearRef.current) clearTimeout(programmaticClearRef.current);
+    programmaticClearRef.current = setTimeout(() => {
+      programmaticScrollRef.current = false;
+    }, 150);
+  }, []);
+
   // Auto-scroll via ResizeObserver — fires after DOM commit, always in sync
   // This is more reliable than useEffect deps for rapid streaming updates
   useEffect(() => {
@@ -171,16 +195,18 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
     if (!content) return;
 
     const observer = new ResizeObserver(() => {
-      if (!autoScrollRef.current || !el) return;
-      // Direct scrollTop — O(1), no layout recalculation
-      el.scrollTop = el.scrollHeight;
+      if (!autoScrollRef.current) return;
+      // O(1) scrollTop, marked programmatic so it can't fight the scroll handler.
+      pinToBottom();
     });
     observer.observe(content);
     return () => observer.disconnect();
-  }, [autoScroll]);
+  }, [autoScroll, pinToBottom]);
 
   // Throttled scroll handler — check if user is near bottom
   const handleScroll = useCallback(() => {
+    // Ignore scrolls we caused (auto-pin / jump settling).
+    if (programmaticScrollRef.current) return;
     if (scrollTimerRef.current) return;
     scrollTimerRef.current = setTimeout(() => {
       scrollTimerRef.current = null;
@@ -198,10 +224,14 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
    * bottom (i.e. autoScroll has been disabled by handleScroll).
    */
   const handleJumpToBottom = useCallback(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
     setAutoScroll(true);
-  }, []);
+    const el = scrollRef.current;
+    if (!el) return;
+    pinToBottom();
+    // content-visibility defers real heights until rows paint; re-pin on the
+    // next frame so we land on the true bottom, not the 8rem estimate.
+    requestAnimationFrame(() => { pinToBottom(); });
+  }, [pinToBottom]);
 
   const sessionName = ws.state?.sessionName || session?.name || session?.lastMessage || null;
   const downloadSessionHtml = useCallback(async (sessionPath: string, endpoint = "/api/sessions/export-html", statusMessage = "HTML export downloaded.") => {

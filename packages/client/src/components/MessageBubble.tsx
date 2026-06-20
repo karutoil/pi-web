@@ -172,7 +172,7 @@ function MessageBubbleImpl({ message, showThinking, toolResultsMap, inlineToolCa
   }
 
   return (
-    <div onContextMenu={handleContextMenu} {...longPress} className={`conversation-message-row min-w-0 ${isUser ? "justify-end" : ""}`} data-user={isUser}>
+    <div onContextMenu={handleContextMenu} {...longPress} className={`conversation-message-row min-w-0 ${isUser ? "justify-end" : ""}`} data-user={isUser} data-historical={isHistorical ? "true" : "false"}>
       {!isUser && (
         <div className="conversation-avatar">
           <Icon name="pi-avatar" size={12} />

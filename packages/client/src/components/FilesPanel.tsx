@@ -12,6 +12,7 @@ import { useIsMobile } from "../hooks/useIsMobile";
 import { useEditorTabs, makeEditorTabId } from "../hooks/useEditorTabs";
 import { Icon } from "./Icon";
 import { OutlineSection } from "./OutlineSection";
+import { ConfirmDialog } from "./ConfirmDialog";
 import type { SearchResult } from "@pi-web/shared";
 import type { SymbolOutline } from "../lib/symbolParser";
 
@@ -248,6 +249,10 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
   const [leftMode, setLeftMode] = useState<"files" | "search">("files");
   const [outlineCollapsed, setOutlineCollapsed] = useState(false);
 
+  // File operations (create/rename/delete/duplicate)
+  const [pendingDelete, setPendingDelete] = useState<{ relativePath: string; fullPath: string; isFolder: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [fsError, setFsError] = useState<string | null>(null);
   // Project-wide search state
   const [searchQuery, setSearchQuery] = useState("");
   const [searchRegex, setSearchRegex] = useState(false);
@@ -374,16 +379,153 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
     fetchGitStatus();
   }, [fetchFiles, fetchGitStatus]);
 
-  // Keep callbacks in refs so the model's stale closure still calls current versions
+  const showFsError = useCallback((e: any) => {
+    const msg = e?.message || typeof e === "string" ? e : "Operation failed";
+    setFsError(msg);
+    setTimeout(() => setFsError(null), 4000);
+  }, []);
+
+  // Track the most recent tree paths + git status so model-callback closures
+  // (which are created once via refs) read fresh values.
+  const pathsRef = useRef(paths);
+  pathsRef.current = paths;
+
+  // Full refresh that also closes any open editor tabs for deleted paths.
+  const refreshAfterMutation = useCallback(async (opts?: { deletedPaths?: string[] }) => {
+    await fetchFiles();
+    fetchGitStatus();
+    if (opts?.deletedPaths?.length) {
+      const deleted = opts.deletedPaths.map(p => joinPath(cwd, p).toLowerCase());
+      for (const t of tabs) {
+        if (deleted.some(dp => t.filePath.toLowerCase() === dp || t.filePath.toLowerCase().startsWith(dp + "/"))) {
+          closeTab(t.id, { force: true });
+        }
+      }
+    }
+  }, [fetchFiles, fetchGitStatus, cwd, tabs, closeTab]);
+
+  // ── Create ──
+  const handleCreate = useCallback(async (kind: "file" | "folder", dirRelPath: string) => {
+    const base = dirRelPath.replace(/\/+$/, "");
+    const promptLabel = kind === "folder" ? "Folder name" : "File name";
+    // ponytail: window.prompt is the simplest inline name entry. Replace with
+    // a styled modal if/when the editor gets a richer prompt component.
+    const name = window.prompt(promptLabel, kind === "folder" ? "new-folder" : "new-file.txt");
+    if (!name) return;
+    const relativePath = base ? `${base}/${name}` : name;
+    const fullPath = joinPath(cwd, relativePath);
+    setBusy(true);
+    try {
+      const res = await fetch("/api/fs/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: fullPath, projectId, kind }),
+      });
+      const data = await res.json();
+      if (!data.success) { showFsError(data.error); return; }
+      await refreshAfterMutation();
+      if (kind === "file") openFile(fullPath);
+    } catch (e: any) { showFsError(e); } finally { setBusy(false); }
+  }, [cwd, projectId, refreshAfterMutation, openFile, showFsError]);
+
+  // ── Rename / move (called by the tree's renaming hook) ──
+  const handleRename = useCallback(async (sourcePath: string, destinationPath: string) => {
+    const fromFull = joinPath(cwd, sourcePath);
+    const toFull = joinPath(cwd, destinationPath);
+    setBusy(true);
+    try {
+      const res = await fetch("/api/fs/rename", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: fromFull, destination: toFull, projectId }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        showFsError(data.error);
+        // The tree already moved the path in memory; re-sync from server.
+        await refreshAfterMutation();
+        return;
+      }
+      await refreshAfterMutation();
+      // If an editor tab was open for the old path, switch it to the new one.
+      const oldId = makeEditorTabId(projectId, fromFull);
+      const newId = makeEditorTabId(projectId, toFull);
+      if (tabs.some(t => t.id === oldId)) {
+        closeTab(oldId, { force: true });
+        openFile(toFull);
+      }
+      void newId;
+    } catch (e: any) { showFsError(e); } finally { setBusy(false); }
+  }, [cwd, projectId, refreshAfterMutation, tabs, closeTab, openFile, showFsError]);
+
+  // ── Delete ──
+  const handleDelete = useCallback(async (relativePath: string) => {
+    const fullPath = joinPath(cwd, relativePath);
+    const isFolder = relativePath.endsWith("/");
+    setBusy(true);
+    try {
+      const res = await fetch("/api/fs/delete", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: fullPath, projectId }),
+      });
+      const data = await res.json();
+      if (!data.success) { showFsError(data.error); return; }
+      await refreshAfterMutation({ deletedPaths: [relativePath] });
+    } catch (e: any) { showFsError(e); } finally { setBusy(false); }
+  }, [cwd, projectId, refreshAfterMutation, showFsError]);
+
+  // ── Duplicate (read + create copy) ──
+  const handleDuplicate = useCallback(async (relativePath: string) => {
+    const isFolder = relativePath.endsWith("/");
+    if (isFolder) {
+      showFsError("Folder duplication is not supported.");
+      return;
+    }
+    const fullPath = joinPath(cwd, relativePath);
+    const dot = relativePath.lastIndexOf(".");
+    const slash = relativePath.lastIndexOf("/");
+    const stem = dot > slash ? relativePath.slice(0, dot) : relativePath;
+    const ext = dot > slash ? relativePath.slice(dot) : "";
+    const copyRel = `${stem}-copy${ext}`;
+    const copyFull = joinPath(cwd, copyRel);
+    setBusy(true);
+    try {
+      const readRes = await fetch(`/api/fs/read?path=${encodeURIComponent(fullPath)}&projectId=${encodeURIComponent(projectId)}`);
+      const readData = await readRes.json();
+      if (readData.error) { showFsError(readData.error); return; }
+      const writeRes = await fetch("/api/fs/write", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: copyFull, projectId, content: readData.content, overwrite: false }),
+      });
+      const writeData = await writeRes.json();
+      if (!writeData.success) { showFsError(writeData.error); return; }
+      await refreshAfterMutation();
+    } catch (e: any) { showFsError(e); } finally { setBusy(false); }
+  }, [cwd, projectId, refreshAfterMutation, showFsError]);
+// Keep callbacks in refs so the model's stale closure still calls current versions
   const handleFileSelectRef = useRef(handleFileSelect);
   handleFileSelectRef.current = handleFileSelect;
   const handleViewDiffRef = useRef(handleViewDiff);
   handleViewDiffRef.current = handleViewDiff;
+  const handleRenameRef = useRef(handleRename);
+  handleRenameRef.current = handleRename;
+
+  const handleRenameError = useCallback((error: string) => {
+    showFsError(error);
+  }, [showFsError]);
 
   const { model } = useFileTree({
     paths: [],
     gitStatus: [],
-    renaming: false,
+    renaming: {
+      canRename: () => true,
+      onRename: (event) => {
+        handleRenameRef.current(event.sourcePath, event.destinationPath);
+      },
+      onError: handleRenameError,
+    },
     onSelectionChange: (selectedPaths) => {
       if (selectedPaths.length > 0) {
         const path = selectedPaths[0];
@@ -519,15 +661,37 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
               </div>
               <div className="files-panel-title-actions">
                 {leftMode === "files" && (
-                  <button
-                    type="button"
-                    onClick={() => fileSearch.open()}
-                    className="files-panel-icon-button"
-                    aria-label="Filter files"
-                    title="Filter files (⌘P)"
-                  >
-                    <Icon name="search" size={12} />
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleCreate("file", "")}
+                      className="files-panel-icon-button"
+                      aria-label="New file"
+                      title="New file"
+                      disabled={busy}
+                    >
+                      <Icon name="plus" size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCreate("folder", "")}
+                      className="files-panel-icon-button"
+                      aria-label="New folder"
+                      title="New folder"
+                      disabled={busy}
+                    >
+                      <Icon name="folder" size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => fileSearch.open()}
+                      className="files-panel-icon-button"
+                      aria-label="Filter files"
+                      title="Filter files (⌘P)"
+                    >
+                      <Icon name="search" size={12} />
+                    </button>
+                  </>
                 )}
                 <button
                   type="button"
@@ -628,32 +792,46 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
                 model={model}
                 style={treeStyle}
                 renderContextMenu={(item, context) => {
-                  if (item.kind === "file") {
-                    return (
-                      <div
-                        role="menu"
-                        className="files-context-menu"
-                        style={{
-                          position: "fixed",
-                          top: context.anchorRect.top,
-                          left: context.anchorRect.left,
-                        }}
-                      >
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={() => {
-                            context.close();
-                            handleViewDiffRef.current(item.path);
-                          }}
-                          className="files-context-menu-item"
-                        >
-                          View diff
+                  const isFolder = item.kind === "directory";
+                  // Clamp into viewport so the menu never renders off-screen.
+                  const top = Math.min(context.anchorRect.top, window.innerHeight - 230);
+                  const left = Math.min(context.anchorRect.left, window.innerWidth - 200);
+                  return (
+                    <div
+                      role="menu"
+                      className="files-context-menu"
+                      style={{ position: "fixed", top, left }}
+                    >
+                      {isFolder && (
+                        <>
+                          <button type="button" role="menuitem" disabled={busy} className="files-context-menu-item" onClick={() => { context.close(); handleCreate("file", item.path.replace(/\/+$/, "")); }}>
+                            <Icon name="plus" size={11} /> New File…
+                          </button>
+                          <button type="button" role="menuitem" disabled={busy} className="files-context-menu-item" onClick={() => { context.close(); handleCreate("folder", item.path.replace(/\/+$/, "")); }}>
+                            <Icon name="folder" size={11} /> New Folder…
+                          </button>
+                          <div className="files-context-menu-separator" />
+                        </>
+                      )}
+                      <button type="button" role="menuitem" disabled={busy} className="files-context-menu-item" onClick={() => { context.close({ restoreFocus: false }); model.startRenaming(item.path); }}>
+                        <Icon name="pencil" size={11} /> Rename…
+                      </button>
+                      {!isFolder && (
+                        <button type="button" role="menuitem" disabled={busy} className="files-context-menu-item" onClick={() => { context.close(); handleDuplicate(item.path); }}>
+                          <Icon name="file" size={11} /> Duplicate
                         </button>
-                      </div>
-                    );
-                  }
-                  return null;
+                      )}
+                      {!isFolder && (
+                        <button type="button" role="menuitem" className="files-context-menu-item" onClick={() => { context.close(); handleViewDiffRef.current(item.path); }}>
+                          <Icon name="git" size={11} /> View diff
+                        </button>
+                      )}
+                      <div className="files-context-menu-separator" />
+                      <button type="button" role="menuitem" disabled={busy} className="files-context-menu-item files-context-menu-item-danger" onClick={() => { context.close(); setPendingDelete({ relativePath: item.path, fullPath: joinPath(cwd, item.path), isFolder }); }}>
+                        <Icon name="trash" size={11} /> Delete
+                      </button>
+                    </div>
+                  );
                 }}
               />
             )}
@@ -800,9 +978,34 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
           <span className="files-panel-footer-text">
             {gitStatusEntries.length} changed file{gitStatusEntries.length !== 1 ? "s" : ""}
           </span>
-          <span className="files-panel-footer-hint">Right-click file → View diff</span>
+          <span className="files-panel-footer-hint">Right-click for actions</span>
         </div>
       )}
+      {fsError && (
+        <div className="files-panel-toast" role="alert">
+          <Icon name="close" size={11} />
+          <span>{fsError}</span>
+          <button type="button" className="files-panel-toast-close" aria-label="Dismiss" onClick={() => setFsError(null)}>
+            <Icon name="close" size={10} />
+          </button>
+        </div>
+      )}
+      <ConfirmDialog
+        open={!!pendingDelete}
+        title={`Delete ${pendingDelete?.isFolder ? "folder" : "file"}?`}
+        message={pendingDelete
+          ? `Are you sure you want to delete “${pendingDelete.relativePath.replace(/\/+$/, "").split("/").pop()}”?${pendingDelete.isFolder ? " This will remove the folder and everything inside it." : ""}`
+          : ""}
+        confirmLabel="Delete"
+        onConfirm={() => {
+          if (pendingDelete) {
+            const p = pendingDelete;
+            setPendingDelete(null);
+            handleDelete(p.relativePath);
+          }
+        }}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 }

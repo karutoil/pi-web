@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon, type IconName } from "./Icon";
 import { useTheme, type Theme } from "../hooks/useTheme";
+import type { UsageSummary } from "@pi-web/shared";
+import { formatTokenCount } from "../lib/formatters";
+import { formatCost } from "../lib/utils";
+
 
 // ─── PI Web settings ───
 
@@ -53,12 +57,33 @@ type PiSettings = Record<string, unknown> & {
   packages?: (string | PiPackageEntry)[];
   defaultProvider?: string;
   defaultModel?: string;
-  retry?: { enabled?: boolean };
   defaultThinkingLevel?: string;
+  hideThinkingBlock?: boolean;
+  thinkingBudgets?: Record<string, number>;
+  retry?: { enabled?: boolean; maxRetries?: number; baseDelayMs?: number; provider?: { timeoutMs?: number; maxRetries?: number; maxRetryDelayMs?: number } };
   subagents?: { agentOverrides?: Record<string, { model?: string }> };
-  compaction?: { enabled?: boolean };
+  compaction?: { enabled?: boolean; reserveTokens?: number; keepRecentTokens?: number };
+  branchSummary?: { reserveTokens?: number; skipPrompt?: boolean };
   extensions?: string[];
   skills?: string[];
+  prompts?: string[];
+  themes?: string[];
+  enableSkillCommands?: boolean;
+  enabledModels?: string[];
+  warnings?: { anthropicExtraUsage?: boolean };
+  steeringMode?: string;
+  followUpMode?: string;
+  transport?: string;
+  sessionDir?: string;
+  shellPath?: string;
+  shellCommandPrefix?: string;
+  npmCommand?: string[];
+  markdown?: { codeBlockIndent?: string };
+  quietStartup?: boolean;
+  collapseChangelog?: boolean;
+  enableInstallTelemetry?: boolean;
+  doubleEscapeAction?: string;
+  treeFilterMode?: string;
 };
 
 async function fetchPiConfig(file: "settings" | "models"): Promise<string> {
@@ -178,6 +203,39 @@ function Select({ value, onChange, options }: { value: string; onChange: (v: str
     </select>
   );
 }
+
+function NumberInput({ value, onChange, min, max, placeholder = "" }: { value: number | string; onChange: (v: number | undefined) => void; min?: number; max?: number; placeholder?: string }) {
+  return (
+    <input
+      type="number"
+      value={value}
+      min={min}
+      max={max}
+      placeholder={placeholder}
+      onChange={e => {
+        const raw = e.target.value;
+        if (raw === "") { onChange(undefined); return; }
+        const n = parseInt(raw, 10);
+        onChange(isNaN(n) ? undefined : n);
+      }}
+      className="modal-field w-full text-xs"
+      spellCheck={false}
+    />
+  );
+}
+
+function FormSection({ title, children, hint }: { title: string; children: React.ReactNode; hint?: string }) {
+  return (
+    <section className="space-y-2 border-t border-ink-800/40 pt-3 first:border-t-0 first:pt-0">
+      <div>
+        <h4 className="text-ink-200 text-xs font-semibold">{title}</h4>
+        {hint && <p className="text-ink-600 text-[0.65rem] mt-0.5">{hint}</p>}
+      </div>
+      <div className="space-y-2">{children}</div>
+    </section>
+  );
+}
+
 
 function Textarea({ value, onChange, placeholder = "", rows = 2 }: { value: string; onChange: (v: string) => void; placeholder?: string; rows?: number }) {
   return (
@@ -352,16 +410,18 @@ interface SettingsModalProps {
   projectId?: string;
 }
 
-type SettingsTab = "pi-settings" | "pi-models" | "pi-web" | "project";
+type SettingsTab = "usage" | "pi-settings" | "pi-models" | "pi-web" | "project";
+
 
 export function SettingsModal({ onClose, onResetWorkspace, projectId }: SettingsModalProps) {
   const TABS: { id: SettingsTab; label: string }[] = [
+    { id: "usage", label: "Usage" },
     { id: "pi-settings", label: "PI Settings" },
     { id: "pi-models", label: "PI Models" },
     { id: "pi-web", label: "PI Web" },
     ...(projectId ? [{ id: "project" as const, label: "Project" }] : []),
   ];
-  const [activeTab, setActiveTab] = useState<SettingsTab>("pi-settings");
+  const [activeTab, setActiveTab] = useState<SettingsTab>("usage");
 
   // PI settings
   const [settingsRaw, setSettingsRaw] = useState("{}");
@@ -378,6 +438,34 @@ export function SettingsModal({ onClose, onResetWorkspace, projectId }: Settings
   const [projectSaving, setProjectSaving] = useState(false);
   const [projectSaveError, setProjectSaveError] = useState<string | null>(null);
   const [projectDirty, setProjectDirty] = useState(false);
+
+  // Usage (aggregate across all sessions)
+  const [usage, setUsage] = useState<UsageSummary | null>(null);
+  const [usageLoading, setUsageLoading] = useState(false);
+  const [usageError, setUsageError] = useState<string | null>(null);
+  const [usageLoadedAt, setUsageLoadedAt] = useState(0);
+
+  const loadUsage = useCallback(async () => {
+    setUsageLoading(true);
+    setUsageError(null);
+    try {
+      const r = await fetch("/api/usage");
+      if (!r.ok) throw new Error(`Failed to load usage (${r.status})`);
+      const d = (await r.json()) as UsageSummary;
+      setUsage(d);
+      setUsageLoadedAt(Date.now());
+    } catch (e: any) {
+      setUsageError(e.message || "Failed to load usage");
+    } finally {
+      setUsageLoading(false);
+    }
+  }, []);
+
+  // Fetch usage when the tab becomes active (and allow manual refresh).
+  useEffect(() => {
+    if (activeTab === "usage" && !usage && !usageLoading) loadUsage();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -462,32 +550,139 @@ export function SettingsModal({ onClose, onResetWorkspace, projectId }: Settings
   const settings = useMemo(() => parseSettings(settingsRaw), [settingsRaw]);
 
   const form = useMemo(() => ({
-    theme: settings.theme || "",
-    lastChangelogVersion: settings.lastChangelogVersion || "",
+    // Model & Thinking
     defaultProvider: settings.defaultProvider || "",
     defaultModel: settings.defaultModel || "",
     defaultThinkingLevel: settings.defaultThinkingLevel || "",
-    retryEnabled: settings.retry?.enabled ?? false,
-    compactionEnabled: settings.compaction?.enabled ?? false,
+    hideThinkingBlock: settings.hideThinkingBlock ?? false,
+    enabledModels: settings.enabledModels || [],
+    // Compaction & branch summary
+    compactionEnabled: settings.compaction?.enabled ?? true,
+    compactionReserveTokens: settings.compaction?.reserveTokens,
+    compactionKeepRecentTokens: settings.compaction?.keepRecentTokens,
+    branchSummaryReserveTokens: settings.branchSummary?.reserveTokens,
+    branchSummarySkipPrompt: settings.branchSummary?.skipPrompt ?? false,
+    // Retry
+    retryEnabled: settings.retry?.enabled ?? true,
+    retryMaxRetries: settings.retry?.maxRetries,
+    retryBaseDelayMs: settings.retry?.baseDelayMs,
+    retryProviderTimeoutMs: settings.retry?.provider?.timeoutMs,
+    retryProviderMaxRetries: settings.retry?.provider?.maxRetries,
+    retryProviderMaxRetryDelayMs: settings.retry?.provider?.maxRetryDelayMs,
+    // Message delivery
+    steeringMode: settings.steeringMode || "",
+    followUpMode: settings.followUpMode || "",
+    transport: settings.transport || "",
+    // Warnings
+    warningsAnthropicExtraUsage: settings.warnings?.anthropicExtraUsage ?? true,
+    // Shell
+    shellPath: settings.shellPath || "",
+    shellCommandPrefix: settings.shellCommandPrefix || "",
+    npmCommand: (settings.npmCommand || []).join(" "),
+    // Sessions
+    sessionDir: settings.sessionDir || "",
+    // Markdown
+    markdownCodeBlockIndent: settings.markdown?.codeBlockIndent || "",
+    // UI & display (terminal-only; surfaced for completeness)
+    theme: settings.theme || "",
+    quietStartup: settings.quietStartup ?? false,
+    collapseChangelog: settings.collapseChangelog ?? false,
+    enableInstallTelemetry: settings.enableInstallTelemetry ?? true,
+    doubleEscapeAction: settings.doubleEscapeAction || "",
+    treeFilterMode: settings.treeFilterMode || "",
+    lastChangelogVersion: settings.lastChangelogVersion || "",
+    // Resources
     packages: (settings.packages || []).map(packageToForm),
     extensions: settings.extensions || [],
     skills: settings.skills || [],
+    prompts: settings.prompts || [],
+    themes: settings.themes || [],
+    enableSkillCommands: settings.enableSkillCommands ?? true,
+    // Subagents
     agentOverrides: Object.entries(settings.subagents?.agentOverrides || {}).map(([name, cfg]) => ({ name, model: cfg.model || "" })),
   }), [settings]);
 
+  // Write a boolean toggle: keep the file clean by omitting default values,
+  // but preserve a key that was already present so no-op saves are stable.
+  function boolToggle(current: unknown, value: boolean, defaultValue: boolean): boolean | undefined {
+    const exists = current !== undefined;
+    if (value === defaultValue && !exists) return undefined;
+    return value;
+  }
+
   function buildSettingsFromForm(values: typeof form): PiSettings {
     const next: PiSettings = { ...parseSettings(settingsRaw) };
-    next.theme = values.theme || undefined;
-    next.lastChangelogVersion = values.lastChangelogVersion || undefined;
+    // Helper: patch a nested object, preserving existing keys and omitting empties.
+    const patchObj = <T extends Record<string, unknown>>(existing: T | undefined, patch: Record<string, unknown>): T | undefined => {
+      const merged = { ...(existing || {}), ...patch };
+      // Drop keys whose value is undefined (form field cleared / default-omitted).
+      const cleaned: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(merged)) if (v !== undefined) cleaned[k] = v;
+      return Object.keys(cleaned).length ? (cleaned as T) : undefined;
+    };
+
+    // Model & Thinking
     next.defaultProvider = values.defaultProvider || undefined;
     next.defaultModel = values.defaultModel || undefined;
     next.defaultThinkingLevel = values.defaultThinkingLevel || undefined;
-    next.retry = values.retryEnabled ? { enabled: true } : undefined;
-    next.compaction = values.compactionEnabled ? { enabled: true } : undefined;
+    next.hideThinkingBlock = boolToggle(next.hideThinkingBlock, values.hideThinkingBlock, false);
+    next.enabledModels = values.enabledModels.filter(e => parseEnabledEntry(e).path).length ? values.enabledModels.filter(e => parseEnabledEntry(e).path) : undefined;
+
+    // Compaction & branch summary
+    next.compaction = patchObj(next.compaction, {
+      enabled: boolToggle(next.compaction?.enabled, values.compactionEnabled, true),
+      reserveTokens: values.compactionReserveTokens,
+      keepRecentTokens: values.compactionKeepRecentTokens,
+    });
+    next.branchSummary = patchObj(next.branchSummary, {
+      reserveTokens: values.branchSummaryReserveTokens,
+      skipPrompt: boolToggle(next.branchSummary?.skipPrompt, values.branchSummarySkipPrompt, false),
+    });
+
+    // Retry
+    const retryProvider = patchObj(next.retry?.provider, {
+      timeoutMs: values.retryProviderTimeoutMs,
+      maxRetries: values.retryProviderMaxRetries,
+      maxRetryDelayMs: values.retryProviderMaxRetryDelayMs,
+    });
+    next.retry = patchObj(next.retry, {
+      enabled: boolToggle(next.retry?.enabled, values.retryEnabled, true),
+      maxRetries: values.retryMaxRetries,
+      baseDelayMs: values.retryBaseDelayMs,
+      provider: retryProvider,
+    });
+    // Message delivery
+    next.steeringMode = values.steeringMode || undefined;
+    next.followUpMode = values.followUpMode || undefined;
+    next.transport = values.transport || undefined;
+    // Warnings
+    next.warnings = patchObj(next.warnings, { anthropicExtraUsage: boolToggle(next.warnings?.anthropicExtraUsage, values.warningsAnthropicExtraUsage, true) });
+    // Shell
+    next.shellPath = values.shellPath || undefined;
+    next.shellCommandPrefix = values.shellCommandPrefix || undefined;
+    const npmParts = splitTags(values.npmCommand);
+    next.npmCommand = npmParts.length ? npmParts : undefined;
+    // Sessions
+    next.sessionDir = values.sessionDir || undefined;
+    // Markdown
+    next.markdown = patchObj(next.markdown, { codeBlockIndent: values.markdownCodeBlockIndent || undefined });
+    // UI & display
+    next.theme = values.theme || undefined;
+    next.quietStartup = boolToggle(next.quietStartup, values.quietStartup, false);
+    next.collapseChangelog = boolToggle(next.collapseChangelog, values.collapseChangelog, false);
+    next.enableInstallTelemetry = boolToggle(next.enableInstallTelemetry, values.enableInstallTelemetry, true);
+    next.doubleEscapeAction = values.doubleEscapeAction || undefined;
+    next.treeFilterMode = values.treeFilterMode || undefined;
+    next.lastChangelogVersion = values.lastChangelogVersion || undefined;
+    // Resources
     const validPackages = values.packages.filter(p => p.source.trim());
     next.packages = validPackages.length ? validPackages.map(formToPackage) : undefined;
     next.extensions = values.extensions.filter(e => parseEnabledEntry(e).path).length ? values.extensions.filter(e => parseEnabledEntry(e).path) : undefined;
     next.skills = values.skills.filter(e => parseEnabledEntry(e).path).length ? values.skills.filter(e => parseEnabledEntry(e).path) : undefined;
+    next.prompts = values.prompts.filter(e => parseEnabledEntry(e).path).length ? values.prompts.filter(e => parseEnabledEntry(e).path) : undefined;
+    next.themes = values.themes.filter(e => parseEnabledEntry(e).path).length ? values.themes.filter(e => parseEnabledEntry(e).path) : undefined;
+    next.enableSkillCommands = boolToggle(next.enableSkillCommands, values.enableSkillCommands, true);
+    // Subagents
     const validOverrides = values.agentOverrides.filter(a => a.name.trim());
     next.subagents = validOverrides.length
       ? { agentOverrides: Object.fromEntries(validOverrides.map(a => [a.name.trim(), { model: a.model }])) }
@@ -609,6 +804,129 @@ export function SettingsModal({ onClose, onResetWorkspace, projectId }: Settings
     try { JSON.parse(settingsRaw); return null; } catch (e: any) { return e.message || "Invalid JSON"; }
   }, [settingsRaw]);
 
+  const renderUsage = () => {
+    if (usageLoading && !usage) return <div className="flex-1 flex items-center justify-center text-ink-500 text-sm">Loading usage…</div>;
+    if (usageError && !usage) return <div className="text-red-400 text-xs bg-red-950/30 border border-red-900/40 rounded px-3 py-2">{usageError}</div>;
+    if (!usage) return null;
+
+    const totalProjects = usage.projects.length;
+    const activeProjects = usage.projects.filter(p => p.sessionCount > 0).length;
+    const avgCost = usage.totalSessions > 0 ? usage.totalCost / usage.totalSessions : 0;
+    const topModel = usage.byModel[0];
+    const staleMs = Date.now() - usageLoadedAt;
+
+    return (
+      <div className="flex flex-col gap-4 overflow-y-auto custom-scrollbar pr-1">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-ink-500 text-xs flex-1">
+            Token and cost roll-up across every PI session for all known projects.
+            {usageLoadedAt > 0 && (
+              <> Computed {staleMs < 60000 ? "just now" : `${Math.floor(staleMs / 60000)}m ago`}.</>
+            )}
+          </p>
+          <button
+            type="button"
+            onClick={loadUsage}
+            disabled={usageLoading}
+            className="modal-button modal-button--ghost text-xs"
+          >
+            {usageLoading ? "Refreshing…" : "Refresh"}
+          </button>
+        </div>
+
+        {usageError && (
+          <div className="text-red-400 text-xs bg-red-950/30 border border-red-900/40 rounded px-3 py-2">{usageError}</div>
+        )}
+
+        {/* Headline totals */}
+        <div className="grid grid-cols-3 gap-3">
+          <div className="rounded-md border border-ink-800/40 bg-ink-900/30 p-3">
+            <div className="text-ink-500 text-[0.65rem] uppercase tracking-wide">Total tokens</div>
+            <div className="text-ink-100 text-lg font-semibold mt-0.5">{formatTokenCount(usage.totalTokens)}</div>
+            <div className="text-ink-600 text-[0.65rem] mt-0.5">{usage.totalTokens.toLocaleString()}</div>
+          </div>
+          <div className="rounded-md border border-ink-800/40 bg-ink-900/30 p-3">
+            <div className="text-ink-500 text-[0.65rem] uppercase tracking-wide">Total cost</div>
+            <div className="text-amber-500 text-lg font-semibold mt-0.5">{formatCost(usage.totalCost) || "$0.00"}</div>
+            <div className="text-ink-600 text-[0.65rem] mt-0.5">avg {formatCost(avgCost) || "$0.00"}/session</div>
+          </div>
+          <div className="rounded-md border border-ink-800/40 bg-ink-900/30 p-3">
+            <div className="text-ink-500 text-[0.65rem] uppercase tracking-wide">Sessions</div>
+            <div className="text-ink-100 text-lg font-semibold mt-0.5">{usage.totalSessions.toLocaleString()}</div>
+            <div className="text-ink-600 text-[0.65rem] mt-0.5">{activeProjects} of {totalProjects} projects active</div>
+          </div>
+        </div>
+
+        {/* Per-project breakdown */}
+        <section className="space-y-2">
+          <h3 className="text-ink-200 text-sm font-medium">Per project</h3>
+          {usage.projects.length === 0 ? (
+            <div className="text-ink-500 text-xs">No projects added yet.</div>
+          ) : (
+            <div className="rounded-md border border-ink-800/40 overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-ink-900/40 text-ink-500">
+                  <tr>
+                    <th className="text-left font-medium px-3 py-1.5">Project</th>
+                    <th className="text-right font-medium px-3 py-1.5">Sessions</th>
+                    <th className="text-right font-medium px-3 py-1.5">Messages</th>
+                    <th className="text-right font-medium px-3 py-1.5">Tokens</th>
+                    <th className="text-right font-medium px-3 py-1.5">Cost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {usage.projects.map(p => (
+                    <tr key={p.id} className="border-t border-ink-800/30">
+                      <td className="px-3 py-1.5">
+                        <div className="text-ink-200">{p.name}</div>
+                        <div className="text-ink-600 text-[0.65rem] truncate max-w-[16rem]">{p.path}</div>
+                      </td>
+                      <td className="text-right px-3 py-1.5 text-ink-300">{p.sessionCount.toLocaleString()}</td>
+                      <td className="text-right px-3 py-1.5 text-ink-400">{p.totalMessages.toLocaleString()}</td>
+                      <td className="text-right px-3 py-1.5 text-ink-300">{formatTokenCount(p.totalTokens)}</td>
+                      <td className="text-right px-3 py-1.5 text-amber-500/80">{formatCost(p.totalCost) || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        {/* Per-model breakdown */}
+        {usage.byModel.length > 0 && (
+          <section className="space-y-2">
+            <h3 className="text-ink-200 text-sm font-medium">Per model</h3>
+            <div className="rounded-md border border-ink-800/40 overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-ink-900/40 text-ink-500">
+                  <tr>
+                    <th className="text-left font-medium px-3 py-1.5">Model</th>
+                    <th className="text-right font-medium px-3 py-1.5">Sessions</th>
+                    <th className="text-right font-medium px-3 py-1.5">Tokens</th>
+                    <th className="text-right font-medium px-3 py-1.5">Cost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {usage.byModel.slice(0, 10).map(m => (
+                    <tr key={m.model} className="border-t border-ink-800/30">
+                      <td className="px-3 py-1.5 text-ink-300 font-mono">{m.model}</td>
+                      <td className="text-right px-3 py-1.5 text-ink-400">{m.sessions.toLocaleString()}</td>
+                      <td className="text-right px-3 py-1.5 text-ink-300">{formatTokenCount(m.tokens)}</td>
+                      <td className="text-right px-3 py-1.5 text-amber-500/80">{formatCost(m.cost) || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {topModel && (
+              <p className="text-ink-600 text-[0.65rem]">Top model: <span className="text-ink-400 font-mono">{topModel.model}</span> ({formatTokenCount(topModel.tokens)} tokens).</p>
+            )}
+          </section>
+        )}
+      </div>
+    );
+  };
   const renderPiSettings = () => {
     if (settingsLoading) return <div className="flex-1 flex items-center justify-center text-ink-500 text-sm">Loading PI settings…</div>;
     if (settingsLoadError) return <div className="text-red-400 text-xs bg-red-950/30 border border-red-900/40 rounded px-3 py-2">{settingsLoadError}</div>;
@@ -667,51 +985,189 @@ export function SettingsModal({ onClose, onResetWorkspace, projectId }: Settings
             </div>
           </div>
         ) : (
-          <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Theme" hint="PI terminal theme name">
-                <TextInput value={form.theme} onChange={v => updateForm({ theme: v })} />
+          <div className="flex flex-col gap-3 min-h-0 flex-1">
+          <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 space-y-5">
+            <FormSection title="Model & thinking" hint="Default provider/model and reasoning level used by every new prompt.">
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Default provider" hint='e.g. "anthropic", "openai", "umans"'>
+                  <TextInput value={form.defaultProvider} onChange={v => updateForm({ defaultProvider: v })} placeholder="anthropic" />
+                </Field>
+                <Field label="Default model">
+                  <TextInput value={form.defaultModel} onChange={v => updateForm({ defaultModel: v })} placeholder="claude-sonnet-4-20250514" />
+                </Field>
+              </div>
+              <Field label="Default thinking level">
+                <Select
+                  value={form.defaultThinkingLevel}
+                  onChange={v => updateForm({ defaultThinkingLevel: v })}
+                  options={[
+                    { value: "", label: "Default (off)" },
+                    { value: "off", label: "Off" },
+                    { value: "minimal", label: "Minimal" },
+                    { value: "low", label: "Low" },
+                    { value: "medium", label: "Medium" },
+                    { value: "high", label: "High" },
+                    { value: "xhigh", label: "Extra high" },
+                  ]}
+                />
               </Field>
+              <div className="flex items-center gap-6">
+                <Toggle checked={form.hideThinkingBlock} onChange={v => updateForm({ hideThinkingBlock: v })} label="Hide thinking blocks" />
+              </div>
+              <Field label="Enabled models" hint="Glob patterns for Ctrl+P model cycling.">
+                <EnabledStringList values={form.enabledModels} onChange={v => updateForm({ enabledModels: v })} placeholder="claude-*" />
+              </Field>
+            </FormSection>
+
+            <FormSection title="Compaction" hint="Auto-summarize the context when it grows too large.">
+              <Toggle checked={form.compactionEnabled} onChange={v => updateForm({ compactionEnabled: v })} label="Compaction enabled" />
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Reserve tokens" hint="Tokens reserved for the LLM response.">
+                  <NumberInput value={form.compactionReserveTokens ?? ""} onChange={v => updateForm({ compactionReserveTokens: v })} placeholder="16384" />
+                </Field>
+                <Field label="Keep recent tokens" hint="Recent tokens kept (not summarized).">
+                  <NumberInput value={form.compactionKeepRecentTokens ?? ""} onChange={v => updateForm({ compactionKeepRecentTokens: v })} placeholder="20000" />
+                </Field>
+              </div>
+            </FormSection>
+
+            <FormSection title="Branch summary" hint="Summarization when navigating the session tree.">
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Reserve tokens">
+                  <NumberInput value={form.branchSummaryReserveTokens ?? ""} onChange={v => updateForm({ branchSummaryReserveTokens: v })} placeholder="16384" />
+                </Field>
+                <Toggle checked={form.branchSummarySkipPrompt} onChange={v => updateForm({ branchSummarySkipPrompt: v })} label="Skip summary prompt" />
+              </div>
+            </FormSection>
+
+            <FormSection title="Retry" hint="Automatic retry on transient errors.">
+              <Toggle checked={form.retryEnabled} onChange={v => updateForm({ retryEnabled: v })} label="Retry enabled" />
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Max retries">
+                  <NumberInput value={form.retryMaxRetries ?? ""} onChange={v => updateForm({ retryMaxRetries: v })} placeholder="3" />
+                </Field>
+                <Field label="Base delay (ms)">
+                  <NumberInput value={form.retryBaseDelayMs ?? ""} onChange={v => updateForm({ retryBaseDelayMs: v })} placeholder="2000" />
+                </Field>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <Field label="Provider timeout (ms)">
+                  <NumberInput value={form.retryProviderTimeoutMs ?? ""} onChange={v => updateForm({ retryProviderTimeoutMs: v })} placeholder="3600000" />
+                </Field>
+                <Field label="Provider max retries">
+                  <NumberInput value={form.retryProviderMaxRetries ?? ""} onChange={v => updateForm({ retryProviderMaxRetries: v })} placeholder="0" />
+                </Field>
+                <Field label="Max retry delay (ms)">
+                  <NumberInput value={form.retryProviderMaxRetryDelayMs ?? ""} onChange={v => updateForm({ retryProviderMaxRetryDelayMs: v })} placeholder="60000" />
+                </Field>
+              </div>
+            </FormSection>
+
+            <FormSection title="Message delivery" hint="How queued steering/follow-up messages are sent.">
+              <div className="grid grid-cols-3 gap-3">
+                <Field label="Steering mode">
+                  <Select value={form.steeringMode} onChange={v => updateForm({ steeringMode: v })} options={[{ value: "", label: "Default" }, { value: "all", label: "All" }, { value: "one-at-a-time", label: "One at a time" }]} />
+                </Field>
+                <Field label="Follow-up mode">
+                  <Select value={form.followUpMode} onChange={v => updateForm({ followUpMode: v })} options={[{ value: "", label: "Default" }, { value: "all", label: "All" }, { value: "one-at-a-time", label: "One at a time" }]} />
+                </Field>
+                <Field label="Transport">
+                  <Select value={form.transport} onChange={v => updateForm({ transport: v })} options={[{ value: "", label: "Default" }, { value: "sse", label: "SSE" }, { value: "websocket", label: "WebSocket" }, { value: "auto", label: "Auto" }]} />
+                </Field>
+              </div>
+            </FormSection>
+
+            <FormSection title="Warnings">
+              <Toggle checked={form.warningsAnthropicExtraUsage} onChange={v => updateForm({ warningsAnthropicExtraUsage: v })} label="Warn on Anthropic extra usage" />
+            </FormSection>
+
+            <FormSection title="Shell" hint="Customize the shell and npm command used by PI's bash tool.">
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Shell path" hint="e.g. for Cygwin on Windows">
+                  <TextInput value={form.shellPath} onChange={v => updateForm({ shellPath: v })} placeholder="/bin/bash" />
+                </Field>
+                <Field label="Shell command prefix">
+                  <TextInput value={form.shellCommandPrefix} onChange={v => updateForm({ shellCommandPrefix: v })} placeholder="shopt -s expand_aliases" />
+                </Field>
+              </div>
+              <Field label="npm command" hint="argv for npm operations, space-separated">
+                <TextInput value={form.npmCommand} onChange={v => updateForm({ npmCommand: v })} placeholder="mise exec node@20 -- npm" />
+              </Field>
+            </FormSection>
+
+            <FormSection title="Sessions">
+              <Field label="Session directory" hint="Where session files are stored. Accepts ~ and relative paths.">
+                <TextInput value={form.sessionDir} onChange={v => updateForm({ sessionDir: v })} placeholder=".pi/sessions" />
+              </Field>
+            </FormSection>
+
+            <FormSection title="Markdown">
+              <Field label="Code block indent">
+                <TextInput value={form.markdownCodeBlockIndent} onChange={v => updateForm({ markdownCodeBlockIndent: v })} placeholder="  " />
+              </Field>
+            </FormSection>
+
+            <FormSection title="UI & display" hint="Terminal-only display options; surfaced here for completeness.">
+              <Field label="Theme" hint="PI terminal theme name">
+                <TextInput value={form.theme} onChange={v => updateForm({ theme: v })} placeholder="dark" />
+              </Field>
+              <div className="flex items-center gap-6 flex-wrap">
+                <Toggle checked={form.quietStartup} onChange={v => updateForm({ quietStartup: v })} label="Quiet startup" />
+                <Toggle checked={form.collapseChangelog} onChange={v => updateForm({ collapseChangelog: v })} label="Collapse changelog" />
+                <Toggle checked={form.enableInstallTelemetry} onChange={v => updateForm({ enableInstallTelemetry: v })} label="Install telemetry" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Double-escape action">
+                  <Select value={form.doubleEscapeAction} onChange={v => updateForm({ doubleEscapeAction: v })} options={[{ value: "", label: "Default (tree)" }, { value: "tree", label: "Tree" }, { value: "fork", label: "Fork" }, { value: "none", label: "None" }]} />
+                </Field>
+                <Field label="Tree filter mode">
+                  <Select value={form.treeFilterMode} onChange={v => updateForm({ treeFilterMode: v })} options={[{ value: "", label: "Default" }, { value: "default", label: "Default" }, { value: "no-tools", label: "No tools" }, { value: "user-only", label: "User only" }, { value: "labeled-only", label: "Labeled only" }, { value: "all", label: "All" }]} />
+                </Field>
+              </div>
               <Field label="Last changelog version">
                 <TextInput value={form.lastChangelogVersion} onChange={v => updateForm({ lastChangelogVersion: v })} />
               </Field>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Default provider">
-                <TextInput value={form.defaultProvider} onChange={v => updateForm({ defaultProvider: v })} />
+            </FormSection>
+
+            <FormSection title="Resources" hint="Where PI loads extensions, skills, prompts, and themes from.">
+              <Field label="Packages">
+                <PackagesEditor value={form.packages} onChange={v => updateForm({ packages: v })} />
               </Field>
-              <Field label="Default model">
-                <TextInput value={form.defaultModel} onChange={v => updateForm({ defaultModel: v })} />
+              <Field label="Extensions" hint="Local paths. Toggle on/off via the switch.">
+                <EnabledStringList values={form.extensions} onChange={v => updateForm({ extensions: v })} placeholder="extensions/foo.ts" />
               </Field>
-            </div>
-            <Field label="Default thinking level">
-              <Select
-                value={form.defaultThinkingLevel}
-                onChange={v => updateForm({ defaultThinkingLevel: v })}
-                options={[
-                  { value: "", label: "Default" },
-                  { value: "low", label: "Low" },
-                  { value: "medium", label: "Medium" },
-                  { value: "high", label: "High" },
-                ]}
-              />
-            </Field>
-            <div className="flex items-center gap-6">
-              <Toggle checked={form.retryEnabled} onChange={v => updateForm({ retryEnabled: v })} label="Retry enabled" />
-              <Toggle checked={form.compactionEnabled} onChange={v => updateForm({ compactionEnabled: v })} label="Compaction enabled" />
-            </div>
-            <Field label="Packages">
-              <PackagesEditor value={form.packages} onChange={v => updateForm({ packages: v })} />
-            </Field>
-            <Field label="Extensions" hint="Prefix toggled via on/off switch">
-              <EnabledStringList values={form.extensions} onChange={v => updateForm({ extensions: v })} placeholder="extensions/foo.ts" />
-            </Field>
-            <Field label="Skills" hint="Prefix toggled via on/off switch">
-              <EnabledStringList values={form.skills} onChange={v => updateForm({ skills: v })} placeholder="skills/foo/SKILL.md" />
-            </Field>
-            <Field label="Subagent model overrides">
-              <AgentOverridesEditor value={form.agentOverrides} onChange={v => updateForm({ agentOverrides: v })} />
-            </Field>
+              <Field label="Skills" hint="Local paths. Toggle on/off via the switch.">
+                <EnabledStringList values={form.skills} onChange={v => updateForm({ skills: v })} placeholder="skills/foo/SKILL.md" />
+              </Field>
+              <Field label="Prompts" hint="Local paths. Toggle on/off via the switch.">
+                <EnabledStringList values={form.prompts} onChange={v => updateForm({ prompts: v })} placeholder="prompts/foo.md" />
+              </Field>
+              <Field label="Themes" hint="Local paths. Toggle on/off via the switch.">
+                <EnabledStringList values={form.themes} onChange={v => updateForm({ themes: v })} placeholder="themes/foo.json" />
+              </Field>
+              <Toggle checked={form.enableSkillCommands} onChange={v => updateForm({ enableSkillCommands: v })} label="Register skills as /skill:name commands" />
+            </FormSection>
+
+            <FormSection title="Subagents" hint="Per-agent model overrides.">
+              <Field label="Subagent model overrides">
+                <AgentOverridesEditor value={form.agentOverrides} onChange={v => updateForm({ agentOverrides: v })} />
+              </Field>
+            </FormSection>
+          </div>
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-ink-800/40">
+            <span className="text-ink-500 text-[0.65rem] mr-auto">{settingsDirty ? "Unsaved changes" : "All changes saved"}</span>
+            {settingsValidationError && (
+              <span className="text-red-400 text-xs">{settingsValidationError}</span>
+            )}
+            <button
+              type="button"
+              onClick={handleSaveSettings}
+              disabled={settingsSaving || !!settingsValidationError || !settingsDirty}
+              className={`modal-button modal-button--primary text-xs ${settingsSaving || !!settingsValidationError || !settingsDirty ? "opacity-45 cursor-not-allowed" : ""}`}
+            >
+              {settingsSaving ? "Saving…" : "Save PI settings"}
+            </button>
+          </div>
           </div>
         )}
       </div>
@@ -916,9 +1372,11 @@ export function SettingsModal({ onClose, onResetWorkspace, projectId }: Settings
             </div>
           </div>
           <div className="modal-body modal-body--compact flex-1 min-h-0 flex flex-col">
+            {activeTab === "usage" && renderUsage()}
             {activeTab === "pi-settings" && renderPiSettings()}
             {activeTab === "pi-models" && renderPiModels()}
             {activeTab === "pi-web" && renderPiWeb()}
+            {activeTab === "project" && renderProjectSettings()}
           </div>
           <div className="modal-footer mobile-safe-bottom">
             <button onClick={onClose} className="modal-button modal-button--primary">Done</button>

@@ -151,7 +151,7 @@ const SVG_PATHS = {
   },
 
   // ── Inbox ─────────────────────────────────────────────────
-  // Proper tray shape: open top, slot for items
+  // Envelope-style tray: flared sides, centred V-notch slot
   inbox: {
     viewBox: "0 0 16 16",
     fill: "none",
@@ -160,13 +160,10 @@ const SVG_PATHS = {
     ...ROUND,
     children: (
       <>
-        {/* Tray body */}
-        <rect x="2" y="8" width="12" height="6" rx="1.5" />
-        {/* Top slot flaps */}
-        <path d="M2 9 L5.5 9 Q6 9 6.5 8 L7 7 L9 7 L9.5 8 Q10 9 10.5 9 L14 9" />
-        {/* Envelope/letter peek */}
-        <path d="M5 5.5 L8 3.5 L11 5.5" />
-        <line x1="8" y1="3.5" x2="8" y2="6.5" />
+        {/* Tray body, flared top edges */}
+        <path d="M3 8 L4.6 4.3 Q4.8 4 5.2 4 L10.8 4 Q11.2 4 11.4 4.3 L13 8 L13 12 Q13 13 12 13 L4 13 Q3 13 3 12 Z" />
+        {/* Slot notch */}
+        <path d="M3 8 L5.5 8 L6.7 9.7 L9.3 9.7 L10.5 8 L13 8" />
       </>
     ),
   },
@@ -209,7 +206,7 @@ const SVG_PATHS = {
   },
 
   // ── Refresh ───────────────────────────────────────────────
-  // Full arc with proper gap and arrow direction reversed for clarity
+  // 270° arc with arrowhead tangent to the circle at its end point
   refresh: {
     viewBox: "0 0 16 16",
     fill: "none",
@@ -218,8 +215,8 @@ const SVG_PATHS = {
     ...ROUND,
     children: (
       <>
-        <path d="M13.5 8 A5.5 5.5 0 1 1 10.5 3.2" />
-        <polyline points="10.5 1 10.5 4 13.5 4" />
+        <path d="M13.5 8 A5.5 5.5 0 1 1 8 2.5" />
+        <polyline points="5.8 1.2 8 2.5 5.8 3.8" />
       </>
     ),
   },

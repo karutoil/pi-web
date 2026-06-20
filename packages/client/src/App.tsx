@@ -451,11 +451,22 @@ export default function App() {
   // #LIVE: persist the active (project, session) whenever it changes so a
   // refresh can restore it. Cleared when leaving the chat view for good
   // (e.g. switching projects) so we don't restore a stale selection.
+  //
+  // CRITICAL: do NOT clear on the initial mount. Before the restore effect
+  // runs, `view` is still "projects" and `activeSession` is null — the old
+  // `else if (!activeSession)` branch wiped the seeded LIVE_SESSION_KEY
+  // here, so the restore effect (which depends on the saved projectId) found
+  // nothing and the user landed on the empty projects view after every
+  // refresh — the "lose the live PI session" bug. We gate the clear on
+  // restore having run (restoreAttemptedRef) AND a real leave of chat, so
+  // the mount window preserves the seed.
   useEffect(() => {
     try {
       if (view === "chat" && selectedProject && activeSession?.filePath) {
         sessionStorage.setItem(LIVE_SESSION_KEY, JSON.stringify({ projectId: selectedProject.id, sessionPath: activeSession.filePath }));
-      } else if (!activeSession) {
+      } else if (restoreAttemptedRef.current && view !== "chat" && !activeSession) {
+        // Only clear once we've had a chance to restore AND are intentionally
+        // leaving chat (not the initial mount-before-restore window).
         sessionStorage.removeItem(LIVE_SESSION_KEY);
       }
     } catch {}
