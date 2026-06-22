@@ -165,7 +165,7 @@ describe('MessageBubble', () => {
 
   it('renders standalone tool result with tool name when no inline tool call', () => {
     render(<MessageBubble message={toolResultMessage} {...defaultProps} />);
-    expect(screen.getByText(/read result/)).toBeInTheDocument();
+    expect(screen.getByText('read')).toBeInTheDocument();
   });
 
   it('hides standalone tool result when inline tool call exists', () => {
@@ -188,7 +188,7 @@ describe('MessageBubble', () => {
 
   it('renders error tool result with error indicator', () => {
     render(<MessageBubble message={erroredToolResult} {...defaultProps} />);
-    expect(screen.getByText('(error)')).toBeInTheDocument();
+    expect(screen.getByText('Error')).toBeInTheDocument();
   });
 
   // ─── Bash execution ───
@@ -200,7 +200,7 @@ describe('MessageBubble', () => {
 
   it('shows exit code for bash execution', () => {
     render(<MessageBubble message={bashMessage} {...defaultProps} />);
-    expect(screen.getByText('[0]')).toBeInTheDocument();
+    expect(screen.getByText('0')).toBeInTheDocument();
   });
 
   // ─── System messages ───

@@ -112,6 +112,17 @@ const SVG_PATHS = {
     children: <path d="M4.5 4.5 L11.5 11.5 M11.5 4.5 L4.5 11.5" />,
   },
 
+  // ── Check ───────────────────────────────────────────────
+  // Crisp checkmark for "done" states
+  check: {
+    viewBox: "0 0 16 16",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "2",
+    ...ROUND,
+    children: <path d="M3.8 8.4 L6.6 11.2 L12.4 4.4" />,
+  },
+
   // ── Home ──────────────────────────────────────────────────
   // Cleaner roofline, door centred and proportional
   home: {
