@@ -74,8 +74,12 @@ self.addEventListener("fetch", (event) => {
           if (response.ok) {
             const clone = response.clone();
             caches.open(STATIC_CACHE).then((cache) => cache.put(event.request, clone));
+            return response;
           }
-          return response;
+          // M7: non-OK (5xx) — a transient server error on the HTML route would
+          // render a broken page and prevent the app from mounting to reattach.
+          // Fall back to the cached shell so the app can at least load + retry WS.
+          return caches.match(event.request).then((c) => c || caches.match("/")).then((c) => c || response);
         })
         .catch(() => caches.match(event.request).then((c) => c || caches.match("/")))
     );
@@ -112,7 +116,12 @@ self.addEventListener("fetch", (event) => {
           caches.open(STATIC_CACHE).then((cache) => cache.put(event.request, clone));
         }
         return response;
-      });
+        // H4: offline + cache miss (e.g. a hashed asset evicted under storage
+        // pressure while a stale cached "/" references it) would reject and crash
+        // the fetch handler. Fall back to the cached request (or a 504) so the SW
+        // stays alive; the network-first nav self-heals the stale shell on the
+        // next online navigation.
+      }).catch(() => caches.match(event.request).then((c) => c || new Response("", { status: 504, statusText: "Offline" })));
     })
   );
 });

@@ -81,22 +81,13 @@ export default function App() {
 
   // #LIVE: persist the active (project, session) across refresh / leave so the
   // client reconnects to the still-running PI process instead of dropping the
-  // user onto the empty projects view. localStorage (NOT sessionStorage) so the
-  // reattach token survives a tab close+reopen AND a browser restart —
-  // sessionStorage is per-tab and is wiped when the tab closes, which lost
-  // the live session on reopen. Holds the last VIEWED {projectId, sessionPath?,
-  // newSessionId?}; other live sessions in the same/other projects stay alive
-  // in the pool regardless and are surfaced via the background-session toast.
-  const LIVE_SESSION_KEY = "pi-web:live-session";
-  function readLiveSession(): { projectId?: string; sessionPath?: string; newSessionId?: string } | null {
-    try { return JSON.parse(localStorage.getItem(LIVE_SESSION_KEY) || "null"); } catch { return null; }
-  }
-  function writeLiveSession(v: { projectId: string; sessionPath?: string; newSessionId?: string }) {
-    try { localStorage.setItem(LIVE_SESSION_KEY, JSON.stringify(v)); } catch {}
-  }
-  function clearLiveSession() {
-    try { localStorage.removeItem(LIVE_SESSION_KEY); } catch {}
-  }
+  // #LIVE (server-side): the restore token is NOT in localStorage anymore —
+  // localStorage was shared across tabs, so two tabs on different sessions
+  // clobbered each other's reattach target (H2). The server pool is now the
+  // single source of truth: /live-sessions returns every still-running agent
+  // for a project (most-recently-active first, including pending new sessions),
+  // and restoreLiveSession reattaches to it directly. Survives reload, tab
+  // close+reopen, and browser restart via the server's idle grace window.
   const restoreAttemptedRef = useRef(false);
   function safeTimeout(fn: () => void, ms: number): ReturnType<typeof setTimeout> {
     const id = setTimeout(fn, ms);
@@ -408,25 +399,14 @@ export default function App() {
       .then(d => {
         const list = d.projects || [];
         setProjects(list);
-        // #LIVE: restore the project that owned the last live session so a
-        // refresh reconnects to the still-running PI process instead of
-        // landing on the empty projects view. Two paths:
-        //   1. sessionStorage (LIVE_SESSION_KEY) — fast path for a normal refresh.
-        //   2. Most-recently-touched project — hard path for a cache-cleared
-        //      refresh. The server touches lastOpenedAt on every WS connect, so
-        //      the project that hosted the orphaned live session is the most
-        //      recently touched. Selecting it lets the session-restore effect
-        //      (which has its own /live-sessions fallback) recover the session.
+        // #LIVE (server-side): no client-side token. The server touches
+        // lastOpenedAt on every WS connect, so the most-recently-touched project
+        // is the one hosting the live session the user was on. Selecting it lets
+        // the restore effect (which queries /live-sessions) reattach. Multi-tab
+        // correct (no shared localStorage to clobber) and survives tab close+
+        // reopen + browser restart via the server pool source of truth.
         let proj: Project | undefined;
-        const saved = readLiveSession();
-        if (saved?.projectId) proj = list.find((p: Project) => p.id === saved.projectId);
-        // Restore a pending new session's id so the server's #REATTACH reverse-lookup
-        // reattaches to the still-booting agent instead of spawning a duplicate
-        // (newSessionId is in-memory state and is otherwise lost on reload).
-        if (proj && saved?.newSessionId && !saved.sessionPath) setNewSessionId(saved.newSessionId);
-        if (!proj && list.length > 0) {
-          // Cache-cleared: pick the most-recently-touched project (server touches
-          // lastOpenedAt on WS connect, so this is the one with the live agent).
+        if (list.length > 0) {
           const sorted = [...list].sort((a, b) =>
             (b.lastOpenedAt || "").localeCompare(a.lastOpenedAt || ""));
           proj = sorted[0];
@@ -462,37 +442,36 @@ export default function App() {
   // sessionPath regardless of whether the file is on disk yet.
   const restoreLiveSession = useCallback(async () => {
     if (restoreAttemptedRef.current || !selectedProject) return;
-    // Path 1: client-side localStorage — survives refresh AND tab close/reopen.
-    const saved = readLiveSession();
+    const restoreProjectId = selectedProject.id;
+    // M9: set the gate BEFORE any async work so a project switch during the
+    // fetch can't start a second restore that clobbers this one's result.
+    restoreAttemptedRef.current = true;
+    // Server-side: the server pool is the single source of truth for which
+    // sessions are still live (no client-side localStorage token — that
+    // clobbered across tabs, H2). /live-sessions returns most-recently-active
+    // first, including pending new sessions (with newSessionId) so a reload
+    // during boot reattaches to the still-starting agent via the server's
+    // reverse-lookup.
     let sessionPath: string | null = null;
     let pendingNewSessionId: string | null = null;
-    if (saved?.projectId === selectedProject.id) {
-      // A pending new session (pre-rekey) has no sessionPath yet — reattach by
-      // newSessionId so the server's reverse-lookup finds the booting agent.
-      if (saved.newSessionId && !saved.sessionPath) {
-        pendingNewSessionId = saved.newSessionId;
-      } else if (saved.sessionPath) {
-        sessionPath = saved.sessionPath;
-      }
-    } else {
-      // Path 2: server-side recovery (cache-cleared refresh). The server pool
-      // is the source of truth — if any agent is still live for this project,
-      // reattach. With multiple live sessions prefer the saved sessionPath (the
-      // one the user was viewing), else the most-recently-active. Without this a
-      // hard refresh orphans the live agent and the user "loses access to the
-      // live PI session" until the idle timer eventually reaps it.
-      try {
-        const r = await fetch(`/api/projects/${selectedProject.id}/live-sessions`);
-        if (r.ok) {
-          const data = await r.json();
-          const live = data.sessions || [];
-          const match = (saved?.sessionPath && live.find((s: any) => s.sessionPath === saved.sessionPath)) || live[0];
-          if (match?.sessionPath) sessionPath = match.sessionPath;
+    try {
+      const r = await fetch(`/api/projects/${restoreProjectId}/live-sessions`);
+      if (r.ok) {
+        const data = await r.json();
+        const live = (data.sessions || []) as Array<{ sessionPath?: string; newSessionId?: string; pending?: boolean }>;
+        if (live.length) {
+          const target = live[0];
+          if (target.pending && target.newSessionId) {
+            pendingNewSessionId = target.newSessionId;
+          } else if (target.sessionPath) {
+            sessionPath = target.sessionPath;
+          }
         }
-      } catch {}
-    }
+      }
+    } catch {}
+    // M9: the user may have navigated during the fetch — don't clobber.
+    if (selectedProject?.id !== restoreProjectId) return;
     if (!sessionPath && !pendingNewSessionId) return;
-    restoreAttemptedRef.current = true;
     if (pendingNewSessionId) {
       // Pending new session: getOrConnect(projectId, null, newSessionId) reattaches
       // to the booting agent; the state handler populates activeSession once PI
@@ -501,18 +480,15 @@ export default function App() {
       setView("chat");
       return;
     }
-    // pendingNewSessionId was null and we didn't return above, so sessionPath
-    // is set (the && guard above returned if BOTH were empty).
-    if (!sessionPath) return;
     const fromList = sessions.find(s => s.filePath === sessionPath);
     if (fromList) {
       setActiveSession(fromList);
     } else {
-      // The session file isn't on disk yet (new session, pre-first-message),
-      // OR it's a live-only session the disk scanner hasn't indexed. Reattach
-      // anyway — the agent is still in the server pool under this path.
+      // The session file isn't on disk yet (new session, pre-first-message), OR
+      // it's a live-only session the disk scanner hasn't indexed. Reattach anyway
+      // — the agent is still in the server pool under this path.
       setActiveSession({
-        id: "", filePath: sessionPath, cwd: selectedProject.path,
+        id: "", filePath: sessionPath!, cwd: selectedProject.path,
         timestamp: new Date().toISOString(), name: null,
         messageCount: 0, lastMessage: null, model: null, firstMessage: null,
         createdAt: new Date().toISOString(), lastActiveAt: new Date().toISOString(),
@@ -526,34 +502,11 @@ export default function App() {
     restoreLiveSession();
   }, [restoreLiveSession]);
 
-  // #LIVE: persist the active (project, session) whenever it changes so a
-  // refresh can restore it. Cleared when leaving the chat view for good
-  // (e.g. switching projects) so we don't restore a stale selection.
-  //
-  // CRITICAL: do NOT clear on the initial mount. Before the restore effect
-  // runs, `view` is still "projects" and `activeSession` is null — the old
-  // `else if (!activeSession)` branch wiped the seeded LIVE_SESSION_KEY
-  // here, so the restore effect (which depends on the saved projectId) found
-  // nothing and the user landed on the empty projects view after every
-  // refresh — the "lose the live PI session" bug. We gate the clear on
-  // restore having run (restoreAttemptedRef) AND a real leave of chat, so
-  // the mount window preserves the seed.
-  useEffect(() => {
-    if (view === "chat" && selectedProject) {
-      if (activeSession?.filePath) {
-        writeLiveSession({ projectId: selectedProject.id, sessionPath: activeSession.filePath });
-      } else if (newSessionId) {
-        // Pending new session (pre-rekey): persist the id so a reload reattaches
-        // to the booting agent instead of orphaning it + spawning a duplicate.
-        // Cleared (replaced by sessionPath) once the session resolves.
-        writeLiveSession({ projectId: selectedProject.id, newSessionId });
-      }
-    } else if (restoreAttemptedRef.current && view !== "chat" && !activeSession) {
-      // Only clear once we've had a chance to restore AND are intentionally
-      // leaving chat (not the initial mount-before-restore window).
-      clearLiveSession();
-    }
-  }, [view, selectedProject, activeSession, newSessionId]);
+  // #LIVE (server-side): no localStorage persistence effect. The server pool
+  // is the source of truth; restoreLiveSession queries /live-sessions on load.
+  // (The old effect wrote a shared localStorage token that clobbered across
+  // tabs — H2 — and gated its clear on restoreAttemptedRef to avoid wiping the
+  // seed on the initial mount. Both are obsolete now that restore is server-driven.)
 
   const handleSelectProject = useCallback((project: Project) => {
     setSelectedProject(project);

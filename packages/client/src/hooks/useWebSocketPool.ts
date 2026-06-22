@@ -108,12 +108,21 @@ function createConnection(
   let reconnectAttempts = 0;
   const MAX_RECONNECT = 10;          // fast exponential-backoff attempts; then slow-forever (see ws-pool-logic)
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  // C1: the 200ms onopen timer. Cancelled on close so a WS that drops during
+  // the window can't fire a late flush into a dead socket (and spin the
+  // pendingQueue loop).
+  let onopenTimer: ReturnType<typeof setTimeout> | null = null;
   let intentionallyClosed = false;
   // #LIVE: last time we received a WS frame. A long gap while the socket still
   // reads OPEN (readyState==1) means the OS silently killed it (iOS PWA
   // suspend, half-open TCP) — onclose never fires so reconnect never arms. The
   // visibilitychange/online probe registered below uses this to force a close.
   let lastMessageAt = Date.now();
+  // H3/M6: when the tab was last hidden. iOS kills backgrounded WS sockets in
+  // ~30s; the 60s-from-lastMessageAt probe alone misses a short freeze during
+  // active streaming (lastMessageAt is recent). A >10s hidden gap also forces a
+  // freshness check.
+  let lastHiddenAt = Date.now();
   // #LIVE: messages sent while the WS wasn't OPEN (reconnect window). Flushed
   // on reconnect so a prompt/steer sent during a blip isn't silently lost.
   const pendingQueue: WSClientMessage[] = [];
@@ -133,9 +142,13 @@ function createConnection(
       // message vanish from the UI (and a re-type would duplicate it in PI).
       // messages_result below merges the server's persisted history back in.
       data.liveMessages = new Map();
+      // E10: clear stale transient UI state; the server re-broadcasts current
+      // state via get_state. Without this a retry that ended during the
+      // disconnect leaves a stale 'retrying' indicator.
+      data.autoRetry = null;
       notify();
       // Request current state, message history, and commands on connect
-      setTimeout(() => {
+      onopenTimer = setTimeout(() => {
         send({ type: "get_state" });
         send({ type: "get_messages" });
         send({ type: "get_last_assistant_text" });
@@ -145,13 +158,21 @@ function createConnection(
         // steers, follow-ups) AFTER get_messages so the server's history
         // snapshot (the messages_result merge baseline) is captured first —
         // otherwise a flushed prompt already in server history would show twice.
-        while (pendingQueue.length) send(pendingQueue.shift()!);
+        // C1: guard the flush — if the WS dropped again during this 200ms window,
+        // send() re-queues the prompt and the while-loop would spin forever
+        // (re-queue → shift → re-queue), freezing the tab. Only flush while OPEN.
+        if (ws?.readyState === WebSocket.OPEN) {
+          while (pendingQueue.length) send(pendingQueue.shift()!);
+        }
       }, 200);
     };
     ws.onclose = () => {
       data.isConnected = false;
       data.isStreaming = false;
       notify();
+      // C1: cancel a pending onopen flush so it can't fire into this (now-closed)
+      // socket and spin the pendingQueue loop.
+      if (onopenTimer) { clearTimeout(onopenTimer); onopenTimer = null; }
       // Auto-reconnect unless intentionally closed
       // #3: Auto-reconnect forever — fast exponential backoff for the first
       // MAX_RECONNECT attempts, then a slow fixed cadence so a long server
@@ -200,15 +221,28 @@ function createConnection(
   // in a multi-session pool never tears down a sibling session.
   const onVisible = () => {
     if (intentionallyClosed) return;
-    // On foreground: if no frame has arrived in 60s while OPEN, the socket is
-    // almost certainly dead — force-close so onclose drives reconnect.
-    if (document.visibilityState === "visible" && ws && ws.readyState === WebSocket.OPEN && Date.now() - lastMessageAt > 60_000) {
-      try { ws.close(); } catch {}
+    // H3/M6: on foreground, force-close a likely-dead socket. Two triggers: no
+    // frame in 60s (the old heuristic), OR the tab was hidden >10s — iOS kills
+    // backgrounded WS sockets in ~30s, and the 60s-from-lastMessageAt check
+    // alone misses a short freeze during active streaming (lastMessageAt is
+    // recent). bfcache restores of any meaningful duration warrant a probe.
+    if (document.visibilityState === "visible") {
+      const hiddenFor = Date.now() - lastHiddenAt;
+      if (ws && ws.readyState === WebSocket.OPEN && (Date.now() - lastMessageAt > 60_000 || hiddenFor > 10_000)) {
+        try { ws.close(); } catch {}
+      }
+    } else {
+      lastHiddenAt = Date.now();
     }
   };
   const onOffline = () => { if (!intentionallyClosed && ws) { try { ws.close(); } catch {} } };
   const onOnline = () => {
     if (intentionallyClosed) return;
+    // H5: don't create a duplicate WS. `online` can fire without a preceding
+    // `offline` (partial connectivity flap); calling connect() unconditionally
+    // orphaned the existing OPEN socket and cascaded reconnects. If the socket
+    // is already healthy (or connecting), leave it.
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
     reconnectAttempts = 0;
     connect();
@@ -363,6 +397,11 @@ function createConnection(
               send({ type: "extension_ui_response", id: ui.id, cancelled: true });
             }
           }, NOTIFY_TIMEOUT_MS);
+          // E11: clear the previous auto-dismiss timer before overwriting —
+          // otherwise a rapid second notification orphans the first timer (it
+          // fires after 4s and may prematurely clear the current notification).
+          const prevTimer = (data as { notifyTimer?: ReturnType<typeof setTimeout> }).notifyTimer;
+          if (prevTimer) clearTimeout(prevTimer);
           (data as { notifyTimer?: ReturnType<typeof setTimeout> }).notifyTimer = autoTimer;
         } else if (ui.method === "setStatus") {
           // setStatus: fire-and-forget — update status bar entries
@@ -451,7 +490,12 @@ function createConnection(
     }
     if (ws?.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(msg));
-    } else if (msg.type === "prompt" || msg.type === "steer" || msg.type === "follow_up") {
+    } else if (msg.type === "prompt" || msg.type === "steer" || msg.type === "follow_up" || msg.type === "abort" || msg.type === "abort_retry" || msg.type === "extension_ui_response") {
+      // C3: abort/abort_retry/extension_ui_response were previously dropped
+      // during a reconnect window — the user couldn't stop a runaway agent or
+      // answer a blocking dialog while the WS was down. Queue them too. A
+      // duplicate extension_ui_response to an already-answered dialog is
+      // harmless (the server drops unknown ids).
       // #LIVE: WS isn't OPEN (reconnect window). Queue the message so it's
       // flushed on reconnect — otherwise a prompt sent mid-reconnect is
       // silently dropped while its optimistic copy stays in the UI (looks
@@ -608,9 +652,13 @@ function createConnection(
       // agent. Key format is `${projectId}::${sessionPath}::${newSessionId}`;
       // after resolve it's `${projectId}::${filePath}::` (empty newSessionId).
       // sessionPath is a ~/.pi file path (no `::`), so split is safe.
-      const parts = newKey.split("::");
-      currentSessionPath = parts[1] || null;
-      currentNewSessionId = parts[2] || null;
+      // H7: split on the FIRST and LAST `::` (not split("::")) so a sessionPath
+      // that itself contains `::` (valid on POSIX) doesn't corrupt parts[1]/[2]
+      // and send a truncated path on reconnect → a duplicate agent spawn.
+      const first = newKey.indexOf("::");
+      const last = newKey.lastIndexOf("::");
+      currentSessionPath = (first >= 0 && last > first) ? newKey.slice(first + 2, last) : null;
+      currentNewSessionId = last >= 0 ? newKey.slice(last + 2) || null : null;
       // Only unregister from old key if we're still the registered conn there
       if (pool.current.get(currentKey) === conn) {
         pool.current.delete(currentKey);
@@ -623,6 +671,8 @@ function createConnection(
       intentionallyClosed = true;
       removeLifecycleListeners();
       if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (onopenTimer) { clearTimeout(onopenTimer); onopenTimer = null; }
+      pendingQueue.length = 0; // E13: drop queued messages on terminal close
       const timer = (data as { notifyTimer?: ReturnType<typeof setTimeout> }).notifyTimer;
       if (timer) { clearTimeout(timer); delete (data as { notifyTimer?: ReturnType<typeof setTimeout> }).notifyTimer; }
       ws?.close(); ws = null;

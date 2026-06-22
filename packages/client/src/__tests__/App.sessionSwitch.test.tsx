@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+// Static source guard: read App.tsx as a raw string (?raw) so the test runs in
+// any vitest environment without needing node:fs / __dirname.
+import appSrc from "../App.tsx?raw";
 
 /**
  * REGRESSION GUARD for the bug the user reported:
@@ -22,8 +23,7 @@ import { resolve } from "node:path";
  * cover the regression.
  */
 describe("App — static regression guard for session-switch bug", () => {
-  const appPath = resolve(__dirname, "../App.tsx");
-  const appSrc = readFileSync(appPath, "utf-8");
+  // appSrc is imported as a raw string above (?raw) — no readFileSync needed.
 
   it("handleSelectSession does NOT call ws.loadSession(...) on the old WS", () => {
     // Strip line comments and block comments so the "do not call" comment
@@ -59,21 +59,16 @@ describe("App — static regression guard for session-switch bug", () => {
 
   // REGRESSION GUARD for the "refresh loses the live PI session" bug.
   //
-  // The original persistence effect had an `else if (!activeSession)` branch
-  // that cleared sessionStorage on the INITIAL MOUNT — before the restore
-  // effect could read it. So a refresh landed the user on the empty projects
-  // view instead of reattaching to the still-running PI. The fix gates the
-  // clear on `restoreAttemptedRef.current` so the mount window preserves the
-  // seed. This guard asserts that gate stays in place.
-  it("persistence effect does NOT clear sessionStorage before restore has run", () => {
-    // Find the LIVE_SESSION persistence useEffect.
-    const match = appSrc.match(/\/\/\s*#LIVE:[\s\S]*?useEffect\(\(\)\s*=>\s*\{[\s\S]*?sessionStorage[\s\S]*?\},\s*\[view,\s*selectedProject,\s*activeSession\]\);/);
-    expect(match, "LIVE_SESSION persistence effect not found").toBeTruthy();
-    const body = match![0];
-    // The clear branch must be gated on restoreAttemptedRef.current — the
-    // old `else if (!activeSession)` (unguarded) is the bug.
-    expect(body).toMatch(/restoreAttemptedRef\.current/);
-    // The old buggy pattern must be gone: an unguarded `!activeSession` clear.
-    expect(body).not.toMatch(/else\s+if\s*\(!activeSession\)\s*\{[^}]*removeItem/);
+  // The restore is now SERVER-SIDE: restoreLiveSession queries /live-sessions
+  // (the server pool is the single source of truth) instead of a client-side
+  // localStorage token (which clobbered across tabs — H2). This guard asserts
+  // (a) no localStorage live-session token is written, and (b) restoreLiveSession
+  // fetches the server endpoint — so neither the old localStorage token nor its
+  // cross-tab clobber can silently come back.
+  it("restore is server-side: no localStorage token + restoreLiveSession fetches /live-sessions", () => {
+    expect(appSrc).not.toMatch(/LIVE_SESSION_KEY\s*=\s*["']/);
+    expect(appSrc).not.toMatch(/writeLiveSession|clearLiveSession/);
+    const m = appSrc.match(/const\s+restoreLiveSession\s*=\s*useCallback[\s\S]*?\/live-sessions[\s\S]*?\},\s*\[[^\]]*\]\s*\)\s*;/);
+    expect(m, "restoreLiveSession not found or does not fetch /live-sessions").toBeTruthy();
   });
 });

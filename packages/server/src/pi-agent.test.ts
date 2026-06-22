@@ -771,14 +771,20 @@ describe("getLiveSessionsForCwd (cache-cleared recovery)", () => {
     expect(liveA[0].sessionPath).toBe("/a.json");
   });
 
-  it("excludes pending-new agents that haven't resolved a sessionFile yet", () => {
-    // A brand-new session (pre-resolve) has no sessionPath — it can't be
-    // reattached by path, so it must NOT be returned. The reverse-lookup by
-    // newSessionId still handles that case via the WS connect params.
+  it("includes pending-new agents (with newSessionId) so a server-side restore can reattach to the booting agent", () => {
+    // A brand-new session (pre-resolve) has no sessionPath yet. With the
+    // SERVER-SIDE restore (no localStorage token), /live-sessions is the only
+    // way the client learns the booting agent exists — so we surface it with
+    // pending:true + newSessionId, and the client reattaches via
+    // getOrCreateAgent's reverse lookup (getOrConnect(projectId, null, newSessionId)).
     const fake = new FakeAgent({ cwd: "/proj" });
     fake.liveSnapshot = null;
     getOrCreateAgent("/proj", null, "uuid-pending", undefined, undefined, () => fake);
-    expect(getLiveSessionsForCwd("/proj")).toEqual([]);
+    const live = getLiveSessionsForCwd("/proj");
+    expect(live).toHaveLength(1);
+    expect(live[0].pending).toBe(true);
+    expect(live[0].newSessionId).toBe("uuid-pending");
+    expect(live[0].sessionPath).toBe("");
   });
 
   it("includes streaming agents (the real live-session case)", () => {

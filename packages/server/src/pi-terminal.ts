@@ -33,18 +33,23 @@ class TerminalInstance {
       if (this.buffer.length > this.maxBuffer) {
         this.buffer = this.buffer.slice(this.buffer.length - this.maxBuffer);
       }
+      // MEDIUM-3: prune dead sockets (mirror the agent pool's broadcast) so a
+      // terminal client whose WS died hard (no onClose) can't linger in the
+      // set and have every PTY output throw into a dead socket forever.
       for (const ws of this.clients) {
+        if ((ws as any).readyState !== 1) { this.clients.delete(ws); continue; }
         try {
           ws.send(JSON.stringify({ type: "term_output", id: this.info.id, data }));
-        } catch {}
+        } catch { this.clients.delete(ws); }
       }
     });
 
     this.exitDisposable = this.pty.onExit(({ exitCode }: { exitCode: number }) => {
       for (const ws of this.clients) {
+        if ((ws as any).readyState !== 1) { this.clients.delete(ws); continue; }
         try {
           ws.send(JSON.stringify({ type: "term_exit", id: this.info.id, exitCode }));
-        } catch {}
+        } catch { this.clients.delete(ws); }
       }
       terminals.delete(this.info.id);
     });

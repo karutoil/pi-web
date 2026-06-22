@@ -12,7 +12,7 @@ import { addProject, removeProject, listProjects, getProject, touchProject, getL
 import { listSubagentRuns, interruptSubagentRun, readSubagentRunOutput, isSubagentExtensionAvailable } from "./pi-subagents";
 import { listProjectSessions, getSessionDetail, buildUsageSummary, computeProjectUsage } from "./pi-sessions";
 import { buildSessionHtmlPretty } from "./sessionExportPretty";
-import { getOrCreateAgent, stopAllAgents, getPoolStats, lookupAgent, detachFromAgent, deleteFromPool, stopAgentsForCwd, setProjectSessionsChangedHandler, broadcastToProjectClients, getLiveSessionsForCwd } from "./pi-agent";
+import { getOrCreateAgent, stopAllAgents, getPoolStats, lookupAgent, detachFromAgent, deleteFromPool, stopAgentsForCwd, setProjectSessionsChangedHandler, broadcastToProjectClients, getLiveSessionsForCwd, sweepPool } from "./pi-agent";
 import { createTerminal, getTerminal, listTerminals, killTerminal } from "./pi-terminal";
 import { getGitStatus, getGitDiff, getGitDiffForCommit, gitStage, gitUnstage, gitCommit, gitLog, gitCheckout, gitDiscard, gitBranches, gitPush, gitPull, gitFetch, gitCreateBranch, gitDeleteBranch, gitRenameBranch, gitTags, gitCreateTag, gitDeleteTag, gitStashList, gitStashShow, gitStashPush, gitStashPop, gitStashApply, gitStashDrop, gitAmend, gitCherryPick, gitRevert, gitResolveConflict, getGitDiffStats, gitDiffWithRef, gitShowCommit, gitLogSearch, gitBlame, gitRemotes, gitUnstageAll } from "./pi-git";
 import type { GitResult } from "./pi-git";
@@ -2613,12 +2613,18 @@ app.get(
               // #2/#14: validate the session path (every REST endpoint does) so a
               // crafted path can't direct the SDK outside the allowed roots, and a
               // subsequent session_loaded rekey can't pollute the pool key.
-              try { agent.loadSession(validateSessionPath(msg.sessionPath, cwd)); }
+              // CRITICAL-1: `cwd` is local to onOpen and NOT in onMessage's scope
+              // (it was undefined at runtime — a TS2304 error — breaking
+              // load_session/switch_session for project-local sessions).
+              // Derive the project path here, mirroring delete_session/rename_session.
+              const proj = getProject(projectId);
+              try { agent.loadSession(validateSessionPath(msg.sessionPath, proj?.path)); }
               catch (e: any) { try { if (ws.readyState === 1) ws.send(JSON.stringify({ type: "error", message: `Invalid session path: ${e.message}` })); } catch {} }
               break;
             }
             case "switch_session": {
-              try { agent.switchSession(validateSessionPath((msg as any).sessionPath, cwd)); }
+              const projS = getProject(projectId);
+              try { agent.switchSession(validateSessionPath((msg as any).sessionPath, projS?.path)); }
               catch (e: any) { try { if (ws.readyState === 1) ws.send(JSON.stringify({ type: "error", message: `Invalid session path: ${e.message}` })); } catch {} }
               break;
             }
@@ -2799,8 +2805,27 @@ setProjectSessionsChangedHandler(refreshProjectSessions);
 const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 0;
 const hostname = process.env.HOST || "127.0.0.1";
 
-const server = import.meta.main ? Bun.serve({ port, hostname, fetch: app.fetch, websocket }) : null;
+const server = import.meta.main ? Bun.serve({
+  port, hostname, fetch: app.fetch,
+  // HIGH-2: explicit WS keepalive so half-open sockets (killed PWA, NAT
+  // timeout, suspended tab) are detected and closed instead of lingering with
+  // clients.size > 0 and blocking idle reaping. Bun applies these defaults
+  // already; set them explicitly so behavior isn't default-dependent.
+  websocket: { ...websocket, sendPings: true, idleTimeout: 120 },
+}) : null;
 if (server) {
+
+  // HIGH-3 / MEDIUM-1 / LOW-2: periodic sweep prunes dead sockets (half-open
+  // TCP from killed PWAs, hard socket errors with no onClose) from every
+  // pooled agent and the wsToAgent map, and arms idle reaping for agents
+  // whose last client just died. broadcast only prunes on send, so an idle
+  // agent with a dead client would otherwise keep clients.size > 0 forever.
+  setInterval(() => {
+    sweepPool();
+    for (const [w, _k] of wsToAgent) {
+      if ((w as any).readyState !== 1 && (w as any).readyState !== 0) wsToAgent.delete(w);
+    }
+  }, 60_000);
 
 // Graceful shutdown — stop PI agents (so they flush session files) and previews.
 // #6: previously only previews were stopped, leaving PI children to be killed
