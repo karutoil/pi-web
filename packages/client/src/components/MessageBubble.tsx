@@ -404,13 +404,6 @@ function AssistantBubble({
   const content = Array.isArray(message.content) ? message.content : [];
   const [toolCallsExpanded, setToolCallsExpanded] = useState<Record<string, boolean>>({});
 
-  // Default expanded for completed tool calls with results
-  const _initialExpanded = useMemo(() => {
-    const init: Record<string, boolean> = {};
-    content.filter(b => b.type === "toolCall" && b.id).forEach(b => { init[b.id!] = true; });
-    return init;
-  }, []);
-
   // Separate thinking blocks from text
   const thinkingBlocks = content.filter(b => b.type === "thinking");
   const toolCalls = content.filter(b => b.type === "toolCall");
@@ -452,7 +445,7 @@ function AssistantBubble({
           toolCall={block}
           toolResult={block.id ? toolResultsMap?.get(block.id) : undefined}
           runningTool={block.id ? runningTools?.get(block.id) : undefined}
-          expanded={toolCallsExpanded[block.id || String(i)] ?? _initialExpanded[block.id || String(i)] ?? true}
+          expanded={toolCallsExpanded[block.id || String(i)] ?? false}
           onToggle={() => {
             const key = block.id || String(i);
             setToolCallsExpanded(prev => ({ ...prev, [key]: !prev[key] }));

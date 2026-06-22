@@ -206,12 +206,13 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar,
         )}
 
         {stats && (
-          <div className="conversation-stats">
+          <div className="conversation-stats" title={stats.contextUsage ? `${stats.contextUsage.tokens.toLocaleString()} / ${stats.contextUsage.contextWindow?.toLocaleString() ?? "unknown"} tokens` : undefined}>
             {stats.contextUsage && (
-              <span title={`${stats.contextUsage.tokens.toLocaleString()} / ${stats.contextUsage.contextWindow?.toLocaleString() ?? "unknown"} tokens`}>
-                {stats.contextUsage.percent.toFixed(0)}%
+              <span className="conversation-context-bar">
+                <i style={{ width: `${Math.min(100, Math.max(0, stats.contextUsage.percent)).toFixed(0)}%` }} />
               </span>
             )}
+            {stats.contextUsage && <span>{stats.contextUsage.percent.toFixed(0)}%</span>}
             <span>${stats.cost?.toFixed(2) ?? '—'}</span>
           </div>
         )}

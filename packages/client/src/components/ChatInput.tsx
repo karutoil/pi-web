@@ -36,7 +36,7 @@ interface ChatInputProps {
 
 interface PendingImage { data: string; mimeType: string; }
 
-export function ChatInput({ onSend, onSteer, onFollowUp, onAbort, isStreaming, disabled, commands, onRequestCommands, showTerminal, statusEntries, widgets, autoRetry, onAbortRetry, projectPath, ws, sessionStats }: ChatInputProps) {
+export function ChatInput({ onSend, onSteer, onFollowUp, onAbort, isStreaming, disabled, commands, onRequestCommands, statusEntries, widgets, autoRetry, onAbortRetry, projectPath, ws }: ChatInputProps) {
   const [text, setText] = useState("");
   const [showCommands, setShowCommands] = useState(false);
   const [showFileMentions, setShowFileMentions] = useState(false);
@@ -304,9 +304,6 @@ export function ChatInput({ onSend, onSteer, onFollowUp, onAbort, isStreaming, d
 
   const currentModel = ws.models.find(m => m.id === ws.state?.model);
   const thinkingLevel = ws.state?.thinkingLevel || "off";
-  const tokenCount = sessionStats?.contextUsage?.tokens ?? sessionStats?.tokens?.totalTokens ?? null;
-  const contextPercent = sessionStats?.contextUsage?.percent ?? null;
-  const tokenWarn = contextPercent !== null && contextPercent > 60;
 
   return (
     <div className="conversation-input-dock shrink-0">
@@ -434,18 +431,6 @@ export function ChatInput({ onSend, onSteer, onFollowUp, onAbort, isStreaming, d
                   aria-label={isListening ? "Stop listening" : "Voice input"}
                 >
                   <Icon name="microphone" size={12} />
-                </button>
-              )}
-
-              {tokenCount !== null && (
-                <span className="conversation-token-count" data-warn={tokenWarn} title={contextPercent ? `${contextPercent.toFixed(0)}% context used` : `${tokenCount.toLocaleString()} tokens`}>
-                  {tokenCount.toLocaleString()}
-                </span>
-              )}
-
-              {showTerminal && (
-                <button type="button" className="conversation-terminal-button" title="Terminal open" aria-label="Terminal open">
-                  <Icon name="terminal" size={14} />
                 </button>
               )}
 
