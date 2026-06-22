@@ -359,7 +359,7 @@ export function ChatInput({ onSend, onSteer, onFollowUp, onAbort, isStreaming, d
 
           <ModelSelectorDropdown ws={ws} open={modelOpen} onClose={() => setModelOpen(false)} anchorRef={inputWrapRef} />
 
-          <div className="conversation-editor-shell">
+          <div className={`conversation-editor-shell${isStreaming ? " is-streaming" : ""}`}>
             {hasStatusRow && (
               <div className="conversation-status-row">
                 <span>{statusLeft ? stripAnsi(statusLeft[1]) : ""}</span>

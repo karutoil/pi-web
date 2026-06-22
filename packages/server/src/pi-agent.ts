@@ -20,14 +20,23 @@ import {
 // ─── Pooled Agent ───
 // Wraps a PIAgent with multi-client broadcast + idle cleanup.
 // Survives WebSocket disconnects — agents keep running until idle timeout.
-
-const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+//
+// #LIVE: idle agents are kept for a long grace window so a user who steps
+// away (lunch, a meeting, a crash + relaunch) returns to their session
+// still alive in the pool. The requirement is "unless the app is restarted
+// we do not lose access" — so the idle grace is intentionally generous.
+// Overridable via PI_WEB_IDLE_TIMEOUT_MS (minutes).
+// ponytail: Math.max(1000, ...) so a typo'd/negative env value (e.g. '-1', which
+// is truthy and bypasses the `|| 60` fallback) can't produce a negative/zero
+// timeout that force-stops a live streaming session within milliseconds.
+const IDLE_TIMEOUT_MS = Math.max(1000, (parseInt(process.env.PI_WEB_IDLE_TIMEOUT_MS || "", 10) || 60) * 60 * 1000); // 1 hour default
 // #LIVE: watchdog for wedged agent runs. A run that is "streaming" but has
 // produced no message activity for this long AND has no clients is treated as
 // hung (e.g. blocked on an unanswered extension_ui_request whose client
 // disconnected, or a stuck tool / hung model call). Left un-reaped it lingers
 // forever — the "server requires a reboot" failure mode. Force-stopped here.
-const STALE_STREAMING_MS = 10 * 60 * 1000; // 10 minutes
+// Overridable via PI_WEB_STALE_STREAMING_MS (minutes).
+const STALE_STREAMING_MS = Math.max(1000, (parseInt(process.env.PI_WEB_STALE_STREAMING_MS || "", 10) || 15) * 60 * 1000); // 15 minutes default
 // #LIVE: cadence at which the watchdog sweeps a single agent. Kept coarse so
 // the per-agent timer is cheap; STALE_STREAMING_MS is what bounds recovery.
 const WATCHDOG_TICK_MS = 60 * 1000; // 1 minute
@@ -40,6 +49,23 @@ export interface IPIAgent {
   getOptions(): PIAgentOptions;
   getState(): void;
   doSend(msg: unknown): void;
+  /** Synchronous snapshot of the live session's identity + activity, for the
+   * server's live-session recovery endpoint. Returns null before the
+   * session has resolved its sessionFile. */
+  getLiveSnapshot(): LiveSessionSnapshot | null;
+}
+
+/** Identity + liveness snapshot of one pooled agent's session. Used by the
+ * live-session recovery flow so a cache-cleared refresh can reattach to the
+ * still-running agent it lost its client handle to. */
+export interface LiveSessionSnapshot {
+  sessionPath: string;
+  sessionId: string;
+  sessionName: string | null;
+  isStreaming: boolean;
+  isCompacting: boolean;
+  clientCount: number;
+  lastActivityAt: number;
 }
 
 export class PooledAgent {
@@ -73,7 +99,11 @@ export class PooledAgent {
   // sessionFile, a client that reconnects with the ORIGINAL newSessionId (its WS
   // dropped before it processed the rekey) must still reattach to THIS agent
   // instead of spawning a duplicate. See getOrCreateAgent's reverse lookup.
-  readonly originalNewSessionId: string | null;
+  // Non-readonly so it can be cleared once the agent switches to a different
+  // session (session_loaded from switch_session/clone) — at that point the
+  // original newSessionId is stale and a reverse-lookup reattach would land
+  // on the WRONG session. See handleAgentMessage's session_loaded branch.
+  originalNewSessionId: string | null;
   /** Get the current pool key for this agent. */
   getKey(): string {
     return this.agentKey;
@@ -112,7 +142,10 @@ export class PooledAgent {
     // Handle unexpected agent failure
     this.agent.setExitHandler((code) => {
       console.log(`[pool] agent ${this.agentKey} exited (code ${code})`);
-      this.broadcast({ type: "error", message: `PI agent exited (code ${code}).` });
+      // #LIVE: only surface an error for an unexpected exit. A deliberate stop
+      // (idle timeout, shutdown) reports code 0 and would otherwise broadcast a
+      // misleading "error" right before the client is closed+reconnected.
+      if (code !== 0) this.broadcast({ type: "error", message: `PI agent exited (code ${code}).` });
       // #1: Close every attached client WS so the client's onclose fires and
       // its reconnect logic kicks in. Without this the WS stays 'open' while
       // the agent is gone from the pool — every subsequent send is silently
@@ -120,6 +153,7 @@ export class PooledAgent {
       this.closeClients();
       // #LIVE: drop any orphaned dialog + stop the watchdog — the agent is gone.
       this.pendingDialog = null;
+      this.isPendingCloneRekey = false;
       this.cancelWatchdog();
       // #REKEY-EXIT: delete by the CURRENT key (this.agentKey), not the closure
       // `agentKey` captured at construction. A new-session agent is rekeyed
@@ -164,6 +198,20 @@ export class PooledAgent {
   /** Get number of attached clients */
   get clientCount() { return this.clients.size; }
 
+  /** Snapshot this agent's session identity + liveness for the recovery
+   * endpoint. Returns null if the session hasn't resolved a sessionFile yet
+   * (pending __new__ before the SDK reports a path). */
+  getLiveSnapshot(): LiveSessionSnapshot | null {
+    const snap = this.agent.getLiveSnapshot();
+    if (!snap) return null;
+    snap.clientCount = this.clients.size;
+    snap.lastActivityAt = this.lastActivityAt;
+    // Reflect the pool's authoritative streaming flag (it tracks agent_start/end
+    // and tool activity, which may differ from the SDK's momentary read).
+    snap.isStreaming = this.streaming || snap.isStreaming;
+    return snap;
+  }
+
   /** Forward a command to the underlying agent */
   send(msg: unknown) {
     this.agent.doSend(msg);
@@ -182,28 +230,11 @@ export class PooledAgent {
     this.clients.clear();
   }
 
-  /** Restart the agent with a new session path. Detaches all clients first. */
-  async restartWithSession(sessionPath: string): Promise<void> {
-    this.cancelIdleTimer();
-    await this.agent.stop();
-    const opts = this.agent.getOptions();
-    this.agent = this.createAgent({
-      cwd: opts.cwd,
-      sessionPath,
-      provider: opts.provider,
-      model: opts.model,
-    });
-    this.agent.setHandler((msg) => this.handleAgentMessage(msg));
-    this.agent.setExitHandler((code) => {
-      console.log(`[pool] agent ${this.agentKey} exited (code ${code})`);
-      this.broadcast({ type: "error", message: `PI agent exited (code ${code}).` });
-      this.closeClients();
-      agentPool.delete(this.agentKey);
-    });
-    await this.agent.start();
-    // Re-send state to all attached clients
-    setTimeout(() => this.agent.getState(), 200);
-  }
+  // restartWithSession was REMOVED: it was dead code (no caller) and broken —
+  // await this.agent.stop() fired the exit handler which deleted the pool
+  // entry and closed all clients, leaving the restarted inner agent orphaned
+  // with no pool entry (a reconnect would spawn a duplicate). Use a new pool
+  // entry / getOrCreateAgent for any restart need instead.
 
   /**
    * Send a `load_session` RPC to the running agent — let PI handle the
@@ -244,18 +275,24 @@ export class PooledAgent {
   private broadcast(msg: WSServerMessage) {
     const data = JSON.stringify(msg);
     for (const ws of this.clients) {
+      // ponytail: prune dead sockets (readyState !== OPEN) so a WS that died
+      // without firing onClose (hard socket error; the Hono/Bun adapter wires no
+      // onError) can't linger in the set and keep clients.size > 0 — which
+      // would prevent the idle timer from ever reaping the agent.
+      if (ws.readyState !== 1) { this.clients.delete(ws); continue; }
       try {
-        if (ws.readyState === 1) ws.send(data);
-      } catch {}
+        ws.send(data);
+      } catch { this.clients.delete(ws); }
     }
   }
 
   /** Send a pre-serialized payload to every attached client. */
   sendToClients(data: string) {
     for (const ws of this.clients) {
+      if (ws.readyState !== 1) { this.clients.delete(ws); continue; }
       try {
-        if (ws.readyState === 1) ws.send(data);
-      } catch {}
+        ws.send(data);
+      } catch { this.clients.delete(ws); }
     }
   }
 
@@ -308,6 +345,13 @@ export class PooledAgent {
         // runtime (and running two agents on the cloned session file -> corruption).
         const loadedPath = (msg as any).session?.filePath;
         if (loadedPath) this.rekeyToSessionPath(cwd, loadedPath);
+        // #LIVE: a session switch (switch_session/load_session/clone) means the
+        // agent is no longer on the session its original newSessionId created.
+        // Clear it so a stale-newSessionId reconnect can't reattach to this agent
+        // and land on the WRONG session. (The initial new-session resolution uses
+        // the `state` path above, NOT session_loaded, so #REATTACH still works
+        // after the first rekey.)
+        this.originalNewSessionId = null;
         projectSessionsChangedHandler?.(cwd);
       } else if (msg.type === "clone_result") {
         // #CLONE: clone forks to a new session file; the SDK resolves it but
@@ -337,6 +381,15 @@ export class PooledAgent {
     if (newKey === oldKey) return;
     if (rekeyAgent(oldKey, newKey)) {
       this.rekeyHandler?.(oldKey, newKey);
+    } else {
+      // #LIVE: rekey refused because a DIFFERENT agent already holds newKey
+      // (rekeyAgent returns null without clobbering). Previously this failed
+      // SILENTLY — the agent stayed keyed at oldKey while its runtime switched
+      // to the target session, risking two runtimes on the same session file.
+      // Surface it so the client knows to reconnect cleanly instead of talking
+      // to a stranded agent.
+      console.error(`[pool] rekey FAILED: ${oldKey} -> ${newKey} (target occupied); agent stranded at ${oldKey}`);
+      this.broadcast({ type: "error", message: "Session switch conflict: another agent already holds the target session. Reconnecting." });
     }
   }
 
@@ -455,10 +508,16 @@ export class PooledAgent {
   private async forceStopAndRemove() {
     this.cancelWatchdog();
     this.cancelIdleTimer();
+    // #LIVE: delete the pool entry BEFORE awaiting agent.stop() so a client
+    // that reconnects during the (I/O-yielding) dispose can't attach to this
+    // dying agent and then get kicked by the exit handler — losing the live
+    // in-memory session state. With the entry gone, a reconnect spawns a fresh
+    // agent that reloads the session from disk.
+    agentPool.delete(this.agentKey);
+    this.closeClients();
     try { await this.agent.stop(); } catch (err: any) {
       console.error(`[pool] force-stop error for ${this.agentKey}:`, err.message);
     }
-    agentPool.delete(this.agentKey);
   }
 }
 
@@ -512,6 +571,30 @@ export function broadcastToProjectClients(cwd: string, msg: WSServerMessage) {
 }
 
 /**
+ * Snapshot every live agent keyed under `${cwd}::` — used by the
+ * live-session recovery endpoint (GET /api/projects/:id/live-sessions) so a
+ * cache-cleared refresh can reattach to a still-running session it has no
+ * client-side handle for. Sorted most-recently-active first.
+ *
+ * Includes agents that are streaming, compacting, have attached clients, OR
+ * were active within the idle grace window. Genuinely-stale idle agents are
+ * excluded (the idle timer reaps them). Anything returned here is a session
+ * the user could legitimately still want back.
+ */
+export function getLiveSessionsForCwd(cwd: string): LiveSessionSnapshot[] {
+  const prefix = `${cwd}::`;
+  const out: LiveSessionSnapshot[] = [];
+  for (const [key, agent] of agentPool) {
+    if (!key.startsWith(prefix)) continue;
+    const snap = agent.getLiveSnapshot();
+    if (!snap) continue;
+    out.push(snap);
+  }
+  out.sort((a, b) => b.lastActivityAt - a.lastActivityAt);
+  return out;
+}
+
+/**
  * Build the pool key for a (cwd, sessionPath) pair.
  * ponytail: pending-new-session keys embed newSessionId so two concurrent
  * new sessions in the same project don't collapse onto one `__new__` agent.
@@ -535,9 +618,12 @@ function normalizeSessionPath(p: string): string {
   return normalize(p).replace(/\/+$/, "") || p;
 }
 
-/** Pull the <uuid> out of a pending `__new__:<uuid>` key (or null). */
+/** Pull the <uuid> out of a pending `__new__:<uuid>` key (or null).
+ * Uses lastIndexOf so a cwd that itself contains `__new__:` (unusual but valid
+ * on POSIX) can't corrupt the extracted id and break the #REATTACH reverse
+ * lookup (which would then spawn a duplicate on a stale-newSessionId reconnect). */
 function extractNewSessionId(key: string): string | null {
-  const i = key.indexOf("__new__:");
+  const i = key.lastIndexOf("__new__:");
   return i === -1 ? null : key.slice(i + "__new__:".length);
 }
 
@@ -716,6 +802,10 @@ export class SDKAgent implements IPIAgent {
   private unsubscribe: (() => void) | null = null;
   private explicitlyStopped = false;
   private started = false;
+  // #LIVE: dedupe concurrent stop() calls (idle timer + shutdown racing) so
+  // runtime.dispose() isn't driven twice on the same runtime and onExit doesn't
+  // fire twice. A second caller awaits the in-flight stop.
+  private stopPromise: Promise<void> | null = null;
   // Extension UI dialogs awaiting a client response, keyed by request id.
   // Mirrors runRpcMode's pendingExtensionRequests. Fire-and-forget UI methods
   // (notify/setStatus/...) are not tracked — they just broadcast.
@@ -726,6 +816,22 @@ export class SDKAgent implements IPIAgent {
   setHandler(handler: (msg: WSServerMessage) => void) { this.onMessage = handler; }
   setExitHandler(handler: (code: number | null) => void) { this.onExit = handler; }
   getOptions(): PIAgentOptions { return this.options; }
+
+  getLiveSnapshot(): LiveSessionSnapshot | null {
+    const s = this.session;
+    if (!s) return null;
+    const file = s.sessionFile;
+    if (!file) return null;
+    return {
+      sessionPath: file,
+      sessionId: s.sessionId,
+      sessionName: s.sessionName ?? null,
+      isStreaming: s.isStreaming,
+      isCompacting: s.isCompacting,
+      clientCount: 0, // filled in by PooledAgent
+      lastActivityAt: Date.now(),
+    };
+  }
 
   /** Build the runtime factory the SDK uses for newSession/switchSession/fork.
    * Each replacement rebuilds cwd-bound services (resource loader, settings,
@@ -969,6 +1075,12 @@ export class SDKAgent implements IPIAgent {
   }
 
   async stop(): Promise<void> {
+    if (this.stopPromise) return this.stopPromise;
+    this.stopPromise = this._stop();
+    try { await this.stopPromise; } finally { this.stopPromise = null; }
+  }
+
+  private async _stop(): Promise<void> {
     this.explicitlyStopped = true;
     // Reject any pending dialogs so extensions don't hang.
     for (const [, entry] of this.pendingDialogs) {

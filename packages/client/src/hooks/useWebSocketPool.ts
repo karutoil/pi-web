@@ -109,7 +109,14 @@ function createConnection(
   const MAX_RECONNECT = 10;          // fast exponential-backoff attempts; then slow-forever (see ws-pool-logic)
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let intentionallyClosed = false;
-
+  // #LIVE: last time we received a WS frame. A long gap while the socket still
+  // reads OPEN (readyState==1) means the OS silently killed it (iOS PWA
+  // suspend, half-open TCP) — onclose never fires so reconnect never arms. The
+  // visibilitychange/online probe registered below uses this to force a close.
+  let lastMessageAt = Date.now();
+  // #LIVE: messages sent while the WS wasn't OPEN (reconnect window). Flushed
+  // on reconnect so a prompt/steer sent during a blip isn't silently lost.
+  const pendingQueue: WSClientMessage[] = [];
   function connect() {
     const params = new URLSearchParams();
     if (projectId) params.set("projectId", projectId);
@@ -134,6 +141,11 @@ function createConnection(
         send({ type: "get_last_assistant_text" });
         send({ type: "get_available_models" });
         send({ type: "get_commands" });
+        // #LIVE: flush anything queued while the socket was down (prompts,
+        // steers, follow-ups) AFTER get_messages so the server's history
+        // snapshot (the messages_result merge baseline) is captured first —
+        // otherwise a flushed prompt already in server history would show twice.
+        while (pendingQueue.length) send(pendingQueue.shift()!);
       }, 200);
     };
     ws.onclose = () => {
@@ -146,6 +158,10 @@ function createConnection(
       // outage/deploy still recovers instead of leaving the client dead.
       // The 'Offline' badge (ChatHeader) reflects !isConnected the whole time.
       if (!intentionallyClosed) {
+        // #LIVE: clear any pending timer first so a late onclose from a
+        // superseded socket can't stack a second connect() (double WS to
+        // one agent).
+        if (reconnectTimer) clearTimeout(reconnectTimer);
         const fast = reconnectAttempts < MAX_RECONNECT;
         const delay = computeReconnectDelay(reconnectAttempts);
         console.log(`[ws] reconnecting in ${Math.round(delay)}ms (attempt ${reconnectAttempts + 1}${fast ? "" : ", slow"})`);
@@ -155,17 +171,56 @@ function createConnection(
         }, delay);
       }
     };
-    ws.onerror = (e) => {
+    ws.onerror = () => {
       data.lastError = "WebSocket connection error";
       notify();
+      // #LIVE: some browsers fire onerror WITHOUT a following onclose (DNS
+      // failure, network-stack suspend). Without scheduling here the client
+      // would give up forever — defeating the #3 "never give up" invariant.
+      // Guard on the timer so onclose+onerror can't stack two reconnects.
+      if (!intentionallyClosed && !reconnectTimer && ws?.readyState !== WebSocket.OPEN) {
+        const delay = computeReconnectDelay(reconnectAttempts);
+        reconnectTimer = setTimeout(() => {
+          reconnectAttempts++;
+          connect();
+        }, delay);
+      }
     };
     ws.onmessage = (event) => {
+      lastMessageAt = Date.now();
       try { handleMessage(JSON.parse(event.data)); } catch (e) { console.error("WS parse error:", e); }
     };
   }
 
   connect();
 
+  // #LIVE: detect a silently-dead socket (iOS PWA suspend / half-open TCP) —
+  // onclose never fires for these, so the reconnect backoff never arms and
+  // sends vanish into a dead buffer. Per-connection so closing one dead socket
+  // in a multi-session pool never tears down a sibling session.
+  const onVisible = () => {
+    if (intentionallyClosed) return;
+    // On foreground: if no frame has arrived in 60s while OPEN, the socket is
+    // almost certainly dead — force-close so onclose drives reconnect.
+    if (document.visibilityState === "visible" && ws && ws.readyState === WebSocket.OPEN && Date.now() - lastMessageAt > 60_000) {
+      try { ws.close(); } catch {}
+    }
+  };
+  const onOffline = () => { if (!intentionallyClosed && ws) { try { ws.close(); } catch {} } };
+  const onOnline = () => {
+    if (intentionallyClosed) return;
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    reconnectAttempts = 0;
+    connect();
+  };
+  document.addEventListener("visibilitychange", onVisible);
+  window.addEventListener("offline", onOffline);
+  window.addEventListener("online", onOnline);
+  const removeLifecycleListeners = () => {
+    document.removeEventListener("visibilitychange", onVisible);
+    window.removeEventListener("offline", onOffline);
+    window.removeEventListener("online", onOnline);
+  };
   function handleMessage(msg: WSServerMessage) {
     switch (msg.type) {
       case "state": {
@@ -394,7 +449,17 @@ function createConnection(
       data.pendingFollowUp = [...data.pendingFollowUp, msg.message];
       notify();
     }
-    if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(msg));
+    } else if (msg.type === "prompt" || msg.type === "steer" || msg.type === "follow_up") {
+      // #LIVE: WS isn't OPEN (reconnect window). Queue the message so it's
+      // flushed on reconnect — otherwise a prompt sent mid-reconnect is
+      // silently dropped while its optimistic copy stays in the UI (looks
+      // sent, PI never gets it). Dedup on flush is handled by the
+      // messages_result merge (#7), which runs first because get_messages is
+      // requested before the queue is flushed.
+      pendingQueue.push(msg);
+    }
   }
 
   // Mutable current key — updated by rekey() when a pending session resolves
@@ -556,6 +621,7 @@ function createConnection(
     },
     close: () => {
       intentionallyClosed = true;
+      removeLifecycleListeners();
       if (reconnectTimer) clearTimeout(reconnectTimer);
       const timer = (data as { notifyTimer?: ReturnType<typeof setTimeout> }).notifyTimer;
       if (timer) { clearTimeout(timer); delete (data as { notifyTimer?: ReturnType<typeof setTimeout> }).notifyTimer; }

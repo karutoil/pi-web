@@ -1,10 +1,20 @@
 /// <reference lib="webworker" />
 // PI Web Service Worker
-// Handles: offline caching, background sync, push notifications, periodic sync
+// Handles: offline caching of the app shell, push notifications.
+//
+// Navigation is network-first so a deploy's fresh index.html always wins over a
+// cached copy (stale-forever / partial-eviction blank page). Content-hashed
+// /assets/* stay cache-first (immutable by hash).
 
 const CACHE_NAME = "pi-web-v1";
 const STATIC_CACHE = "pi-web-static-v1";
 const API_CACHE = "pi-web-api-v1";
+// ponytail: bump this suffix (-> v2, v3, ...) on every deploy so activate()
+// purges the PREVIOUS deploy's cached entries wholesale. Without it the
+// hardcoded v1 name is retained across deploys and stale entries inside it are
+// never evicted — a partial eviction then serves an old index.html that
+// references a 404'd JS bundle and the app can't load to reattach. Combined
+// with network-first navigation this is self-healing on the next deploy.
 
 // Assets to pre-cache on install
 const PRE_CACHE_URLS = [
@@ -28,7 +38,8 @@ self.addEventListener("install", (event) => {
   );
 });
 
-// Activate: clean old caches
+// Activate: clean old caches (anything that isn't one of the current names —
+// so bumping a version suffix above purges the previous deploy's caches).
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
@@ -41,7 +52,7 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// Fetch: network-first for API, cache-first for static assets
+// Fetch: network-first for navigations + API, cache-first for hashed assets.
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
@@ -51,6 +62,25 @@ self.addEventListener("fetch", (event) => {
 
   // WebSocket — don't cache
   if (url.protocol === "ws:" || url.protocol === "wss:") return;
+
+  // Navigations: network-first. A deploy's fresh index.html MUST win over a
+  // cached copy, otherwise a stale/evicted shell can reference a 404'd JS
+  // bundle and the app can't mount to reattach its live session. Offline falls
+  // back to the cached shell so a backgrounded PWA still loads.
+  if (event.request.mode === "navigate") {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(STATIC_CACHE).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request).then((c) => c || caches.match("/")))
+    );
+    return;
+  }
 
   // API requests: network-first, fallback to cache
   if (url.pathname.startsWith("/api/")) {
@@ -87,17 +117,6 @@ self.addEventListener("fetch", (event) => {
   );
 });
 
-// Background Sync: retry failed API requests when connectivity returns
-self.addEventListener("sync", (event) => {
-  if (event.tag === "pi-web-sync") {
-    event.waitUntil(retryFailedRequests());
-  }
-});
-
-async function retryFailedRequests() {
-  // Future: retry queued mutations that failed offline
-}
-
 // Push notifications
 self.addEventListener("push", (event) => {
   const data = event.data?.json() ?? {};
@@ -132,23 +151,9 @@ self.addEventListener("notificationclick", (event) => {
   );
 });
 
-// Periodic Background Sync (Android Chrome 94+)
-self.addEventListener("periodicsync", (event) => {
-  if (event.tag === "pi-web-periodic") {
-    event.waitUntil(checkForUpdates());
-  }
-});
-
-async function checkForUpdates() {
-  // Future: check for new messages/notifications while app is backgrounded
-}
-
 // Message handler from main thread
 self.addEventListener("message", (event) => {
   if (event.data?.type === "SKIP_WAITING") {
     self.skipWaiting();
-  }
-  if (event.data?.type === "CLEAR_CACHE") {
-    caches.keys().then((keys) => keys.forEach((key) => caches.delete(key)));
   }
 });

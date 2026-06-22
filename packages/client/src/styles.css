@@ -12217,6 +12217,46 @@ button.pkg-name-clickable:focus-visible {
     0 0 0 4px color-mix(in srgb, var(--workspace-brass) 10%, transparent);
 }
 
+/* Streaming border animation — a traveling light comet around the input while a chat turn is active. */
+@property --conversation-border-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.conversation-editor-shell.is-streaming {
+  border-color: color-mix(in srgb, var(--workspace-brass) 16%, transparent);
+}
+
+.conversation-editor-shell.is-streaming::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(
+    from var(--conversation-border-angle),
+    var(--workspace-brass) 0deg,
+    color-mix(in srgb, var(--workspace-brass) 45%, transparent) 45deg,
+    transparent 95deg,
+    transparent 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: conversation-border-spin 2.2s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes conversation-border-spin {
+  to { --conversation-border-angle: 360deg; }
+}
+
 /* Status row (extension status lines) */
 .conversation-status-row {
   padding: 0.55rem 0.95rem 0.3rem;

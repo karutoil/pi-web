@@ -63,12 +63,17 @@ export function useServiceWorkerUpdate() {
 
   const applyUpdate = useCallback(() => {
     if (registration?.waiting) {
+      // #LIVE: reload ONCE the new SW actually takes over. Posting SKIP_WAITING
+      // then reloading immediately can race the activation and reload under the
+      // OLD controller (the postMessage was a no-op once install already called
+      // skipWaiting). Listening for controllerchange makes the apply deterministic.
+      navigator.serviceWorker.addEventListener("controllerchange", () => window.location.reload(), { once: true });
       registration.waiting.postMessage({ type: "SKIP_WAITING" });
+    } else {
+      // Already activated (install called skipWaiting) — just reload.
+      window.location.reload();
     }
-    // Reload to activate new SW
-    window.location.reload();
   }, [registration]);
-
   return { hasUpdate, applyUpdate };
 }
 
@@ -87,32 +92,4 @@ export function useOnlineStatus() {
   }, []);
 
   return isOnline;
-}
-
-export function useBackgroundSync() {
-  const registerSync = useCallback(async (tag: string = "pi-web-sync") => {
-    if (!("serviceWorker" in navigator)) return;
-    const reg = await navigator.serviceWorker.ready;
-    if ("sync" in reg) {
-      try {
-        await (reg as any).sync.register(tag);
-      } catch {
-        // Sync not supported or permission denied
-      }
-    }
-  }, []);
-
-  const registerPeriodicSync = useCallback(async (tag: string = "pi-web-periodic", minInterval: number = 1440) => {
-    if (!("serviceWorker" in navigator)) return;
-    const reg = await navigator.serviceWorker.ready;
-    if ("periodicSync" in reg) {
-      try {
-        await (reg as any).periodicSync.register(tag, { minInterval: minInterval * 60 * 1000 });
-      } catch {
-        // Periodic sync not supported or permission denied
-      }
-    }
-  }, []);
-
-  return { registerSync, registerPeriodicSync };
 }

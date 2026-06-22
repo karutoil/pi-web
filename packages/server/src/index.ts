@@ -12,7 +12,7 @@ import { addProject, removeProject, listProjects, getProject, touchProject, getL
 import { listSubagentRuns, interruptSubagentRun, readSubagentRunOutput, isSubagentExtensionAvailable } from "./pi-subagents";
 import { listProjectSessions, getSessionDetail, buildUsageSummary, computeProjectUsage } from "./pi-sessions";
 import { buildSessionHtmlPretty } from "./sessionExportPretty";
-import { getOrCreateAgent, stopAllAgents, getPoolStats, lookupAgent, detachFromAgent, deleteFromPool, stopAgentsForCwd, setProjectSessionsChangedHandler, broadcastToProjectClients } from "./pi-agent";
+import { getOrCreateAgent, stopAllAgents, getPoolStats, lookupAgent, detachFromAgent, deleteFromPool, stopAgentsForCwd, setProjectSessionsChangedHandler, broadcastToProjectClients, getLiveSessionsForCwd } from "./pi-agent";
 import { createTerminal, getTerminal, listTerminals, killTerminal } from "./pi-terminal";
 import { getGitStatus, getGitDiff, getGitDiffForCommit, gitStage, gitUnstage, gitCommit, gitLog, gitCheckout, gitDiscard, gitBranches, gitPush, gitPull, gitFetch, gitCreateBranch, gitDeleteBranch, gitRenameBranch, gitTags, gitCreateTag, gitDeleteTag, gitStashList, gitStashShow, gitStashPush, gitStashPop, gitStashApply, gitStashDrop, gitAmend, gitCherryPick, gitRevert, gitResolveConflict, getGitDiffStats, gitDiffWithRef, gitShowCommit, gitLogSearch, gitBlame, gitRemotes, gitUnstageAll } from "./pi-git";
 import type { GitResult } from "./pi-git";
@@ -408,6 +408,18 @@ app.get("/api/projects/:id/favicon", async (c) => {
   } catch {
     return c.json({ dataUrl: null });
   }
+});
+
+app.get("/api/projects/:id/live-sessions", (c) => {
+  // #LIVE: source-of-truth for "which sessions are still alive in the pool for
+  // this project". A cache-cleared refresh has NO client-side state (sessionStorage
+  // wiped), so the client falls back to this endpoint to discover and reattach
+  // to its live agents. Without it, a hard refresh orphans every live agent
+  // until the idle timer eventually reaps them — the "lose the live session" bug.
+  const project = getProject(c.req.param("id"));
+  if (!project) return c.json({ error: "Project not found" }, 404);
+  const sessions = getLiveSessionsForCwd(project.path);
+  return c.json({ sessions });
 });
 
 app.get("/api/projects/:id/sessions", async (c) => {
@@ -2569,6 +2581,11 @@ app.get(
         } catch (fatalErr: any) {
           console.error("Fatal onOpen error:", fatalErr);
           try { ws.send(JSON.stringify({ type: "error", message: "Internal server error" })); } catch {}
+          // #LIVE: close the WS so the client's onclose fires and it reconnects.
+          // Without this the WS stays OPEN with no wsToAgent entry — every
+          // onMessage is silently dropped (lookupAgent()==null) and the client
+          // hangs forever thinking it's connected to a live agent.
+          try { ws.close(); } catch {}
         }
       },
 
@@ -2592,8 +2609,19 @@ app.get(
             case "follow_up": agent.send({ type: "follow_up", message: msg.message, ...(msg as any).images ? { images: (msg as any).images } : {} }); break;
             case "clear_queue": agent.send({ type: "clear_queue" }); break;
             case "new_session": agent.send({ type: "new_session" }); break;
-            case "load_session": agent.loadSession(msg.sessionPath); break;
-            case "switch_session": agent.switchSession((msg as any).sessionPath); break;
+            case "load_session": {
+              // #2/#14: validate the session path (every REST endpoint does) so a
+              // crafted path can't direct the SDK outside the allowed roots, and a
+              // subsequent session_loaded rekey can't pollute the pool key.
+              try { agent.loadSession(validateSessionPath(msg.sessionPath, cwd)); }
+              catch (e: any) { try { if (ws.readyState === 1) ws.send(JSON.stringify({ type: "error", message: `Invalid session path: ${e.message}` })); } catch {} }
+              break;
+            }
+            case "switch_session": {
+              try { agent.switchSession(validateSessionPath((msg as any).sessionPath, cwd)); }
+              catch (e: any) { try { if (ws.readyState === 1) ws.send(JSON.stringify({ type: "error", message: `Invalid session path: ${e.message}` })); } catch {} }
+              break;
+            }
             case "set_model": agent.send({ type: "set_model", provider: msg.provider, modelId: msg.modelId }); break;
             case "cycle_model": agent.send({ type: "cycle_model" }); break;
             case "set_thinking": {

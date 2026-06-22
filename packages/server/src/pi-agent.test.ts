@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import type { ServerWebSocket } from "bun";
 import type { WSServerMessage } from "@pi-web/shared";
-import { buildAgentKey, PooledAgent, type IPIAgent, type PIAgentOptions, getOrCreateAgent, lookupAgent, rekeyAgent, deleteFromPool, stopAgentsForCwd, setProjectSessionsChangedHandler, _resetPoolForTesting } from "./pi-agent";
+import { buildAgentKey, PooledAgent, type IPIAgent, type PIAgentOptions, type LiveSessionSnapshot, getOrCreateAgent, lookupAgent, rekeyAgent, deleteFromPool, stopAgentsForCwd, setProjectSessionsChangedHandler, _resetPoolForTesting, getLiveSessionsForCwd } from "./pi-agent";
 
 /**
  * Tests for the server-side agent pool. These verify the multi-session
@@ -84,6 +84,10 @@ class FakeAgent implements IPIAgent {
   exitHandler: ((code: number | null) => void) | null = null;
   startCalls = 0;
   stopCalls = 0;
+  /** Configurable live snapshot for getLiveSnapshot(); defaults to a snapshot
+   * derived from options.sessionPath so tests can drive the recovery flow.
+   * Set to null to simulate a pre-resolve (pending __new__) agent. */
+  liveSnapshot: LiveSessionSnapshot | null | undefined = undefined;
 
   constructor(options: PIAgentOptions) {
     this.options = options;
@@ -96,6 +100,22 @@ class FakeAgent implements IPIAgent {
   getOptions() { return this.options; }
   getState() {}
   doSend() {}
+  getLiveSnapshot(): LiveSessionSnapshot | null {
+    // Default: synthesize a snapshot from options.sessionPath so the recovery
+    // flow has something to return. Tests that want "no snapshot yet" set
+    // this.liveSnapshot = null explicitly.
+    if (this.liveSnapshot !== undefined) return this.liveSnapshot;
+    if (!this.options.sessionPath) return null;
+    return {
+      sessionPath: this.options.sessionPath,
+      sessionId: "fake-sess",
+      sessionName: null,
+      isStreaming: false,
+      isCompacting: false,
+      clientCount: 0,
+      lastActivityAt: Date.now(),
+    };
+  }
 }
 
 function makeWS() {
@@ -711,5 +731,63 @@ describe("reattach: clone rekeys the agent to the forked session via get_state p
     fake.handler!({ type: "state", data: { sessionFile: "/cloned.json", isStreaming: false } } as any);
     // No fork happened — must stay keyed at the original.
     expect(agent.getKey()).toBe(buildAgentKey("/proj", "/orig.json"));
+  });
+});
+
+// ─── live-session recovery (cache-cleared refresh) ────────────────────
+//
+// The "hard refresh with cache clearing" case: sessionStorage is wiped, so
+// the client has NO handle to its live session. The server pool is the
+// source of truth — getLiveSessionsForCwd reports every still-running agent
+// for a project so the client can reattach to the most-recently-active one.
+
+describe("getLiveSessionsForCwd (cache-cleared recovery)", () => {
+  beforeEach(() => _resetPoolForTesting());
+  afterEach(() => _resetPoolForTesting());
+
+  it("returns a snapshot for every live agent in the project, most-recent first", async () => {
+    const cwd = "/proj";
+    const f1 = new FakeAgent({ cwd, sessionPath: "/a.json" });
+    const f2 = new FakeAgent({ cwd, sessionPath: "/b.json" });
+    const a1 = getOrCreateAgent(cwd, "/a.json", undefined, undefined, undefined, () => f1).agent;
+    const a2 = getOrCreateAgent(cwd, "/b.json", undefined, undefined, undefined, () => f2).agent;
+    // b.json gets a later activity event than a.json so it sorts first.
+    f1.handler!({ type: "agent_start" });
+    await new Promise(r => setTimeout(r, 5));
+    f2.handler!({ type: "agent_start" });
+    const live = getLiveSessionsForCwd(cwd);
+    expect(live).toHaveLength(2);
+    expect(live[0].sessionPath).toBe("/b.json"); // most-recent first
+    expect(live[1].sessionPath).toBe("/a.json");
+  });
+
+  it("excludes agents from other projects", () => {
+    const fa = new FakeAgent({ cwd: "/projA", sessionPath: "/a.json" });
+    const fb = new FakeAgent({ cwd: "/projB", sessionPath: "/b.json" });
+    getOrCreateAgent("/projA", "/a.json", undefined, undefined, undefined, () => fa);
+    getOrCreateAgent("/projB", "/b.json", undefined, undefined, undefined, () => fb);
+    const liveA = getLiveSessionsForCwd("/projA");
+    expect(liveA).toHaveLength(1);
+    expect(liveA[0].sessionPath).toBe("/a.json");
+  });
+
+  it("excludes pending-new agents that haven't resolved a sessionFile yet", () => {
+    // A brand-new session (pre-resolve) has no sessionPath — it can't be
+    // reattached by path, so it must NOT be returned. The reverse-lookup by
+    // newSessionId still handles that case via the WS connect params.
+    const fake = new FakeAgent({ cwd: "/proj" });
+    fake.liveSnapshot = null;
+    getOrCreateAgent("/proj", null, "uuid-pending", undefined, undefined, () => fake);
+    expect(getLiveSessionsForCwd("/proj")).toEqual([]);
+  });
+
+  it("includes streaming agents (the real live-session case)", () => {
+    const fake = new FakeAgent({ cwd: "/proj", sessionPath: "/live.json" });
+    fake.liveSnapshot = { sessionPath: "/live.json", sessionId: "s", sessionName: null, isStreaming: true, isCompacting: false, clientCount: 0, lastActivityAt: Date.now() };
+    const { agent } = getOrCreateAgent("/proj", "/live.json", undefined, undefined, undefined, () => fake);
+    const live = getLiveSessionsForCwd("/proj");
+    expect(live).toHaveLength(1);
+    expect(live[0].isStreaming).toBe(true);
+    expect(live[0].sessionPath).toBe("/live.json");
   });
 });
