@@ -177,6 +177,19 @@ export default function App() {
       if (projectId) streamingProjectIds.add(projectId);
     }
   }
+  // #LIVE: the client pool only knows about sessions it has an open WS to.
+  // After a refresh / hard refresh / device switch the pool is empty except
+  // for the one restored session, so other still-streaming server-side agents
+  // would vanish from the session list. The server marks them isStreaming on
+  // the sessions endpoint (sourced from the agent pool), so union those in —
+  // the session list then shows the live dot and the user can click to
+  // reattach (which opens a WS and the client-pool entry takes over).
+  for (const s of sessions) {
+    if (s.isStreaming && s.id) {
+      streamingSessionIds.add(s.id);
+      if (selectedProject?.id) streamingProjectIds.add(selectedProject.id);
+    }
+  }
 
   // When the WS connection reports session info (from get_state or session_loaded),
   // stabilize the active session by updating filePath and clearing newSessionId
@@ -452,6 +465,14 @@ export default function App() {
     // first, including pending new sessions (with newSessionId) so a reload
     // during boot reattaches to the still-starting agent via the server's
     // reverse-lookup.
+    //
+    // #LIVE-ALL: reattach to EVERY live session, not just the most recent.
+    // A refresh / hard refresh / device switch wipes the client pool, but the
+    // server pool keeps every still-running agent. Opening a WS to each one
+    // (a) stops the idle timer from reaping any of them, (b) resumes their
+    // live streams so the sidebar liveness dots stay accurate, and (c) means
+    // switching to one is instant — the conn is already open. live[0] (most
+    // recently active) becomes the focused view.
     let sessionPath: string | null = null;
     let pendingNewSessionId: string | null = null;
     try {
@@ -459,6 +480,16 @@ export default function App() {
       if (r.ok) {
         const data = await r.json();
         const live = (data.sessions || []) as Array<{ sessionPath?: string; newSessionId?: string; pending?: boolean }>;
+        // Reattach to every live agent by opening a WS to each. getOrConnect is
+        // idempotent (returns the existing conn for the active one the render
+        // path will also open), so this never double-connects.
+        for (const s of live) {
+          if (s.pending && s.newSessionId) {
+            wsPool.getOrConnect(restoreProjectId, null, s.newSessionId);
+          } else if (s.sessionPath) {
+            wsPool.getOrConnect(restoreProjectId, s.sessionPath, null);
+          }
+        }
         if (live.length) {
           const target = live[0];
           if (target.pending && target.newSessionId) {
@@ -496,7 +527,7 @@ export default function App() {
       });
     }
     setView("chat");
-  }, [selectedProject, sessions]);
+  }, [selectedProject, sessions, wsPool.getOrConnect]);
 
   useEffect(() => {
     restoreLiveSession();

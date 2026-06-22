@@ -796,4 +796,26 @@ describe("getLiveSessionsForCwd (cache-cleared recovery)", () => {
     expect(live[0].isStreaming).toBe(true);
     expect(live[0].sessionPath).toBe("/live.json");
   });
+
+  // Guards the /api/projects/:id/sessions endpoint merge: a refreshed client
+  // has no open WS, so the ONLY way it learns a session is still streaming is
+  // by the server marking SessionSummary.isStreaming from this pool. The
+  // endpoint builds a Set of streaming sessionPaths from getLiveSessionsForCwd
+  // and sets isStreaming on matching sessions — this test pins that contract
+  // (streaming sessionPath present, non-streaming absent) so a shape change
+  // here can't silently drop liveness from the session list after refresh.
+  it("exposes streaming sessionPaths the sessions endpoint keys on (refresh reattach visibility)", () => {
+    const streamFake = new FakeAgent({ cwd: "/proj", sessionPath: "/streaming.json" });
+    streamFake.liveSnapshot = { sessionPath: "/streaming.json", sessionId: "s1", sessionName: null, isStreaming: true, isCompacting: false, clientCount: 0, lastActivityAt: Date.now() };
+    const idleFake = new FakeAgent({ cwd: "/proj", sessionPath: "/idle.json" });
+    idleFake.liveSnapshot = { sessionPath: "/idle.json", sessionId: "s2", sessionName: null, isStreaming: false, isCompacting: false, clientCount: 1, lastActivityAt: Date.now() };
+    getOrCreateAgent("/proj", "/streaming.json", undefined, undefined, undefined, () => streamFake);
+    getOrCreateAgent("/proj", "/idle.json", undefined, undefined, undefined, () => idleFake);
+    // Mirror the endpoint's exact merge: streaming sessionPaths only.
+    const streamingPaths = new Set(
+      getLiveSessionsForCwd("/proj").filter(s => s.isStreaming && s.sessionPath).map(s => s.sessionPath),
+    );
+    expect(streamingPaths.has("/streaming.json")).toBe(true);
+    expect(streamingPaths.has("/idle.json")).toBe(false);
+  });
 });

@@ -27,6 +27,11 @@ export interface SessionSummary {
   tokenCount: number;
   cost: number;
   isRecentlyActive: boolean;
+  /** True when a pooled agent for this session is actively streaming on the
+   * server. Populated by /api/projects/:id/sessions from the server-side agent
+   * pool (the source of truth) so a refreshed/cross-device client can show
+   * liveness for sessions it has no open WebSocket to. */
+  isStreaming?: boolean;
 }
 
 // ─── Aggregate usage across sessions (#usage) ───

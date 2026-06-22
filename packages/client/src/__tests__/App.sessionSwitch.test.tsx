@@ -71,4 +71,27 @@ describe("App — static regression guard for session-switch bug", () => {
     const m = appSrc.match(/const\s+restoreLiveSession\s*=\s*useCallback[\s\S]*?\/live-sessions[\s\S]*?\},\s*\[[^\]]*\]\s*\)\s*;/);
     expect(m, "restoreLiveSession not found or does not fetch /live-sessions").toBeTruthy();
   });
+
+  // REGRESSION GUARD for the "reattach to all live sessions" contract.
+  //
+  // A refresh / hard refresh / device switch wipes the client-side WS pool, but
+  // the server pool keeps every still-running agent. restoreLiveSession must open
+  // a WS to EACH live session returned by /live-sessions — not just live[0] —
+  // so (a) no live agent is left without a client to hit the idle-reap timer,
+  // and (b) every background stream keeps flowing. This guard pins that the
+  // restore body loops over the live list and calls getOrConnect per entry; a
+  // future refactor that collapses back to live[0]-only would fail here.
+  it("restoreLiveSession reattaches to ALL live sessions, not just live[0]", () => {
+    // Strip comments so a mention of live[0]/getOrConnect in prose can't
+    // satisfy the guard — only real code counts.
+    const stripped = appSrc
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    const m = stripped.match(/const\s+restoreLiveSession\s*=\s*useCallback[\s\S]*?\/live-sessions[\s\S]*?\},\s*\[[^\]]*\]\s*\)\s*;/);
+    expect(m, "restoreLiveSession not found").toBeTruthy();
+    const body = m![0];
+    // Must iterate the full live list and open a conn per entry — not just live[0].
+    expect(body, "restore must loop over every live session").toMatch(/for\s*\(\s*const\s+\w+\s+of\s+live\s*\)/);
+    expect(body, "restore must call getOrConnect inside the loop").toMatch(/getOrConnect\s*\(/);
+  });
 });

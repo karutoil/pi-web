@@ -428,6 +428,19 @@ app.get("/api/projects/:id/sessions", async (c) => {
   if (!project) return c.json({ error: "Project not found" }, 404);
   
   const sessions = await listProjectSessions(project.path);
+  // #LIVE: mark sessions that have a still-streaming pooled agent so a
+  // refreshed/cross-device client (which has no open WS to those sessions)
+  // can show liveness in the session list and reattach. The server pool is
+  // the source of truth; this closes the "live session disappears from the UI
+  // after refresh" gap without any client-side polling or localStorage token.
+  const liveStreaming = new Set(
+    getLiveSessionsForCwd(project.path)
+      .filter(s => s.isStreaming && s.sessionPath)
+      .map(s => s.sessionPath),
+  );
+  if (liveStreaming.size) {
+    for (const s of sessions) if (liveStreaming.has(s.filePath)) s.isStreaming = true;
+  }
   return c.json({ sessions, total: sessions.length });
 });
 
@@ -2574,8 +2587,14 @@ app.get(
           }
 
 
-          // If client requested a new session (fresh WS connection), tell pi to create one
-          if (newSessionId) {
+          // If this WS created a brand-new agent, tell pi to spin up a fresh
+          // session. Gated on isNew: a reconnect that reattaches to a
+          // still-pending (booting) agent via the newSessionId reverse-lookup
+          // (see getOrCreateAgent, #REATTACH) must NOT resend new_session —
+          // runtime.newSession() creates a *second* session and tears down the
+          // one already booting, so a refresh during the boot window would
+          // orphan/duplicate the live PI session the client expects to keep.
+          if (newSessionId && isNew) {
             agent.send({ type: "new_session" });
           }
         } catch (fatalErr: any) {
