@@ -11,10 +11,12 @@ import { ContextMenuPortal, ContextMenuItem, ContextMenuDivider, useLongPress } 
 import { SubagentProgressView, isSubagentDetails } from "./SubagentProgress";
 import { messageToMarkdown, copyToClipboard } from "../lib/markdownExport";
 import { SkillCard, parseSkillBlocks } from "./SkillCard";
+import type { ChatPrefs } from "../hooks/useChatPrefs";
 
 interface MessageBubbleProps {
   message: ChatMessage;
   showThinking: boolean;
+  chatPrefs?: ChatPrefs;
   toolResultsMap?: Map<string, ChatMessage>;
   inlineToolCallIds?: Set<string>;
   runningTools?: Map<string, ToolEvent>;
@@ -194,7 +196,7 @@ function TextWithSkills({ text, isStreaming }: { text: string; isStreaming?: boo
   );
 }
 
-function MessageBubbleImpl({ message, showThinking, toolResultsMap, inlineToolCallIds, runningTools, isHistorical, isStreaming, entryId, onFork, onCopyTurn }: MessageBubbleProps) {
+function MessageBubbleImpl({ message, showThinking, chatPrefs, toolResultsMap, inlineToolCallIds, runningTools, isHistorical, isStreaming, entryId, onFork, onCopyTurn }: MessageBubbleProps) {
   const role = message.role;
   const isUser = role === "user";
   const isAssistant = role === "assistant";
@@ -266,6 +268,7 @@ function MessageBubbleImpl({ message, showThinking, toolResultsMap, inlineToolCa
             inlineToolCallIds={inlineToolCallIds}
             runningTools={runningTools}
             showThinking={showThinking}
+            chatPrefs={chatPrefs}
             isHistorical={isHistorical}
             isStreaming={isStreaming}
           />
@@ -390,6 +393,7 @@ function AssistantBubble({
   toolResultsMap,
   runningTools,
   showThinking,
+  chatPrefs,
   isHistorical,
   isStreaming,
 }: {
@@ -398,11 +402,11 @@ function AssistantBubble({
   inlineToolCallIds?: Set<string>;
   runningTools?: Map<string, ToolEvent>;
   showThinking: boolean;
+  chatPrefs?: ChatPrefs;
   isHistorical?: boolean;
   isStreaming?: boolean;
 }) {
   const content = Array.isArray(message.content) ? message.content : [];
-  const [toolCallsExpanded, setToolCallsExpanded] = useState<Record<string, boolean>>({});
 
   // Separate thinking blocks from text
   const thinkingBlocks = content.filter(b => b.type === "thinking");
@@ -417,7 +421,7 @@ function AssistantBubble({
     <div className="space-y-3">
       {/* Thinking blocks */}
       {showThinking && thinkingBlocks.map((block, i) => (
-        <ThinkingBlock key={i} thinking={block.thinking || ""} />
+        <ThinkingBlock key={i} thinking={block.thinking || ""} defaultOpen={chatPrefs?.autoExpandReasoning} />
       ))}
 
       {/* Streaming thinking indicator */}
@@ -438,45 +442,32 @@ function AssistantBubble({
         return <TextWithSkills key={i} text={text} isStreaming={isStreaming} />;
       })}
 
-      {/* Tool calls */}
-      {toolCalls.map((block, i) => (
-        <CombinedToolBubble
-          key={block.id || i}
-          toolCall={block}
-          toolResult={block.id ? toolResultsMap?.get(block.id) : undefined}
-          runningTool={block.id ? runningTools?.get(block.id) : undefined}
-          expanded={toolCallsExpanded[block.id || String(i)] ?? false}
-          onToggle={() => {
-            const key = block.id || String(i);
-            setToolCallsExpanded(prev => ({ ...prev, [key]: !prev[key] }));
-          }}
-        />
-      ))}
+      {/* Tool calls — one embedded execution layer, progressively disclosed */}
+      <ExecutionLayer
+        toolCalls={toolCalls}
+        toolResultsMap={toolResultsMap}
+        runningTools={runningTools}
+        defaultOpen={chatPrefs?.autoExpandToolGroup}
+        defaultNodeOpen={chatPrefs?.autoExpandToolCalls}
+      />
     </div>
   );
 }
 
-function ThinkingBlock({ thinking }: { thinking: string }) {
-  const [open, setOpen] = useState(false);
+function ThinkingBlock({ thinking, defaultOpen }: { thinking: string; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen ?? false);
   const clean = thinking.replace(/\x1b\[[0-9;]*m/g, "");
-  const lineCount = clean.split("\n").length;
 
   return (
     <div className="conversation-thinking-block" data-open={open ? "true" : "false"}>
       <button
         onClick={() => setOpen(o => !o)}
-        className="conversation-reasoning-toggle"
+        className="conversation-reasoning-link"
         aria-expanded={open}
-        aria-label="Toggle reasoning"
+        aria-label={open ? "Hide reasoning" : "Show reasoning"}
       >
-        <Icon name="chevron-right-sm" size={9} className={`conversation-tool-caret ${open ? "is-open" : ""}`} />
-        <span className="conversation-reasoning-glyph" aria-hidden="true">
-          <Icon name="spark" size={12} />
-        </span>
-        <span className="conversation-reasoning-label">Reasoning</span>
-        {!open && lineCount > 0 && (
-          <span className="conversation-reasoning-count">{lineCount} {lineCount === 1 ? "line" : "lines"}</span>
-        )}
+        <Icon name="spark" size={11} />
+        <span>Reasoning</span>
       </button>
       <div className="conversation-reasoning-body-wrap">
         <div className="conversation-reasoning-body">
@@ -487,35 +478,87 @@ function ThinkingBlock({ thinking }: { thinking: string }) {
   );
 }
 
-/** Combined tool call + result bubble — shows request header and result body in one unit */
-function CombinedToolBubble({
+/** Embedded execution layer — one connected rail per turn, progressive disclosure:
+ *  L1 ambient rail-head (dot cluster + count)  →  L2 node rail (spine)  →  L3 per-node detail. */
+function ExecutionLayer({
+  toolCalls,
+  toolResultsMap,
+  runningTools,
+  defaultOpen,
+  defaultNodeOpen,
+}: {
+  toolCalls: Array<{ id?: string; name?: string; arguments?: Record<string, unknown> }>;
+  toolResultsMap?: Map<string, ChatMessage>;
+  runningTools?: Map<string, ToolEvent>;
+  defaultOpen?: boolean;
+  defaultNodeOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen ?? false);
+  if (toolCalls.length === 0) return null;
+
+  const anyRunning = toolCalls.some(tc => !!tc.id && runningTools?.get(tc.id)?.status === "running");
+  const anyError = toolCalls.some(tc => {
+    if (!tc.id) return false;
+    const r = toolResultsMap?.get(tc.id);
+    return !!r?.isError || runningTools?.get(tc.id)?.status === "error";
+  });
+
+  return (
+    <div className={`exec${open ? " open" : ""}`}>
+      <button className="exec-head" onClick={() => setOpen(o => !o)} aria-expanded={open}>
+        <span className="exec-dots">
+          {toolCalls.map((tc, i) => (
+            <i key={i} data-k={toolAccentKind(tc.name)} />
+          ))}
+        </span>
+        <b>Ran {toolCalls.length} {toolCalls.length === 1 ? "tool" : "tools"}</b>
+        {anyRunning && <span className="exec-running">running…</span>}
+        {anyError && <span className="exec-err">error</span>}
+        <Icon name="chevron-right-sm" size={11} className="exec-chev" />
+      </button>
+      <div className="exec-rail">
+        {toolCalls.map((block, i) => (
+          <ExecNode
+            key={block.id || i}
+            toolCall={block}
+            toolResult={block.id ? toolResultsMap?.get(block.id) : undefined}
+            runningTool={block.id ? runningTools?.get(block.id) : undefined}
+            defaultOpen={defaultNodeOpen}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** One node on the execution rail: a one-line summary (L2) that expands to its result body (L3). */
+function ExecNode({
   toolCall,
-  expanded,
-  onToggle,
   toolResult,
   runningTool,
+  defaultOpen,
 }: {
   toolCall: { id?: string; name?: string; arguments?: Record<string, unknown> };
-  expanded: boolean;
-  onToggle: () => void;
   toolResult?: ChatMessage;
   runningTool?: ToolEvent;
+  defaultOpen?: boolean;
 }) {
   const name = toolCall.name || "unknown";
   const args = toolCall.arguments || {};
   const summary = summarizeToolCall(name, args);
+  const accent = toolAccentKind(name);
+  // Keep the aliased-condition form so TS narrows `runningTool` in the isRunning branches below.
   const isRunning = runningTool && runningTool.status === "running";
-  const isDone = !!toolResult || (runningTool && runningTool.status === "done");
   const isError = toolResult?.isError || (runningTool && runningTool.status === "error");
-  const accentKind = toolAccentKind(name);
+  const [open, setOpen] = useState(defaultOpen ?? false);
+  // ponytail: auto-expand an in-flight tool so progress is visible; user can collapse it once done.
+  useEffect(() => { if (isRunning) setOpen(true); }, [isRunning]);
 
-  // Determine result content for inline rendering
   const resultContent = useMemo(() => {
     if (!toolResult) return null;
     return extractTextContent(toolResult.content);
   }, [toolResult]);
 
-  // Parse diff from tool result details
   const detailsDiff = useMemo(() => {
     if (!toolResult?.details?.diff || typeof toolResult.details.diff !== "string") return null;
     const rawDiff: string = toolResult.details.diff;
@@ -539,100 +582,56 @@ function CombinedToolBubble({
 
   const isDiffResult = !!(detailsDiff || (resultContent && !isError && isDiffContent(resultContent)));
   const hasBody = !!(resultContent || isRunning);
+  const status = isRunning ? "running" : isError ? "error" : "";
 
   return (
-    <div
-      className={`conversation-tool-bubble conversation-tool-bubble--${accentKind}${isError ? " conversation-tool-bubble-error" : ""}${isRunning ? " conversation-tool-bubble-running" : ""}${hasBody ? " has-body" : " no-body"}`}
-    >
-      {/* Header: glyph + tool name + human summary + status pill */}
-      <button
-        onClick={onToggle}
-        className="conversation-tool-header"
-        aria-expanded={hasBody ? expanded : undefined}
-        aria-label="Toggle tool details"
-      >
-        <Icon name="chevron-right-sm" size={9} className={`conversation-tool-caret ${expanded ? "is-open" : ""}`} />
-        <span className="conversation-tool-glyph" aria-hidden="true">
-          <Icon name={toolIconName(name)} size={13} />
-        </span>
-        <span className="conversation-tool-name">{name}</span>
-        {summary && <span className="conversation-tool-summary">{summary}</span>}
-        <span className="conversation-tool-pills">
-          {isRunning && (
-            <span className="conversation-tool-pill conversation-tool-pill--running">
-              <span className="conversation-tool-pill-spin" aria-hidden="true" />
-              Running
-            </span>
-          )}
-          {isDone && !isError && (
-            <span className="conversation-tool-pill conversation-tool-pill--done">
-              <Icon name="check" size={9} />
-              Done
-            </span>
-          )}
-          {isError && (
-            <span className="conversation-tool-pill conversation-tool-pill--error">
-              <Icon name="close" size={9} />
-              Error
-            </span>
-          )}
-        </span>
+    <div className={`exec-node${open ? " open" : ""}${isError ? " err" : ""}`} data-k={accent}>
+      <button className="exec-node-head" onClick={() => setOpen(o => !o)} aria-expanded={hasBody ? open : undefined} aria-label="Toggle tool detail">
+        <span className="k">{name}</span>
+        {summary && <span className="path">{summary}</span>}
+        <span className={`meta${isError ? " err" : ""}`}>{status}</span>
+        {hasBody && <Icon name="chevron-right-sm" size={11} className="node-chev" />}
       </button>
-
-      {/* Animated body: result content */}
-      <div className="conversation-tool-body-wrap" data-open={hasBody && expanded ? "true" : "false"}>
-        <div className="conversation-tool-body-inner">
-          {hasBody && (
-            <>
-              {/* Diff result */}
-              {isDiffResult && (
-                <div className="conversation-tool-body conversation-diff-panel">
-                  {detailsDiff ? (
-                    <DiffRenderer key={detailsDiff} content={detailsDiff} collapsible={false} />
-                  ) : resultContent ? (
-                    <DiffRenderer key={resultContent} content={resultContent} collapsible={false} />
-                  ) : null}
-                </div>
+      {hasBody && (
+        <div className="exec-detail">
+          {isDiffResult && (
+            <div className="conversation-tool-body conversation-diff-panel">
+              {detailsDiff ? (
+                <DiffRenderer key={detailsDiff} content={detailsDiff} collapsible={false} />
+              ) : resultContent ? (
+                <DiffRenderer key={resultContent} content={resultContent} collapsible={false} />
+              ) : null}
+            </div>
+          )}
+          {isRunning && !isDiffResult && runningTool.partialResult?.details && isSubagentDetails(runningTool.partialResult.details) && (
+            <div className="conversation-tool-body conversation-subagent-panel">
+              <SubagentProgressView details={runningTool.partialResult.details} isRunning={true} />
+            </div>
+          )}
+          {isRunning && !isDiffResult && !(runningTool.partialResult?.details && isSubagentDetails(runningTool.partialResult.details)) && (
+            <div className="conversation-tool-body conversation-running-panel">
+              <span className="conversation-running-label">Running…</span>
+              {runningTool.partialResult?.content && (
+                <pre className="conversation-result-pre">
+                  {extractTextContent(runningTool.partialResult.content as ContentBlock[] | string)}
+                </pre>
               )}
-
-              {/* Subagent progress — rich rendering for subagent/extension tools */}
-              {isRunning && !isDiffResult && runningTool.partialResult?.details && isSubagentDetails(runningTool.partialResult.details) && (
-                <div className="conversation-tool-body conversation-subagent-panel">
-                  <SubagentProgressView details={runningTool.partialResult.details} isRunning={true} />
-                </div>
-              )}
-
-              {/* Generic running indicator — for non-subagent tools */}
-              {isRunning && !isDiffResult && !(runningTool.partialResult?.details && isSubagentDetails(runningTool.partialResult.details)) && (
-                <div className="conversation-tool-body conversation-running-panel">
-                  <span className="conversation-running-label">Running…</span>
-                  {runningTool.partialResult?.content && (
-                    <pre className="conversation-result-pre">
-                      {extractTextContent(runningTool.partialResult.content as ContentBlock[] | string)}
-                    </pre>
-                  )}
-                </div>
-              )}
-
-              {/* Completed subagent result — show structured summary */}
-              {!isDiffResult && !isRunning && (toolResult?.details || runningTool?.result?.details) && isSubagentDetails(toolResult?.details || runningTool?.result?.details) && (
-                <div className="conversation-tool-body conversation-subagent-panel">
-                  <SubagentProgressView details={(toolResult?.details || runningTool?.result?.details)!} isRunning={false} />
-                </div>
-              )}
-
-              {/* Text result (non-diff, non-subagent) */}
-              {!isDiffResult && !isRunning && resultContent && !(toolResult?.details && isSubagentDetails(toolResult.details)) && !isSubagentDetails(runningTool?.result?.details) && (
-                <div className="conversation-tool-body conversation-result-panel">
-                  <pre className="conversation-result-pre">
-                    {resultContent}
-                  </pre>
-                </div>
-              )}
-            </>
+            </div>
+          )}
+          {!isDiffResult && !isRunning && (toolResult?.details || runningTool?.result?.details) && isSubagentDetails(toolResult?.details || runningTool?.result?.details) && (
+            <div className="conversation-tool-body conversation-subagent-panel">
+              <SubagentProgressView details={(toolResult?.details || runningTool?.result?.details)!} isRunning={false} />
+            </div>
+          )}
+          {!isDiffResult && !isRunning && resultContent && !(toolResult?.details && isSubagentDetails(toolResult.details)) && !isSubagentDetails(runningTool?.result?.details) && (
+            <div className="conversation-tool-body conversation-result-panel">
+              <pre className="conversation-result-pre">
+                {resultContent}
+              </pre>
+            </div>
           )}
         </div>
-      </div>
+      )}
     </div>
   );
 }

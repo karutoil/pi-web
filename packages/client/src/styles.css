@@ -3339,6 +3339,173 @@ code {
   border-radius: 999px;
 }
 
+/* Preview chip for chat-display settings — renders on the real chat surface so
+   the conversation classes stay legible in either theme. Non-interactive. */
+.chat-pref-preview {
+  background: var(--workspace-surface);
+  border: 1px solid var(--workspace-seam);
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  overflow: hidden;
+}
+.chat-pref-preview .exec-head,
+.chat-pref-preview .exec-node-head,
+.chat-pref-preview .conversation-reasoning-link {
+  cursor: default;
+}
+.chat-pref-preview .exec-node-head:hover,
+.chat-pref-preview .exec-head:hover,
+.chat-pref-preview .conversation-reasoning-link:hover {
+  background: transparent;
+  color: inherit;
+}
+
+/* ── Embedded execution layers — progressive disclosure ───────────────────
+   L1 ambient rail-head → L2 node rail (spine) → L3 per-node detail.
+   One connected layer per turn instead of N parallel tool cards. */
+.exec {
+  margin: 0.55rem 0 0.15rem;
+}
+.exec-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--color-ink-500);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  padding: 0.25rem 0.4rem;
+  border-radius: 0.5rem;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+.exec-head:hover {
+  background: color-mix(in srgb, var(--color-ink-950) 28%, transparent);
+  color: var(--color-ink-300);
+}
+.exec-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.18rem;
+}
+.exec-dots > i {
+  display: block;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--color-ink-700);
+}
+.exec-dots > i[data-k="read"] { background: var(--color-tool-read); }
+.exec-dots > i[data-k="edit"] { background: var(--color-tool-edit); }
+.exec-dots > i[data-k="bash"] { background: var(--workspace-brass); }
+.exec-head b {
+  color: var(--color-ink-300);
+  font-weight: 600;
+}
+.exec-running { color: var(--workspace-brass); }
+.exec-err { color: var(--workspace-rust); }
+.exec-chev {
+  width: 11px;
+  height: 11px;
+  color: var(--color-ink-600);
+  transition: transform 160ms ease;
+  flex: 0 0 auto;
+}
+.exec.open .exec-chev { transform: rotate(90deg); }
+
+/* L2 — the spine */
+.exec-rail {
+  display: none;
+  margin: 0.35rem 0 0.35rem 0.3rem;
+  padding-left: 1rem;
+  border-left: 1px solid var(--workspace-seam);
+}
+.exec.open .exec-rail {
+  display: block;
+  animation: fade-in-up 0.18s ease-out;
+}
+
+.exec-node {
+  position: relative;
+}
+/* node dot sits on the spine */
+.exec-node::before {
+  content: "";
+  position: absolute;
+  left: -1.31rem;
+  top: 0.5rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--node-accent, var(--color-ink-700));
+  box-shadow: 0 0 0 2px var(--workspace-surface);
+}
+.exec-node[data-k="read"] { --node-accent: var(--color-tool-read); }
+.exec-node[data-k="edit"] { --node-accent: var(--color-tool-edit); }
+.exec-node[data-k="bash"] { --node-accent: var(--workspace-brass); }
+.exec-node[data-k="skill"] { --node-accent: var(--workspace-brass); }
+.exec-node[data-k="agent"] { --node-accent: var(--workspace-blueprint); }
+.exec-node.err { --node-accent: var(--workspace-rust); }
+.exec-node + .exec-node { margin-top: 0.15rem; }
+
+.exec-node-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: var(--color-ink-400);
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  padding: 0.28rem 0.4rem;
+  border-radius: 0.45rem;
+  text-align: left;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+.exec-node-head:hover {
+  background: color-mix(in srgb, var(--color-ink-950) 24%, transparent);
+  color: var(--color-ink-200);
+}
+.exec-node-head .k {
+  color: var(--node-accent);
+  font-weight: 700;
+}
+.exec-node-head .path {
+  color: var(--color-ink-300);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.exec-node-head .meta {
+  margin-left: auto;
+  color: var(--color-ink-600);
+  white-space: nowrap;
+}
+.exec-node-head .meta.err { color: var(--workspace-rust); }
+.node-chev {
+  width: 11px;
+  height: 11px;
+  color: var(--color-ink-600);
+  transition: transform 160ms ease;
+  flex: 0 0 auto;
+}
+.exec-node.open .node-chev { transform: rotate(90deg); }
+
+/* L3 — per-node detail (reuses .conversation-tool-body / -diff-panel / -result-panel) */
+.exec-detail {
+  display: none;
+  margin: 0.1rem 0 0.5rem;
+}
+.exec-node.open .exec-detail {
+  display: block;
+  animation: fade-in-up 0.18s ease-out;
+}
+
 .conversation-mobile-header {
   display: flex;
   flex: 0 0 auto;
@@ -8709,6 +8876,32 @@ code {
 
 }
 
+/* ── Mobile / PWA scroll hardening ─────────────────────────────────────────
+   content-visibility:auto on message rows is the #1 cause of "popping" on
+   touch: its 8rem placeholder height differs from real content, so as rows
+   scroll into view the document height shifts and the scrollbar/thumb jumps
+   mid-momentum-scroll — visible as messages snapping in and out, exactly the
+   glitchy feel on mobile/PWA. Disable it on touch + narrow viewports; desktop
+   keeps the paint optimization where it pays off. Also pin the scroll
+   container so PWA momentum scrolling can't chain to the body or rubber-band
+   the whole app, and scope layout/paint invalidations to the scroller.
+   ponytail: scoped to touch — content-visibility is the wrong tradeoff on
+   mobile; re-enable per-panel if a 10k-message touch case ever appears. */
+@media (max-width: 767px), (hover: none) and (pointer: coarse) {
+  .conversation-message-row {
+    content-visibility: visible;
+    contain-intrinsic-size: none;
+  }
+
+  .conversation-scroll {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    contain: layout paint style;
+  }
+}
+
 /* ─── Files Panel ─── */
 
 .files-panel {
@@ -10752,67 +10945,42 @@ button.pkg-name-clickable:focus-visible {
 }
 
 /* ── Reasoning block ───────────────────────────────────────────────────── */
+/* Reasoning built into the chat — no container. Collapsed: a minimal inline
+   "✦ Reasoning" link, content fully hidden. Expanded: muted prose that flows
+   inline with the message (no border, no spine, no box). */
 .conversation-thinking-block {
   margin-top: 0.5rem;
-  border-radius: 0.7rem;
-  border: 1px solid color-mix(in srgb, var(--workspace-brass) 16%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--workspace-brass) 4%, transparent), color-mix(in srgb, var(--color-ink-950) 10%, transparent));
-}
-
-.conversation-thinking-block::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0.55rem;
-  bottom: 0.55rem;
-  width: 2px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--workspace-brass) 55%, transparent);
-}
-
-.conversation-reasoning-toggle {
-  gap: 0.5rem;
-  min-height: 2.1rem;
-  padding: 0.5rem 0.8rem 0.5rem 0.95rem;
-  font-family: var(--font-ui);
-  font-size: 0.66rem;
-  font-weight: 500;
-  letter-spacing: 0.01em;
-  color: var(--color-ink-300);
+  border: 0;
+  border-radius: 0;
   background: transparent;
 }
 
-.conversation-reasoning-toggle:hover {
-  color: var(--workspace-brass);
-  background: color-mix(in srgb, var(--workspace-brass) 6%, transparent);
+.conversation-thinking-block::before {
+  display: none;
 }
 
-.conversation-reasoning-glyph {
-  display: inline-grid;
-  place-items: center;
-  flex: 0 0 auto;
-  width: 1.4rem;
-  height: 1.4rem;
-  border-radius: 0.4rem;
-  color: var(--workspace-brass);
-  background: color-mix(in srgb, var(--workspace-brass) 12%, transparent);
-}
-
-.conversation-reasoning-label {
+.conversation-reasoning-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-ink-600);
   font-family: var(--font-serif);
   font-style: italic;
   font-weight: 500;
-  font-size: 0.74rem;
-  letter-spacing: 0;
+  font-size: 0.76rem;
+  cursor: pointer;
+  transition: color 160ms ease;
 }
 
-.conversation-reasoning-count {
-  margin-left: 0.35rem;
-  font-family: var(--font-mono);
-  font-size: 0.58rem;
-  font-weight: 500;
-  color: var(--color-ink-500);
+.conversation-reasoning-link:hover {
+  color: var(--color-ink-300);
+}
+
+.conversation-reasoning-link svg {
+  color: inherit;
 }
 
 .conversation-reasoning-body-wrap {
@@ -10830,12 +10998,13 @@ button.pkg-name-clickable:focus-visible {
   min-height: 0;
   max-height: 18rem;
   overflow-y: auto;
-  padding: 0.65rem 0.9rem 0.85rem 0.95rem;
+  margin-top: 0.4rem;
+  padding: 0;
   font-family: var(--font-ui);
-  font-size: 0.72rem;
-  line-height: 1.6;
-  color: var(--color-ink-400);
-  border-top: 1px solid color-mix(in srgb, var(--workspace-brass) 12%, transparent);
+  font-size: 0.8rem;
+  line-height: 1.65;
+  color: var(--color-ink-500);
+  border: 0;
   white-space: pre-wrap;
 }
 

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { ChangeEvent, ReactNode } from "react";
 import { Icon, type IconName } from "./Icon";
 import { useTheme, type Theme } from "../hooks/useTheme";
+import { useChatPrefs, resetChatPrefs } from "../hooks/useChatPrefs";
 import type { UsageSummary } from "@pi-web/shared";
 import { formatTokenCount } from "../lib/formatters";
 import { formatCost } from "../lib/utils";
@@ -39,6 +41,88 @@ function loadPiWebSettings(): PiWebSettings {
 
 function savePiWebKey(key: string, value: string) {
   try { localStorage.setItem(key, value); } catch {}
+}
+
+// ── Chat-display setting previews (static, expanded) ───────────────────────
+
+function ChatPrefRow({ title, desc, checked, onChange, preview }: {
+  title: string;
+  desc: string;
+  checked: boolean;
+  onChange: (e: ChangeEvent<HTMLInputElement>) => void;
+  preview: ReactNode;
+}) {
+  return (
+    <div className="p-3 rounded-md border border-ink-800/40 bg-ink-900/30 space-y-2">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-ink-200 text-xs font-medium">{title}</div>
+          <div className="text-ink-500 text-xs">{desc}</div>
+        </div>
+        <input type="checkbox" checked={checked} onChange={onChange} className="h-4 w-4 accent-amber-500 cursor-pointer" />
+      </div>
+      <div className="chat-pref-preview">{preview}</div>
+    </div>
+  );
+}
+
+function ReasoningPreview() {
+  return (
+    <div className="conversation-thinking-block" data-open="true">
+      <div className="conversation-reasoning-link">
+        <Icon name="spark" size={11} />
+        <span>Reasoning</span>
+      </div>
+      <div className="conversation-reasoning-body-wrap">
+        <div className="conversation-reasoning-body">The user wants a test for the refresh path. I'll cover the expiry edge case — within 5s of expiry, refreshToken should rotate instead of returning the stale value.</div>
+      </div>
+    </div>
+  );
+}
+
+function ToolGroupPreview() {
+  return (
+    <div className="exec open">
+      <div className="exec-head">
+        <span className="exec-dots"><i data-k="read"></i><i data-k="edit"></i><i data-k="bash"></i></span>
+        <b>Ran 3 tools</b>
+        <Icon name="chevron-right-sm" size={11} className="exec-chev" />
+      </div>
+      <div className="exec-rail">
+        <div className="exec-node" data-k="read">
+          <div className="exec-node-head"><span className="k">read</span><span className="path">src/auth/middleware.ts</span><span className="meta">142 lines</span><Icon name="chevron-right-sm" size={11} className="node-chev" /></div>
+        </div>
+        <div className="exec-node" data-k="edit">
+          <div className="exec-node-head"><span className="k">edit</span><span className="path">middleware.ts</span><span className="meta">2 edits</span><Icon name="chevron-right-sm" size={11} className="node-chev" /></div>
+        </div>
+        <div className="exec-node" data-k="bash">
+          <div className="exec-node-head"><span className="k">bash</span><span className="path">bun test src/auth</span><span className="meta">exit 0</span><Icon name="chevron-right-sm" size={11} className="node-chev" /></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ToolCallPreview() {
+  return (
+    <div className="exec open">
+      <div className="exec-rail">
+        <div className="exec-node open" data-k="bash">
+          <div className="exec-node-head">
+            <span className="k">bash</span>
+            <span className="path">bun test src/auth</span>
+            <span className="meta">exit 0</span>
+            <Icon name="chevron-right-sm" size={11} className="node-chev" />
+          </div>
+          <div className="exec-detail">
+            <div className="conversation-tool-body conversation-result-panel">
+              <pre className="conversation-result-pre">{"✓ src/auth/middleware.test.ts (3)\n  ✓ rotates within 5s of expiry\n  ✓ keeps valid token\n  3 passed (3)"}</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ─── PI config API ───
@@ -509,6 +593,7 @@ export function SettingsModal({ onClose, onResetWorkspace, projectId }: Settings
   const [theme, , setTheme] = useTheme();
   const [webSettings, setWebSettings] = useState<PiWebSettings>(() => loadPiWebSettings());
   const [webSaved, setWebSaved] = useState(false);
+  const [chatPrefs, setChatPref] = useChatPrefs();
 
   useEffect(() => {
     setWebSettings(s => ({ ...s, theme }));
@@ -790,6 +875,7 @@ export function SettingsModal({ onClose, onResetWorkspace, projectId }: Settings
 
   const handleResetAllWeb = useCallback(() => {
     try { for (const k of PI_WEB_KEYS) localStorage.removeItem(k); } catch {}
+    resetChatPrefs();
     setWebSettings(loadPiWebSettings());
     triggerWebSaved();
     window.setTimeout(() => window.location.reload(), 400);
@@ -805,7 +891,7 @@ export function SettingsModal({ onClose, onResetWorkspace, projectId }: Settings
   }, [settingsRaw]);
 
   const renderUsage = () => {
-    if (usageLoading && !usage) return <div className="flex-1 flex items-center justify-center text-ink-500 text-sm">Loading usage…</div>;
+    if (usageLoading && !usage) return <div className="flex-1 flex items-center justify-center text-ink-500 text-sm">Loading usage...</div>;
     if (usageError && !usage) return <div className="text-red-400 text-xs bg-red-950/30 border border-red-900/40 rounded px-3 py-2">{usageError}</div>;
     if (!usage) return null;
 
@@ -830,7 +916,7 @@ export function SettingsModal({ onClose, onResetWorkspace, projectId }: Settings
             disabled={usageLoading}
             className="modal-button modal-button--ghost text-xs"
           >
-            {usageLoading ? "Refreshing…" : "Refresh"}
+            {usageLoading ? "Refreshing..." : "Refresh"}
           </button>
         </div>
 
@@ -884,7 +970,7 @@ export function SettingsModal({ onClose, onResetWorkspace, projectId }: Settings
                       <td className="text-right px-3 py-1.5 text-ink-300">{p.sessionCount.toLocaleString()}</td>
                       <td className="text-right px-3 py-1.5 text-ink-400">{p.totalMessages.toLocaleString()}</td>
                       <td className="text-right px-3 py-1.5 text-ink-300">{formatTokenCount(p.totalTokens)}</td>
-                      <td className="text-right px-3 py-1.5 text-amber-500/80">{formatCost(p.totalCost) || "—"}</td>
+                      <td className="text-right px-3 py-1.5 text-amber-500/80">{formatCost(p.totalCost) || "-"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -913,7 +999,7 @@ export function SettingsModal({ onClose, onResetWorkspace, projectId }: Settings
                       <td className="px-3 py-1.5 text-ink-300 font-mono">{m.model}</td>
                       <td className="text-right px-3 py-1.5 text-ink-400">{m.sessions.toLocaleString()}</td>
                       <td className="text-right px-3 py-1.5 text-ink-300">{formatTokenCount(m.tokens)}</td>
-                      <td className="text-right px-3 py-1.5 text-amber-500/80">{formatCost(m.cost) || "—"}</td>
+                      <td className="text-right px-3 py-1.5 text-amber-500/80">{formatCost(m.cost) || "-"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -928,7 +1014,7 @@ export function SettingsModal({ onClose, onResetWorkspace, projectId }: Settings
     );
   };
   const renderPiSettings = () => {
-    if (settingsLoading) return <div className="flex-1 flex items-center justify-center text-ink-500 text-sm">Loading PI settings…</div>;
+    if (settingsLoading) return <div className="flex-1 flex items-center justify-center text-ink-500 text-sm">Loading PI settings...</div>;
     if (settingsLoadError) return <div className="text-red-400 text-xs bg-red-950/30 border border-red-900/40 rounded px-3 py-2">{settingsLoadError}</div>;
 
     return (
@@ -953,7 +1039,7 @@ export function SettingsModal({ onClose, onResetWorkspace, projectId }: Settings
               disabled={settingsSaving || !!settingsValidationError || !settingsDirty}
               className={`modal-button modal-button--primary text-xs ${settingsSaving || !!settingsValidationError || !settingsDirty ? "opacity-45 cursor-not-allowed" : ""}`}
             >
-              {settingsSaving ? "Saving…" : "Save PI settings"}
+              {settingsSaving ? "Saving..." : "Save PI settings"}
             </button>
           )}
         </div>
@@ -980,7 +1066,7 @@ export function SettingsModal({ onClose, onResetWorkspace, projectId }: Settings
                 disabled={settingsSaving || !!settingsValidationError || !settingsDirty}
                 className={`modal-button modal-button--primary text-xs ${settingsSaving || !!settingsValidationError || !settingsDirty ? "opacity-45 cursor-not-allowed" : ""}`}
               >
-                {settingsSaving ? "Saving…" : "Save"}
+                {settingsSaving ? "Saving..." : "Save"}
               </button>
             </div>
           </div>
@@ -1165,7 +1251,7 @@ export function SettingsModal({ onClose, onResetWorkspace, projectId }: Settings
               disabled={settingsSaving || !!settingsValidationError || !settingsDirty}
               className={`modal-button modal-button--primary text-xs ${settingsSaving || !!settingsValidationError || !settingsDirty ? "opacity-45 cursor-not-allowed" : ""}`}
             >
-              {settingsSaving ? "Saving…" : "Save PI settings"}
+              {settingsSaving ? "Saving..." : "Save PI settings"}
             </button>
           </div>
           </div>
@@ -1175,7 +1261,7 @@ export function SettingsModal({ onClose, onResetWorkspace, projectId }: Settings
   };
 
   const renderPiModels = () => {
-    if (modelsLoading) return <div className="flex-1 flex items-center justify-center text-ink-500 text-sm">Loading PI models…</div>;
+    if (modelsLoading) return <div className="flex-1 flex items-center justify-center text-ink-500 text-sm">Loading PI models...</div>;
     if (modelsLoadError) return <div className="text-red-400 text-xs bg-red-950/30 border border-red-900/40 rounded px-3 py-2">{modelsLoadError}</div>;
     let validationError: string | null = null;
     try { JSON.parse(modelsRaw); } catch (e: any) { validationError = e.message || "Invalid JSON"; }
@@ -1191,7 +1277,7 @@ export function SettingsModal({ onClose, onResetWorkspace, projectId }: Settings
               disabled={modelsSaving || !!validationError || !modelsDirty}
               className={`modal-button modal-button--primary text-xs ${modelsSaving || !!validationError || !modelsDirty ? "opacity-45 cursor-not-allowed" : ""}`}
             >
-              {modelsSaving ? "Saving…" : "Save models"}
+              {modelsSaving ? "Saving..." : "Save models"}
             </button>
           </div>
         </div>
@@ -1268,6 +1354,32 @@ export function SettingsModal({ onClose, onResetWorkspace, projectId }: Settings
         </div>
       </section>
       <section className="space-y-3">
+        <h3 className="text-ink-200 text-sm font-medium">Chat</h3>
+        <div className="space-y-2">
+          <ChatPrefRow
+            title="Auto-expand reasoning"
+            desc="Show reasoning inline by default; flows with the chat."
+            checked={chatPrefs.autoExpandReasoning}
+            onChange={e => setChatPref("autoExpandReasoning", e.target.checked)}
+            preview={<ReasoningPreview />}
+          />
+          <ChatPrefRow
+            title="Auto-expand tool group"
+            desc="Open the per-turn tool rail by default."
+            checked={chatPrefs.autoExpandToolGroup}
+            onChange={e => setChatPref("autoExpandToolGroup", e.target.checked)}
+            preview={<ToolGroupPreview />}
+          />
+          <ChatPrefRow
+            title="Auto-expand each tool call"
+            desc="Open every tool's detail by default."
+            checked={chatPrefs.autoExpandToolCalls}
+            onChange={e => setChatPref("autoExpandToolCalls", e.target.checked)}
+            preview={<ToolCallPreview />}
+          />
+        </div>
+      </section>
+      <section className="space-y-3">
         <h3 className="text-ink-200 text-sm font-medium">Workspace</h3>
         <div className="flex items-center justify-between gap-3 p-3 rounded-md border border-ink-800/40 bg-ink-900/30">
           <div>
@@ -1335,7 +1447,7 @@ export function SettingsModal({ onClose, onResetWorkspace, projectId }: Settings
           disabled={projectSaving || !projectDirty}
           className={`modal-button modal-button--primary text-xs ${projectSaving || !projectDirty ? "opacity-45 cursor-not-allowed" : ""}`}
         >
-          {projectSaving ? "Saving…" : "Save project settings"}
+          {projectSaving ? "Saving..." : "Save project settings"}
         </button>
       </div>
     </div>

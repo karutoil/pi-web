@@ -11,11 +11,13 @@ import {
 	createAgentSessionFromServices,
 	createAgentSessionRuntime,
 	getAgentDir,
+	initTheme,
 	type AgentSession,
 	type AgentSessionEvent,
 	type AgentSessionRuntime,
 	type CreateAgentSessionRuntimeFactory,
 	type ExtensionUIContext,
+	type Theme,
 } from "@earendil-works/pi-coding-agent";
 
 // ─── Pooled Agent ───
@@ -41,6 +43,21 @@ const STALE_STREAMING_MS = Math.max(1000, (parseInt(process.env.PI_WEB_STALE_STR
 // #LIVE: cadence at which the watchdog sweeps a single agent. Kept coarse so
 // the per-agent timer is cheap; STALE_STREAMING_MS is what bounds recovery.
 const WATCHDOG_TICK_MS = 60 * 1000; // 1 minute
+
+// The in-process SDK path skips the CLI's initTheme(), so the SDK's theme
+// singleton is never seeded and tool renderers crash on `theme.fg(...)` with
+// "undefined is not an object (evaluating 'theme.fg')". Lazily seed the default
+// theme once; extensions read it back via the SDK's own global symbol (the
+// mechanism it uses to share the theme across module loaders).
+const THEME_GLOBAL = Symbol.for("@earendil-works/pi-coding-agent:theme");
+let headlessTheme: Theme | undefined;
+function getHeadlessTheme(): Theme {
+  if (!headlessTheme) {
+    initTheme();
+    headlessTheme = (globalThis as any)[THEME_GLOBAL] as Theme;
+  }
+  return headlessTheme;
+}
 
 export interface IPIAgent {
   setHandler(handler: (msg: WSServerMessage) => void): void;
@@ -1088,9 +1105,9 @@ export class SDKAgent implements IPIAgent {
       addAutocompleteProvider() {},
       setEditorComponent() {},
       getEditorComponent() { return undefined; },
-      get theme() { return undefined as any; },
+      get theme() { return getHeadlessTheme(); },
       getAllThemes() { return []; },
-      getTheme() { return undefined; },
+      getTheme() { return getHeadlessTheme(); },
       setTheme() { return { success: false, error: "Theme switching not supported in this mode" }; },
       getToolsExpanded() { return false; },
       setToolsExpanded() {},

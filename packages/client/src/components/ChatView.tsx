@@ -5,6 +5,7 @@ import { SCROLL_THRESHOLD, SCROLL_THROTTLE_MS } from "../lib/constants";
 import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
 import { ChatHeader } from "./ChatHeader";
+import { useChatPrefs } from "../hooks/useChatPrefs";
 import { ExtensionUIModal } from "./ExtensionUIModal";
 import { Icon } from "./Icon";
 import { SessionActions } from "./SessionActions";
@@ -100,6 +101,7 @@ function renderSubagentNotice(entry: SessionEntry) {
 export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar, showSidebar, onBack, onToggleTerminal, onTogglePreview, onToggleGit, onToggleFiles, onToggleExtensions, onToggleSkills, onToggleSubagents, terminalOpen, previewOpen, gitOpen, filesOpen, extensionsOpen, skillsOpen, subagentsOpen }: ChatViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showThinking, setShowThinking] = useState(true);
+  const [chatPrefs] = useChatPrefs();
   const [srAnnouncement, setSrAnnouncement] = useState('');
   const [autoScroll, setAutoScroll] = useState(true);
   const [historySearch, setHistorySearch] = useState("");
@@ -700,6 +702,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
                 key={entry.id || displayIdx}
                 message={entry.message}
                 showThinking={showThinking}
+                chatPrefs={chatPrefs}
                 toolResultsMap={toolResultsMap}
                 inlineToolCallIds={inlineToolCallIds}
                 // Historical bubbles never have in-flight tools; passing undefined
@@ -719,6 +722,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
               key={`live-${i}`}
               message={msg}
               showThinking={showThinking}
+              chatPrefs={chatPrefs}
               toolResultsMap={toolResultsMap}
               inlineToolCallIds={inlineToolCallIds}
               runningTools={ws.runningTools}
@@ -735,6 +739,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
               runningTools={ws.runningTools}
               message={liveMsg}
               showThinking={showThinking}
+              chatPrefs={chatPrefs}
               isStreaming={true}
             />
           )}
