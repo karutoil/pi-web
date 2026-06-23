@@ -48,6 +48,15 @@ function initSchema() {
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     )
   `);
+  // ponytail: generic string kv — backs pi-web settings (theme, panel widths,
+  // chat prefs, PWA dismissals) so they live in the DB, not localStorage.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
 }
 
 export function getProjectSettings(projectId: string): { systemPrompt: string; projectInstructions: string } {
@@ -149,4 +158,33 @@ export function saveLayout(key: string, layout: WorkspaceLayout) {
 export function deleteLayout(key = "workspace") {
   const d = getDb();
   d.run("DELETE FROM app_layouts WHERE key = ?", [key]);
+}
+
+// ─── App settings (DB-backed pi-web settings, replaces localStorage) ───
+
+export function getAllAppSettings(): Record<string, string> {
+  const d = getDb();
+  const rows = d.query("SELECT key, value FROM app_settings").all() as { key: string; value: string }[];
+  const out: Record<string, string> = {};
+  for (const r of rows) out[r.key] = r.value;
+  return out;
+}
+
+export function setAppSetting(key: string, value: string) {
+  const d = getDb();
+  d.run(
+    `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`,
+    [key, value],
+  );
+}
+
+export function deleteAppSetting(key: string) {
+  const d = getDb();
+  d.run("DELETE FROM app_settings WHERE key = ?", [key]);
+}
+
+export function clearAppSettings() {
+  const d = getDb();
+  d.run("DELETE FROM app_settings");
 }

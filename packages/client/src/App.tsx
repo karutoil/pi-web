@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import type { Project, SessionSummary, SessionDetail, ChatMessage, WorkspacePanelKind } from "@pi-web/shared";
 import { formatTimeAgo } from "./lib/utils";
-import { SESSION_CACHE_TTL, SESSION_FETCH_DELAY_MS } from "./lib/constants";
+import { SESSION_CACHE_TTL, SESSION_FETCH_DELAY_MS, SESSIONS_POLL_MS } from "./lib/constants";
 import { ChatView } from "./components/ChatView";
 import { EmptyState } from "./components/EmptyState";
 import { BackgroundSessionToast } from "./components/BackgroundSessionToast";
@@ -433,6 +433,15 @@ export default function App() {
     if (!selectedProject) return;
     fetchSessions();
   }, [selectedProject, fetchSessions]);
+
+  // Live-refresh backfill: the WS push (sessions_refreshed) only fires on
+  // agent_end/session_loaded/session_name_changed, so the list goes stale
+  // mid-run and when no session is open. Cheap mtime-cached poll closes the gap.
+  useEffect(() => {
+    if (!selectedProject) return;
+    const id = setInterval(fetchSessions, SESSIONS_POLL_MS);
+    return () => clearInterval(id);
+  }, [fetchSessions, selectedProject]);
 
   // #LIVE: restore the last active session so a refresh reconnects to the
   // running PI instead of dropping the user on the empty projects view. Runs

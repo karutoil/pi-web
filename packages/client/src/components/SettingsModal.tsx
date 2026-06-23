@@ -6,6 +6,7 @@ import { useChatPrefs, resetChatPrefs } from "../hooks/useChatPrefs";
 import type { UsageSummary } from "@pi-web/shared";
 import { formatTokenCount } from "../lib/formatters";
 import { formatCost } from "../lib/utils";
+import { piWebStorage } from "../lib/piWebStorage";
 
 
 // ─── PI Web settings ───
@@ -16,31 +17,23 @@ interface PiWebSettings {
   filesExplorerWidth: number;
 }
 
-const PI_WEB_KEYS = ["pi-web-theme", "pi-preview-width", "files-panel-explorer-width"];
-
 function loadPiWebSettings(): PiWebSettings {
   let theme: Theme = "light";
-  try {
-    const v = localStorage.getItem("pi-web-theme");
-    if (v === "dark" || v === "light") theme = v;
-  } catch {}
+  const tv = piWebStorage.getItem("pi-web-theme");
+  if (tv === "dark" || tv === "light") theme = tv;
   let previewWidth = 480;
-  try {
-    const v = localStorage.getItem("pi-preview-width");
-    const n = v ? parseInt(v, 10) : NaN;
-    if (!isNaN(n)) previewWidth = Math.max(320, Math.min(n, Math.floor(window.innerWidth * 0.7)));
-  } catch {}
+  const pv = piWebStorage.getItem("pi-preview-width");
+  const pn = pv ? parseInt(pv, 10) : NaN;
+  if (!isNaN(pn)) previewWidth = Math.max(320, Math.min(pn, Math.floor(window.innerWidth * 0.7)));
   let filesExplorerWidth = 240;
-  try {
-    const v = localStorage.getItem("files-panel-explorer-width");
-    const n = v ? parseInt(v, 10) : NaN;
-    if (!isNaN(n)) filesExplorerWidth = Math.max(120, Math.min(n, 600));
-  } catch {}
+  const fv = piWebStorage.getItem("files-panel-explorer-width");
+  const fn = fv ? parseInt(fv, 10) : NaN;
+  if (!isNaN(fn)) filesExplorerWidth = Math.max(120, Math.min(fn, 600));
   return { theme, previewWidth, filesExplorerWidth };
 }
 
 function savePiWebKey(key: string, value: string) {
-  try { localStorage.setItem(key, value); } catch {}
+  piWebStorage.setItem(key, value);
 }
 
 // ── Chat-display setting previews (static, expanded) ───────────────────────
@@ -862,19 +855,14 @@ export function SettingsModal({ onClose, onResetWorkspace, projectId }: Settings
   }, []);
 
   const handleClearPwaDismissals = useCallback(() => {
-    try {
-      const keys: string[] = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k && k.startsWith("pwa-dismiss-")) keys.push(k);
-      }
-      for (const k of keys) localStorage.removeItem(k);
-    } catch {}
+    ["install", "update", "ios-install"].forEach((k) =>
+      piWebStorage.removeItem(`pwa-dismiss-${k}`),
+    );
     triggerWebSaved();
   }, []);
 
   const handleResetAllWeb = useCallback(() => {
-    try { for (const k of PI_WEB_KEYS) localStorage.removeItem(k); } catch {}
+    piWebStorage.clear();
     resetChatPrefs();
     setWebSettings(loadPiWebSettings());
     triggerWebSaved();

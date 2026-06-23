@@ -10,7 +10,7 @@ interface EmptyStateProps {
 export function EmptyState({ projects, onSelectProject, onAddProject }: EmptyStateProps) {
   return (
     <div className="empty-state-shell">
-      <div className="empty-state-card animate-fade-in-up">
+      <div className="empty-state-card animate-fade-in-up" style={{ maxHeight: '100%', minHeight: 0, overflowY: 'auto' }}>
         <div className="empty-state-rule">
           <span>PI Web</span>
         </div>

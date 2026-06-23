@@ -282,19 +282,39 @@ describe("useWebSocketPool — reconnect / keepalive client behavior", () => {
     act(() => { result.current.disconnect(conn.key); });
   });
 
-  it("populates the live message from last_assistant_text_result", () => {
+  it("surfaces the in-flight streaming message from state.streamingMessage (not last_assistant_text_result)", () => {
     const { result } = renderHook(() => useWebSocketPool());
     let conn: any;
     act(() => { conn = result.current.getOrConnect("p1", "/A.json", null); });
     const ws = allWS[0]!;
     act(() => { ws._open(); });
-    act(() => { ws._receive({ type: "last_assistant_text_result", text: "draft response" }); });
 
-    expect(conn.liveMessages.get("current")).toEqual({
-      role: "assistant",
-      content: "draft response",
-      timestamp: expect.any(String),
+    // last_assistant_text_result must NOT paint the live bubble — it returns
+    // the last COMPLETED text, not the in-flight one, so it would show a phantom
+    // stale "streaming" bubble. The in-flight message comes from state.
+    act(() => { ws._receive({ type: "last_assistant_text_result", text: "completed response" }); });
+    expect(conn.liveMessages.get("current")).toBeUndefined();
+
+    // state.streamingMessage IS the in-flight partial — surface it so a
+    // reconnecting client sees the live stream instead of a bare indicator.
+    act(() => {
+      ws._receive({
+        type: "state",
+        data: { isStreaming: true, isCompacting: false, sessionFile: "/A.json", sessionId: "sessA", sessionName: null, model: null, thinkingLevel: "off", messageCount: 0, pendingMessageCount: 0, steering: [], followUp: [], streamingMessage: { role: "assistant", content: "streaming...", timestamp: "2024-01-01T00:00:00Z" } },
+      });
     });
+    expect(conn.liveMessages.get("current")).toEqual({ role: "assistant", content: "streaming...", timestamp: "2024-01-01T00:00:00Z" });
+
+    // When the turn ends (state with isStreaming:false + no streamingMessage),
+    // the live bubble clears so no phantom lingers.
+    act(() => {
+      ws._receive({
+        type: "state",
+        data: { isStreaming: false, isCompacting: false, sessionFile: "/A.json", sessionId: "sessA", sessionName: null, model: null, thinkingLevel: "off", messageCount: 1, pendingMessageCount: 0, steering: [], followUp: [], streamingMessage: null },
+      });
+    });
+    expect(conn.liveMessages.get("current")).toBeUndefined();
+
     act(() => { result.current.disconnect(conn.key); });
   });
 

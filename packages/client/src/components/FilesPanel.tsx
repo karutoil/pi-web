@@ -10,6 +10,7 @@ import { languages } from "@codemirror/language-data";
 import { useTheme } from "../hooks/useTheme";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useEditorTabs, makeEditorTabId } from "../hooks/useEditorTabs";
+import { piWebStorage } from "../lib/piWebStorage";
 import { Icon } from "./Icon";
 import { OutlineSection } from "./OutlineSection";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -280,7 +281,7 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
 
   const [explorerWidth, setExplorerWidth] = useState<number>(() => {
     try {
-      const v = localStorage.getItem("files-panel-explorer-width");
+      const v = piWebStorage.getItem("files-panel-explorer-width");
       if (v) return Math.max(160, parseInt(v, 10) || 192);
     } catch {}
     return 192;
@@ -907,9 +908,7 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
             dragStateRef.current = null;
             document.body.style.cursor = "";
             document.body.style.userSelect = "";
-            try {
-              localStorage.setItem("files-panel-explorer-width", String(explorerWidthRef.current));
-            } catch {}
+            piWebStorage.setItem("files-panel-explorer-width", String(explorerWidthRef.current));
           }}
         />}
 

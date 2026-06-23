@@ -8,6 +8,7 @@ import { useIsMobile } from "../hooks/useIsMobile";
 import { GitBranchSelector } from "./GitBranchSelector";
 import { DiffRenderer } from "./DiffRenderer";
 import { useResizable } from "../hooks/useResizable";
+import { GIT_POLL_MS } from "../lib/constants";
 
 // ─── Types ───
 
@@ -210,9 +211,9 @@ export function GitPanel({ cwd, visible, onClose, embedded = false, width, proje
   const panelWidth = embedded ? "100%" : resizableWidth;
 
   // Fetch status
-  const refresh = useCallback(() => {
+  const refresh = useCallback((silent = false) => {
     if (!cwd || !visible) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     setError(null);
     fetch(`/api/git/status?cwd=${encodeURIComponent(cwd)}`)
       .then(r => r.json())
@@ -233,10 +234,19 @@ export function GitPanel({ cwd, visible, onClose, embedded = false, width, proje
         }
       })
       .catch(() => setError("Failed to fetch git status"))
-      .finally(() => setLoading(false));
+      .finally(() => { if (!silent) setLoading(false); });
   }, [cwd, visible]);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  // Live updates — silent poll catches agent-driven commits/stages/edits
+  // without a manual refresh. ponytail: client poll (no server push for git);
+  // upgrade to fs-watch broadcast if many concurrent repos make it heavy.
+  useEffect(() => {
+    if (!cwd || !visible) return;
+    const id = setInterval(() => refresh(true), GIT_POLL_MS);
+    return () => clearInterval(id);
+  }, [refresh, cwd, visible]);
 
   // Actions
   const handleStage = useCallback(async (path: string) => {
@@ -253,7 +263,7 @@ export function GitPanel({ cwd, visible, onClose, embedded = false, width, proje
 
   const handleStageAll = useCallback(async () => {
     if (!cwd) return;
-    await fetch("/api/git/stage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd, path: "-A" }) });
+    await fetch("/api/git/stage-all", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd }) });
     refresh();
   }, [cwd, refresh]);
 
@@ -831,14 +841,15 @@ function ChangesView({ cwd, status, loading, error, expandedStaged, expandedChan
             </span>
             <span className="git-panel-section-count">{status.staged.length}</span>
             {expandedStaged && (
-              <button
+              <span
+                role="button"
                 onClick={(e) => { e.stopPropagation(); onUnstageAll(); }}
                 className="git-panel-section-action"
                 aria-label="Unstage all"
                 title="Unstage all"
               >
                 <Icon name="minus" size={10} />
-              </button>
+              </span>
             )}
           </button>
           {expandedStaged && status.staged.map(f => (
@@ -870,14 +881,15 @@ function ChangesView({ cwd, status, loading, error, expandedStaged, expandedChan
             </span>
             <span className="git-panel-section-count">{status.unstaged.length + status.untracked.length}</span>
             {expandedChanges && (
-              <button
+              <span
+                role="button"
                 onClick={(e) => { e.stopPropagation(); onStageAll(); }}
                 className="git-panel-section-action"
                 aria-label="Stage all changes"
                 title="Stage all"
               >
                 <Icon name="plus" size={10} />
-              </button>
+              </span>
             )}
           </button>
           {expandedChanges && (

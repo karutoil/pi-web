@@ -262,6 +262,18 @@ function createConnection(
           data.state = msg.data as AgentState;
           data.isStreaming = (msg.data as AgentState).isStreaming;
           data.isActive = data.isStreaming;
+          // #SDK-MIGRATION: surface the in-flight assistant message on reconnect.
+          // Without it a reattach mid-stream shows isStreaming with no text (the
+          // perceived "lost live session"). Clear the live bubble when not
+          // streaming so a stale phantom can't linger.
+          const sm = (msg.data as any).streamingMessage;
+          if (sm) {
+            data.liveMessages = new Map(data.liveMessages);
+            data.liveMessages.set("current", sm);
+          } else if (!data.isStreaming) {
+            data.liveMessages = new Map(data.liveMessages);
+            data.liveMessages.delete("current");
+          }
           if (pendingNewSession) {
             pendingNewSession = false;
             // Session state arrived after new_session — emit session_loaded for App
@@ -467,13 +479,12 @@ function createConnection(
         break;
       }
       case "last_assistant_text_result": {
-        // These result types are forwarded to session event listeners
+        // Forward to session event listeners only. Do NOT paint the live bubble
+        // from this — it returns the LAST COMPLETED assistant text, not the
+        // in-flight one, so it painted a phantom "streaming" bubble (stale text
+        // from a previous turn) even when not streaming. The in-flight message
+        // now comes from state.streamingMessage (see the `state` handler).
         if (onSessionEventRef.current) onSessionEventRef.current(msg as any);
-        // Also populate the live assistant message bubble so reconnect feels continuous
-        if (msg.text) {
-          data.liveMessages = new Map(data.liveMessages);
-          data.liveMessages.set("current", { role: "assistant", content: msg.text, timestamp: new Date().toISOString() });
-        }
         break;
       }
     }
@@ -573,6 +584,7 @@ function createConnection(
     setAutoCompaction: (enabled: boolean) => { send({ type: "set_auto_compaction", enabled }); },
     setAutoRetry: (enabled: boolean) => { send({ type: "set_auto_retry", enabled }); },
     abortRetry: () => { send({ type: "abort_retry" }); },
+    forceStop: () => { send({ type: "force_stop" }); },
     setSteeringMode: (mode: "all" | "one-at-a-time") => { send({ type: "set_steering_mode", mode }); },
     setFollowUpMode: (mode: "all" | "one-at-a-time") => { send({ type: "set_follow_up_mode", mode }); },
     clearQueue: () => {

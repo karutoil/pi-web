@@ -23,6 +23,7 @@ const mockWs = {
 const defaultProps = {
   onSend: vi.fn(),
   onAbort: vi.fn(),
+  onForceStop: vi.fn(),
   isStreaming: false,
   disabled: false,
   commands: defaultCommands,

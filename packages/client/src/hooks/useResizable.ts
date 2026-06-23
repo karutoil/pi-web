@@ -8,6 +8,7 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import { piWebStorage } from "../lib/piWebStorage";
 
 interface UseResizableOptions {
   defaultWidth: number;
@@ -21,13 +22,11 @@ export function useResizable(opts: UseResizableOptions) {
 
   const [width, setWidth] = useState(() => {
     if (persistKey) {
-      try {
-        const v = localStorage.getItem(persistKey);
-        if (v) {
-          const n = parseInt(v, 10);
-          if (!isNaN(n)) return Math.max(minWidth, Math.min(n, maxWidth));
-        }
-      } catch {}
+      const v = piWebStorage.getItem(persistKey);
+      if (v) {
+        const n = parseInt(v, 10);
+        if (!isNaN(n)) return Math.max(minWidth, Math.min(n, maxWidth));
+      }
     }
     return defaultWidth;
   });
@@ -62,7 +61,7 @@ export function useResizable(opts: UseResizableOptions) {
     const onMouseUp = () => {
       setIsDragging(false);
       if (persistKey) {
-        try { localStorage.setItem(persistKey, String(widthRef.current)); } catch {}
+        piWebStorage.setItem(persistKey, String(widthRef.current));
       }
     };
 

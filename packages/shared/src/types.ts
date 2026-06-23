@@ -192,6 +192,7 @@ export interface TokenUsage {
 export type WSClientMessage =
   | { type: "prompt"; message: string; images?: ImageAttachment[] }
   | { type: "abort" }
+  | { type: "force_stop" }
   | { type: "steer"; message: string; images?: ImageAttachment[] }
   | { type: "follow_up"; message: string; images?: ImageAttachment[] }
   | { type: "clear_queue" }
@@ -349,6 +350,10 @@ export interface AgentState {
   pendingMessageCount: number;
   steering: string[];
   followUp: string[];
+  /** In-flight (partial) assistant message while streaming. Forwarded from the
+   * SDK's AgentState.streamingMessage so a reconnecting client can render the
+   * streaming text immediately instead of a bare "streaming" indicator. */
+  streamingMessage?: ChatMessage | null;
 }
 
 export interface TextDelta {

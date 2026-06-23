@@ -8,6 +8,7 @@ import { compressImage } from "../lib/imageUtils";
 import { stripAnsi } from "../lib/stripAnsi";
 import { FileMentionCompleter } from "./FileMentionCompleter";
 import { PromptLibraryModal } from "./PromptLibraryModal";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { usePreviewStore } from "../hooks/usePreviewStore";
 import { buildElementContext } from "../lib/elementMention";
 import { usePromptLibrary } from "../hooks/usePromptLibrary";
@@ -17,6 +18,7 @@ interface ChatInputProps {
   onSteer?: (text: string, images?: { data: string; mimeType: string }[]) => void;
   onFollowUp?: (text: string, images?: { data: string; mimeType: string }[]) => void;
   onAbort: () => void;
+  onForceStop: () => void;
   isStreaming: boolean;
   disabled: boolean;
   commands: CommandInfo[];
@@ -36,7 +38,7 @@ interface ChatInputProps {
 
 interface PendingImage { data: string; mimeType: string; }
 
-export function ChatInput({ onSend, onSteer, onFollowUp, onAbort, isStreaming, disabled, commands, onRequestCommands, statusEntries, widgets, autoRetry, onAbortRetry, projectPath, ws }: ChatInputProps) {
+export function ChatInput({ onSend, onSteer, onFollowUp, onAbort, onForceStop, isStreaming, disabled, commands, onRequestCommands, statusEntries, widgets, autoRetry, onAbortRetry, projectPath, ws }: ChatInputProps) {
   const [text, setText] = useState("");
   const [showCommands, setShowCommands] = useState(false);
   const [showFileMentions, setShowFileMentions] = useState(false);
@@ -45,6 +47,7 @@ export function ChatInput({ onSend, onSteer, onFollowUp, onAbort, isStreaming, d
   const [isDragging, setIsDragging] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [showPromptLibrary, setShowPromptLibrary] = useState(false);
+  const [forceCloseOpen, setForceCloseOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inputWrapRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -436,7 +439,7 @@ export function ChatInput({ onSend, onSteer, onFollowUp, onAbort, isStreaming, d
 
               {isStreaming ? (
                 <>
-                  <button type="button" onClick={onAbort} className="conversation-abort-button" title="Abort" aria-label="Abort">
+                  <button type="button" onClick={onAbort} onDoubleClick={() => setForceCloseOpen(true)} className="conversation-abort-button" title="Abort (double-click to force close)" aria-label="Abort">
                     <Icon name="abort" size={14} />
                   </button>
                   <button
@@ -484,6 +487,16 @@ export function ChatInput({ onSend, onSteer, onFollowUp, onAbort, isStreaming, d
             onClose={() => setShowPromptLibrary(false)}
           />
         )}
+
+        <ConfirmDialog
+          open={forceCloseOpen}
+          title="Force close session?"
+          message="The stop button isn't responding. Force-closing kills the underlying agent process immediately. Any in-progress work in this turn is lost; the session is preserved and reloads from disk."
+          destructiveHint="Use only when stop is unresponsive. The current turn's in-flight output will be discarded."
+          confirmLabel="Force close"
+          onConfirm={() => { onForceStop(); setForceCloseOpen(false); }}
+          onCancel={() => setForceCloseOpen(false)}
+        />
       </div>
     </div>
   );

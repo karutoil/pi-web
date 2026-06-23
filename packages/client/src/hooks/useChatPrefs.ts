@@ -1,4 +1,5 @@
 import { useState, useLayoutEffect, useCallback } from "react";
+import { piWebStorage } from "../lib/piWebStorage";
 
 // Chat display defaults — user-tunable in Settings → PI Web → Chat.
 // ponytail: singleton + listener set mirrors useTheme so a change in settings
@@ -22,7 +23,7 @@ const KEYS = {
 export type ChatPrefKey = keyof ChatPrefs;
 
 function readBool(key: string): boolean {
-  try { return localStorage.getItem(key) === "1"; } catch { return false; }
+  return piWebStorage.getItem(key) === "1";
 }
 
 function load(): ChatPrefs {
@@ -39,7 +40,7 @@ const listeners = new Set<(p: ChatPrefs) => void>();
 function emit() { listeners.forEach(l => l(current)); }
 
 function persist(key: ChatPrefKey, value: boolean) {
-  try { localStorage.setItem(KEYS[key], value ? "1" : "0"); } catch {}
+  piWebStorage.setItem(KEYS[key], value ? "1" : "0");
 }
 
 export function setChatPref(key: ChatPrefKey, value: boolean) {
@@ -51,23 +52,29 @@ export function setChatPref(key: ChatPrefKey, value: boolean) {
 
 export function resetChatPrefs() {
   current = { autoExpandReasoning: false, autoExpandToolGroup: false, autoExpandToolCalls: false };
-  (Object.keys(KEYS) as ChatPrefKey[]).forEach(k => { try { localStorage.removeItem(KEYS[k]); } catch {} });
+  (Object.keys(KEYS) as ChatPrefKey[]).forEach(k => piWebStorage.removeItem(KEYS[k]));
   emit();
 }
+
+// Cross-tab + external updates (replaces the old `storage` event listener).
+piWebStorage.subscribe(() => {
+  const next = load();
+  if (
+    next.autoExpandReasoning !== current.autoExpandReasoning ||
+    next.autoExpandToolGroup !== current.autoExpandToolGroup ||
+    next.autoExpandToolCalls !== current.autoExpandToolCalls
+  ) {
+    current = next;
+    emit();
+  }
+});
 
 export function useChatPrefs(): [ChatPrefs, (key: ChatPrefKey, value: boolean) => void] {
   const [prefs, setPrefs] = useState<ChatPrefs>(current);
   useLayoutEffect(() => {
     const update = (p: ChatPrefs) => setPrefs(p);
     listeners.add(update);
-    const onStorage = (e: StorageEvent) => {
-      if (e.key && (Object.values(KEYS) as string[]).includes(e.key)) {
-        current = load();
-        emit();
-      }
-    };
-    window.addEventListener("storage", onStorage);
-    return () => { listeners.delete(update); window.removeEventListener("storage", onStorage); };
+    return () => { listeners.delete(update); };
   }, []);
   const setPref = useCallback((key: ChatPrefKey, value: boolean) => setChatPref(key, value), []);
   return [prefs, setPref];

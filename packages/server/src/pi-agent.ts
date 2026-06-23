@@ -185,7 +185,14 @@ export class PooledAgent {
       // rekeyed entry in the pool with a dead PI underneath — a reconnect
       // reused the dead agent and every send was silently dropped. That is
       // the "server requires a reboot" failure mode.
-      agentPool.delete(this.agentKey);
+      //
+      // #SDK-MIGRATION: runtime.dispose() is async (extension session_shutdown
+      // handlers do I/O), so onExit fires LONG after the stop path already
+      // deleted this entry. A client that reconnected during that gap spawned a
+      // NEW live agent at this same key — deleting unconditionally here would
+      // orphan that replacement. Only delete if this entry still belongs to
+      // THIS (dying) agent.
+      if (agentPool.get(this.agentKey) === this) agentPool.delete(this.agentKey);
     });
   }
 
@@ -248,6 +255,16 @@ export class PooledAgent {
     // Reflect the pool's authoritative streaming flag (it tracks agent_start/end
     // and tool activity, which may differ from the SDK's momentary read).
     snap.isStreaming = this.streaming || snap.isStreaming;
+    // #SDK-MIGRATION: the SDK allocates sessionFile synchronously in start(),
+    // but the pool key stays `__new__:<uuid>` until the first state/session_loaded
+    // rekey lands (~300ms). In that window a /live-sessions client reconnecting
+    // by sessionPath would miss the `__new__` key and spawn a duplicate. Surface
+    // newSessionId+pending so the client reattaches via the reverse lookup
+    // (getOrCreateAgent's originalNewSessionId scan) instead.
+    if (this.isPendingNewSession && this.originalNewSessionId) {
+      snap.newSessionId = this.originalNewSessionId;
+      snap.pending = true;
+    }
     return snap;
   }
 
@@ -426,13 +443,16 @@ export class PooledAgent {
         // runtime (and running two agents on the cloned session file -> corruption).
         const loadedPath = (msg as any).session?.filePath;
         if (loadedPath) this.rekeyToSessionPath(cwd, loadedPath);
-        // #LIVE: a session switch (switch_session/load_session/clone) means the
-        // agent is no longer on the session its original newSessionId created.
-        // Clear it so a stale-newSessionId reconnect can't reattach to this agent
-        // and land on the WRONG session. (The initial new-session resolution uses
-        // the `state` path above, NOT session_loaded, so #REATTACH still works
-        // after the first rekey.)
-        this.originalNewSessionId = null;
+        // #SDK-MIGRATION (M2+H6 interaction): new_session ALSO emits
+        // session_loaded (M2, for deterministic rekey), and it fires while
+        // isPendingNewSession is still true. Clearing originalNewSessionId here
+        // would break the #REATTACH reverse-lookup for a WS that drops during
+        // the new-session resolution window — orphaning the live agent and
+        // spawning a duplicate. Only invalidate the new-session token for an
+        // EXPLICIT switch away (load/switch/clone/fork), which arrives AFTER
+        // the new session has resolved (isPendingNewSession == false, cleared
+        // by the `state` branch above).
+        if (!this.isPendingNewSession) this.originalNewSessionId = null;
         projectSessionsChangedHandler?.(cwd);
       } else if (msg.type === "clone_result") {
         // #CLONE: clone forks to a new session file; the SDK resolves it but
@@ -589,7 +609,7 @@ export class PooledAgent {
   // The SDK session may spawn child processes (bash, dev servers, …); we
   // tree-kill the tracked spawned-tool process tree on the escalation path so
   // they don't survive the stop and leak.
-  private async forceStopAndRemove() {
+  async forceStopAndRemove() {
     this.cancelWatchdog();
     this.cancelIdleTimer();
     // #LIVE: delete the pool entry BEFORE awaiting agent.stop() so a client
@@ -1197,6 +1217,15 @@ export class SDKAgent implements IPIAgent {
     this.pendingDialogs.clear();
     this.unsubscribe?.();
     this.unsubscribe = null;
+    // #SDK-MIGRATION: runtime.dispose() only disconnects event listeners; it
+    // does NOT abort the in-flight turn. Subprocess-era tree-kill ended
+    // everything; the in-process SDK would otherwise keep streaming (LLM calls,
+    // tool execution) with no listener — burning credits and running tools after
+    // the user intended to stop. Abort the turn first (bounded by
+    // PooledAgent.stop()'s 5s race).
+    if (this.session) {
+      try { await this.session.abort(); } catch {}
+    }
     if (this.runtime) {
       try { await this.runtime.dispose(); } catch (err: any) {
         console.error(`[pi] dispose error:`, err.message);
@@ -1463,7 +1492,7 @@ export class SDKAgent implements IPIAgent {
             this.onMessage?.({ type: "session_loaded", session: { filePath: runtime.session.sessionFile } as any });
           }
         }
-        this.onMessage?.({ type: "response", command: "new_session", success: true, data: result });
+        this.onMessage?.({ type: "response", command: "new_session", success: !result.cancelled, data: result });
         break;
       }
       case "load_session":
@@ -1477,13 +1506,19 @@ export class SDKAgent implements IPIAgent {
             session: { filePath: runtime.session.sessionFile ?? msg.sessionPath } as any,
           });
         }
-        this.onMessage?.({ type: "response", command: msg.type, success: true, data: result });
+        this.onMessage?.({ type: "response", command: msg.type, success: !result.cancelled, data: result });
         break;
       }
       case "fork": {
         const result = await runtime.fork(msg.entryId);
         if (!result.cancelled) await this.bindSession(runtime.session);
-        this.onMessage?.({ type: "response", command: "fork", success: true, data: { text: result.selectedText, cancelled: result.cancelled } });
+        // Emit session_loaded so the server rekeys to the forked path (same as
+        // clone) — otherwise a reconnect by the new path misses the stale
+        // (pre-fork) pool key and spawns a duplicate, orphaning the live fork.
+        if (!result.cancelled && runtime.session.sessionFile) {
+          this.onMessage?.({ type: "session_loaded", session: { filePath: runtime.session.sessionFile } as any });
+        }
+        this.onMessage?.({ type: "response", command: "fork", success: !result.cancelled, data: { text: result.selectedText, cancelled: result.cancelled } });
         break;
       }
       case "clone": {
@@ -1501,7 +1536,7 @@ export class SDKAgent implements IPIAgent {
           this.onMessage?.({ type: "session_loaded", session: { filePath: runtime.session.sessionFile } as any });
         }
         this.onMessage?.({ type: "clone_result", cancelled: result.cancelled, sessionPath: runtime.session.sessionFile });
-        this.onMessage?.({ type: "response", command: "clone", success: true, data: { cancelled: result.cancelled } });
+        this.onMessage?.({ type: "response", command: "clone", success: !result.cancelled, data: { cancelled: result.cancelled } });
         break;
       }
       case "get_fork_messages": {
@@ -1561,6 +1596,11 @@ export class SDKAgent implements IPIAgent {
       pendingMessageCount: session.pendingMessageCount,
       steering: session.getSteeringMessages ? [...session.getSteeringMessages()] : [],
       followUp: session.getFollowUpMessages ? [...session.getFollowUpMessages()] : [],
+      // #SDK-MIGRATION: forward the in-flight assistant message so a client
+      // reattaching mid-stream (refresh / device switch / WS drop) can render
+      // the streaming text immediately. Without it the client sees isStreaming
+      // with no (or stale) text — the perceived "lost live session".
+      streamingMessage: ((session.state.streamingMessage as any) ?? null),
     };
   }
 }

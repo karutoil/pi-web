@@ -20,6 +20,15 @@ interface Props {
   initialPath?: string;
 }
 
+function FolderGlyph({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" width="12" height="12" fill="none" className={className} aria-hidden>
+      <path d="M2 4.5C2 3.67 2.67 3 3.5 3H6L7.5 4.5H12.5C13.33 4.5 14 5.17 14 6V11.5C14 12.33 13.33 13 12.5 13H3.5C2.67 13 2 12.33 2 11.5V4.5Z" fill="currentColor" opacity="0.3" />
+      <path d="M2 6H14V11.5C14 12.33 13.33 13 12.5 13H3.5C2.67 13 2 12.33 2 11.5V6Z" fill="currentColor" />
+    </svg>
+  );
+}
+
 export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
   const [currentPath, setCurrentPath] = useState(initialPath || "");
   const [items, setItems] = useState<FsItem[]>([]);
@@ -33,7 +42,6 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
   const [focusedIdx, setFocusedIdx] = useState(-1);
   const [isAdding, setIsAdding] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
-  const pathInputRef = useRef<HTMLInputElement>(null);
 
   const browse = useCallback(async (dir: string, opts?: { select?: boolean }) => {
     setLoading(true);
@@ -76,16 +84,14 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
 
   const handleSelect = useCallback((item: FsItem) => {
     if (selectedPath === item.path) {
-      // Double-click / double-select: enter directory
+      // Re-selecting the current item opens it.
       navigateTo(item.path);
       return;
     }
     setSelectedPath(item.path);
     setSelectedName(item.name);
-    if (!displayName) {
-      setDisplayName(item.name);
-    }
-  }, [selectedPath, navigateTo, displayName]);
+    setDisplayName(prev => prev || item.name);
+  }, [selectedPath, navigateTo]);
 
   const handleEnterDirectory = useCallback((item: FsItem) => {
     navigateTo(item.path);
@@ -94,9 +100,7 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
   const handlePathSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = pathInput.trim();
-    if (trimmed) {
-      browse(trimmed, { select: true });
-    }
+    if (trimmed) browse(trimmed, { select: true });
   }, [pathInput, browse]);
 
   const handleSubmit = useCallback(async () => {
@@ -137,7 +141,6 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
     }
   }, [focusedIdx, items, handleSelect, handleSubmit, selectedPath, parentPath, navigateTo, onCancel]);
 
-  // Scroll focused item into view
   useEffect(() => {
     if (focusedIdx >= 0 && listRef.current) {
       const el = listRef.current.children[focusedIdx] as HTMLElement;
@@ -145,74 +148,66 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
     }
   }, [focusedIdx]);
 
+  const canAdd = !!selectedPath && !isAdding;
+
   return (
     <div
-      className="modal-backdrop"
+      className="modal-backdrop explorer-backdrop"
       onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}
       onKeyDown={handleKeyDown}
     >
-      <div className="modal-stage">
-        <div
-          className="modal-card modal-card--full explorer-modal animate-fade-in-up flex flex-col"
-          style={{ maxHeight: "80vh" }}
-        >
-        <div className="modal-header mobile-safe-top">
-          <div className="modal-header-icon">
-            <Icon name="plus" size={14} />
+      <div className="modal-stage explorer-stage">
+        <div className="modal-card explorer-modal flex flex-col">
+          {/* ── Header ──────────────────────────────────────────── */}
+          <div className="modal-header mobile-safe-top">
+            <div className="modal-header-icon">
+              <Icon name="plus" size={14} />
+            </div>
+            <div className="modal-title-wrap">
+              <h2 className="modal-title">Add Project</h2>
+              <div className="modal-subtitle">Pick a directory to add as a project.</div>
+            </div>
+            <button onClick={onCancel} className="modal-close explorer-iconbtn" aria-label="Close">
+              <Icon name="close" size={14} />
+            </button>
           </div>
-          <h2 className="modal-title">Add Project</h2>
-          <button
-            onClick={onCancel}
-            className="modal-close"
-            aria-label="Close"
-          >
-            <Icon name="close" size={14} />
-          </button>
-        </div>
 
-        <form onSubmit={handlePathSubmit} className="modal-body modal-body--compact">
-          <div className="explorer-pathbar">
-            <span className="explorer-path-prefix">~/</span>
+          {/* ── Path bar: up · editable path · go ───────────────── */}
+          <form onSubmit={handlePathSubmit} className="explorer-pathbar" role="search">
+            <button
+              type="button"
+              onClick={() => parentPath && navigateTo(parentPath)}
+              disabled={!parentPath}
+              className="explorer-iconbtn explorer-up"
+              aria-label="Go to parent directory"
+              title="Up one level"
+            >
+              <Icon name="chevron-left" size={14} />
+            </button>
             <input
-              ref={pathInputRef}
               type="text"
               value={pathInput}
               onChange={e => setPathInput(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === "Escape") { onCancel(); e.stopPropagation(); }
-              }}
+              onKeyDown={e => { if (e.key === "Escape") { onCancel(); e.stopPropagation(); } }}
               className="explorer-path-input"
-              placeholder="/home/user"
+              placeholder="/home/user/projects"
               spellCheck={false}
               enterKeyHint="go"
               autoCorrect="off"
+              autoCapitalize="off"
+              aria-label="Directory path"
             />
             <button
               type="submit"
-              className="modal-close"
+              className="explorer-iconbtn explorer-go"
               aria-label="Go to path"
+              title="Go"
             >
-              <Icon name="chevron-right" size={12} />
+              <Icon name="chevron-right" size={14} />
             </button>
-          </div>
-        </form>
+          </form>
 
-        <div className="px-5 flex-1 min-h-0 flex flex-col">
-          <div className="explorer-breadcrumb">
-            {parentPath && (
-              <button
-                onClick={() => navigateTo(parentPath)}
-                className="modal-button modal-button--ghost"
-                aria-label="Go to parent directory"
-              >
-                <Icon name="chevron-left" size={10} />
-                <span className="font-mono">..</span>
-              </button>
-            )}
-            <span className="explorer-breadcrumb-path truncate flex-1 text-right">{currentPath}</span>
-          </div>
-
-          {/* File list */}
+          {/* ── File list (scrolls) ────────────────────────────── */}
           <div
             ref={listRef}
             className="explorer-list custom-scrollbar"
@@ -245,89 +240,64 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
                     role="option"
                     aria-selected={isSelected}
                     onClick={() => handleSelect(item)}
-                    className={`explorer-item ${isSelected ? "explorer-item--selected" : isFocused ? "explorer-item--focused" : ""}`}
+                    className={`explorer-item ${isSelected ? "explorer-item--selected" : ""} ${isFocused ? "explorer-item--focused" : ""}`}
                   >
-                    {/* Folder icon */}
                     <div className="explorer-folder-icon">
-                      <svg viewBox="0 0 16 16" width="12" height="12" fill="none" className="explorer-folder-svg">
-                        <path d="M2 4.5C2 3.67 2.67 3 3.5 3H6L7.5 4.5H12.5C13.33 4.5 14 5.17 14 6V11.5C14 12.33 13.33 13 12.5 13H3.5C2.67 13 2 12.33 2 11.5V4.5Z" fill="currentColor" opacity="0.3"/>
-                        <path d="M2 6H14V11.5C14 12.33 13.33 13 12.5 13H3.5C2.67 13 2 12.33 2 11.5V6Z" fill="currentColor"/>
-                      </svg>
+                      <FolderGlyph />
                     </div>
-                    {/* Name + path hint */}
-                    <div className="min-w-0 flex-1">
-                      <div className="explorer-item-name">
-                        {item.name}
-                      </div>
-                    </div>
-                    {/* Enter arrow */}
-                    {item.isDirectory ? (
+                    <div className="explorer-item-name min-w-0 truncate">{item.name}</div>
+                    {item.isDirectory && (
                       <button
                         onClick={(e) => { e.stopPropagation(); handleEnterDirectory(item); }}
                         className="explorer-item-arrow"
-                        aria-label="Open directory"
+                        aria-label={`Open ${item.name}`}
                       >
-                        <Icon
-                          name="chevron-right-sm"
-                          size={8}
-                          className={isSelected ? "text-amber-500/60" : "text-ink-500 group-hover:text-ink-400"}
-                        />
+                        <Icon name="chevron-right-sm" size={10} />
                       </button>
-                    ) : (
-                      <Icon
-                        name="chevron-right-sm"
-                        size={8}
-                        className={`explorer-item-arrow ${isSelected ? "explorer-item-arrow--selected" : ""}`}
-                      />
                     )}
                   </div>
                 );
               })
             )}
           </div>
-        </div>
 
-        <div className="modal-footer mobile-safe-bottom">
-          {selectedPath && (
-            <div className="explorer-preview">
-              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" className="explorer-preview-icon">
-                <path d="M2 4.5C2 3.67 2.67 3 3.5 3H6L7.5 4.5H12.5C13.33 4.5 14 5.17 14 6V11.5C14 12.33 13.33 13 12.5 13H3.5C2.67 13 2 12.33 2 11.5V4.5Z" fill="currentColor" opacity="0.3"/>
-                <path d="M2 6H14V11.5C14 12.33 13.33 13 12.5 13H3.5C2.67 13 2 12.33 2 11.5V6Z" fill="currentColor"/>
-              </svg>
-              <span className="truncate">{selectedPath}</span>
+          {/* ── Footer: name · selected path · actions ─────────── */}
+          <div className="modal-footer explorer-footer mobile-safe-bottom">
+            <label className="explorer-name-field" htmlFor="project-display-name">
+              <span className="explorer-name-label">Name</span>
+              <input
+                id="project-display-name"
+                type="text"
+                value={displayName}
+                onChange={e => setDisplayName(e.target.value)}
+                placeholder={selectedName || "Folder name"}
+                className="modal-field explorer-name-input"
+                spellCheck={false}
+                autoCapitalize="off"
+                autoCorrect="off"
+              />
+            </label>
+
+            {selectedPath && (
+              <div className="explorer-selected" title={selectedPath}>
+                <FolderGlyph className="explorer-selected-icon" />
+                <span className="truncate">{selectedPath}</span>
+              </div>
+            )}
+
+            <div className="explorer-actions">
+              <button onClick={onCancel} className="modal-button modal-button--ghost">
+                Cancel
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={!canAdd}
+                className="modal-button modal-button--primary explorer-add"
+              >
+                {isAdding ? "Adding…" : selectedPath ? "Add Project" : "Select a Directory"}
+              </button>
             </div>
-          )}
-
-          <div className="explorer-name-row">
-            <label className="text-ink-500 text-xs shrink-0" htmlFor="project-display-name">Name</label>
-            <input
-              id="project-display-name"
-              type="text"
-              value={displayName}
-              onChange={e => setDisplayName(e.target.value)}
-              placeholder={selectedName || "Folder name"}
-              className="modal-field flex-1"
-              spellCheck={false}
-            />
           </div>
-
-          {/* Actions */}
-          <div className="flex items-center gap-2 w-full">
-            <button
-              onClick={handleSubmit}
-              disabled={!selectedPath || isAdding}
-              className={`modal-button modal-button--primary flex-1 ${!selectedPath || isAdding ? "opacity-45 cursor-not-allowed" : ""}`}
-            >
-              {isAdding ? "Adding..." : selectedPath ? "Add Project" : "Select a Directory"}
-            </button>
-            <button
-              onClick={onCancel}
-              className="modal-button modal-button--ghost"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
         </div>
       </div>
     </div>

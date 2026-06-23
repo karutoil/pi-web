@@ -1,15 +1,15 @@
 import { useState, useEffect } from "react";
 import { usePWAInstall, useServiceWorkerUpdate, useOnlineStatus } from "../hooks/usePWA";
 import { Icon } from "./Icon";
+import { piWebStorage } from "../lib/piWebStorage";
 
-// Persist dismissal in localStorage so it doesn't reappear
+// Persist dismissal in the DB so it doesn't reappear
 function useDismissed(key: string): [boolean, () => void] {
-  const [dismissed, setDismissed] = useState(() => {
-    try { return localStorage.getItem(`pwa-dismiss-${key}`) === "true"; } catch { return false; }
-  });
+  const storageKey = `pwa-dismiss-${key}`;
+  const [dismissed, setDismissed] = useState(() => piWebStorage.getItem(storageKey) === "true");
   const dismiss = () => {
     setDismissed(true);
-    try { localStorage.setItem(`pwa-dismiss-${key}`, "true"); } catch {}
+    piWebStorage.setItem(storageKey, "true");
   };
   return [dismissed, dismiss];
 }

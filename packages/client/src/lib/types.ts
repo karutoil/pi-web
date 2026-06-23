@@ -75,6 +75,7 @@ export interface CommandResponseState {
  */
 export interface WSBridge {
   send: (msg: WSClientMessage) => void;
+  forceStop: () => void;
   sendPrompt: (text: string, images?: ImageAttachment[]) => void;
   newSession: () => void;
   loadSession: (sessionPath: string) => void;

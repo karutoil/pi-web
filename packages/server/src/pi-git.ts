@@ -185,6 +185,11 @@ export function gitStage(cwd: string, path: string): GitResult {
   return runGit(cwd, "add", "--", path);
 }
 
+// ── Stage all ──
+export function gitStageAll(cwd: string): GitResult {
+  return runGit(cwd, "add", "-A");
+}
+
 export function gitUnstage(cwd: string, path: string): GitResult {
   return runGit(cwd, "reset", "HEAD", "--", path);
 }

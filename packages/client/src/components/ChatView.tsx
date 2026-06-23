@@ -673,6 +673,11 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
 
         {/* Chat column — takes remaining space after terminal panel */}
         <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
+          {/* Region hosts the scroller + floating jump button. The button
+              lives OUTSIDE .conversation-scroll so position:absolute pins to
+              the region viewport (follows while scrolling) instead of the
+              scrolled content (which scrolls away). */}
+          <div className="conversation-scroll-region">
           <div
             ref={scrollRef}
             onScroll={handleScroll}
@@ -811,11 +816,12 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
           </div>
         )}
 
-        {/* Jump-to-bottom button — sticky to the bottom of the scroll area
-            so it floats above the content without expanding the column.
-            Shown when autoScroll is disabled (user scrolled away from
-            bottom). Clicking scrolls to the bottom and re-enables auto-
-            scroll. */}
+        </div>
+
+        {/* Jump-to-latest — floats over the scroll area's visible bottom.
+            Outside .conversation-scroll so it follows while scrolling and
+            never changes scrollHeight. Hidden when autoScroll is true:
+            when the user reaches the bottom or taps the button. */}
         {!autoScroll && (
           <div className="conversation-jump-wrap">
             <button
@@ -833,7 +839,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
             </button>
           </div>
         )}
-      </div>
+          </div>
 
       <ExtensionErrorToast
         errors={extensionErrorList}
@@ -854,6 +860,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
         onSteer={handleSteer}
         onFollowUp={handleFollowUp}
         onAbort={handleAbort}
+        onForceStop={() => ws.forceStop()}
         isStreaming={ws.isStreaming}
         disabled={!ws.isConnected}
         commands={ws.commands}

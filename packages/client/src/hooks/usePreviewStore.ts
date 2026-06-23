@@ -3,7 +3,7 @@
  *
  * Holds:
  *  - Active preview info per (projectId, label)
- *  - Panel open/closed + width (persisted to localStorage)
+ *  - Panel open/closed + width (persisted to the DB via piWebStorage)
  *  - Picked elements list
  *  - Console logs
  *  - Picker mode toggle
@@ -11,6 +11,7 @@
 
 import { create } from "zustand";
 import type { PreviewInfo, SerializedElement } from "@pi-web/shared";
+import { piWebStorage } from "../lib/piWebStorage";
 
 export interface ConsoleEntry {
   level: "log" | "warn" | "error";
@@ -60,18 +61,16 @@ const MIN_WIDTH = 320;
 const MAX_WIDTH_PCT = 0.7;
 
 function loadWidth(): number {
-  try {
-    const v = localStorage.getItem("pi-preview-width");
-    if (v) {
-      const n = parseInt(v, 10);
-      if (!isNaN(n) && n >= MIN_WIDTH && n <= window.innerWidth * MAX_WIDTH_PCT) return n;
-    }
-  } catch {}
+  const v = piWebStorage.getItem("pi-preview-width");
+  if (v) {
+    const n = parseInt(v, 10);
+    if (!isNaN(n) && n >= MIN_WIDTH && n <= window.innerWidth * MAX_WIDTH_PCT) return n;
+  }
   return DEFAULT_WIDTH;
 }
 
 function saveWidth(w: number) {
-  try { localStorage.setItem("pi-preview-width", String(w)); } catch {}
+  piWebStorage.setItem("pi-preview-width", String(w));
 }
 
 export const usePreviewStore = create<PreviewState>((set, get) => ({

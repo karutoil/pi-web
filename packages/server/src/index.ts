@@ -8,13 +8,13 @@ import type { Dirent } from "node:fs";
 import { readdir, stat, readFile, writeFile, unlink, rename as renameFs, mkdir, rm } from "node:fs/promises";
 import { homedir, platform } from "node:os";
 
-import { addProject, removeProject, listProjects, getProject, touchProject, getLayout, saveLayout, deleteLayout, getProjectSettings, saveProjectSettings } from "./db";
+import { addProject, removeProject, listProjects, getProject, touchProject, getLayout, saveLayout, deleteLayout, getProjectSettings, saveProjectSettings, getAllAppSettings, setAppSetting, deleteAppSetting, clearAppSettings } from "./db";
 import { listSubagentRuns, interruptSubagentRun, readSubagentRunOutput, isSubagentExtensionAvailable } from "./pi-subagents";
 import { listProjectSessions, getSessionDetail, buildUsageSummary, computeProjectUsage } from "./pi-sessions";
 import { buildSessionHtmlPretty } from "./sessionExportPretty";
 import { getOrCreateAgent, stopAllAgents, getPoolStats, lookupAgent, detachFromAgent, deleteFromPool, stopAgentsForCwd, setProjectSessionsChangedHandler, broadcastToProjectClients, getLiveSessionsForCwd, sweepPool } from "./pi-agent";
 import { createTerminal, getTerminal, listTerminals, killTerminal } from "./pi-terminal";
-import { getGitStatus, getGitDiff, getGitDiffForCommit, gitStage, gitUnstage, gitCommit, gitLog, gitCheckout, gitDiscard, gitBranches, gitPush, gitPull, gitFetch, gitCreateBranch, gitDeleteBranch, gitRenameBranch, gitTags, gitCreateTag, gitDeleteTag, gitStashList, gitStashShow, gitStashPush, gitStashPop, gitStashApply, gitStashDrop, gitAmend, gitCherryPick, gitRevert, gitResolveConflict, getGitDiffStats, gitDiffWithRef, gitShowCommit, gitLogSearch, gitBlame, gitRemotes, gitUnstageAll } from "./pi-git";
+import { getGitStatus, getGitDiff, getGitDiffForCommit, gitStage, gitStageAll, gitUnstage, gitCommit, gitLog, gitCheckout, gitDiscard, gitBranches, gitPush, gitPull, gitFetch, gitCreateBranch, gitDeleteBranch, gitRenameBranch, gitTags, gitCreateTag, gitDeleteTag, gitStashList, gitStashShow, gitStashPush, gitStashPop, gitStashApply, gitStashDrop, gitAmend, gitCherryPick, gitRevert, gitResolveConflict, getGitDiffStats, gitDiffWithRef, gitShowCommit, gitLogSearch, gitBlame, gitRemotes, gitUnstageAll } from "./pi-git";
 import type { GitResult } from "./pi-git";
 import { getVersionInfo } from "./pi-version";
 import { searchProject } from "./lib/search";
@@ -317,6 +317,29 @@ app.put("/api/projects/:id/settings", async (c) => {
   const { systemPrompt, projectInstructions } = body as { systemPrompt?: string; projectInstructions?: string };
   saveProjectSettings(id, { systemPrompt, projectInstructions });
   return c.json(getProjectSettings(id));
+});
+
+// ─── PI Web settings (DB-backed, replaces localStorage) ─────────────────
+// ponytail: per-key kv so concurrent edits to different keys never clobber
+// (a single-blob replace would lose a key on simultaneous writes).
+app.get("/api/pi-web-settings", (c) => c.json(getAllAppSettings()));
+
+app.put("/api/pi-web-settings/:key", async (c) => {
+  const key = c.req.param("key");
+  const body = await c.req.json().catch(() => ({}));
+  const value = typeof body?.value === "string" ? body.value : String(body?.value ?? "");
+  setAppSetting(key, value);
+  return c.json({ ok: true });
+});
+
+app.delete("/api/pi-web-settings/:key", (c) => {
+  deleteAppSetting(c.req.param("key"));
+  return c.json({ ok: true });
+});
+
+app.delete("/api/pi-web-settings", (c) => {
+  clearAppSettings();
+  return c.json({ ok: true });
 });
 
 // ─── Subagents (pi-subagents extension) ─────────────────────────────
@@ -858,6 +881,15 @@ app.post("/api/git/stage", async (c) => {
   if (!cwd || !path) return c.json({ error: "cwd and path required" }, 400);
   const result = gitStage(cwd, path);
   if (!result.ok) return c.json({ success: false, error: result.stderr || "Stage failed" }, 500);
+  return c.json({ success: true });
+});
+
+// Stage all
+app.post("/api/git/stage-all", async (c) => {
+  const { cwd } = await c.req.json();
+  if (!cwd) return c.json({ error: "cwd required" }, 400);
+  const result = gitStageAll(cwd);
+  if (!result.ok) return c.json({ success: false, error: result.stderr || "Stage all failed" }, 500);
   return c.json({ success: true });
 });
 
@@ -2624,6 +2656,7 @@ app.get(
           switch (msg.type) {
             case "prompt": agent.send({ type: "prompt", message: msg.message, images: msg.images }); break;
             case "abort": agent.send({ type: "abort" }); break;
+            case "force_stop": agent.forceStopAndRemove(); break;
             case "steer": agent.send({ type: "steer", message: msg.message, ...(msg as any).images ? { images: (msg as any).images } : {} }); break;
             case "follow_up": agent.send({ type: "follow_up", message: msg.message, ...(msg as any).images ? { images: (msg as any).images } : {} }); break;
             case "clear_queue": agent.send({ type: "clear_queue" }); break;
@@ -2771,6 +2804,25 @@ app.get(
 
 const CLIENT_DIST = join(import.meta.dir, "..", "..", "client", "dist");
 
+// Inject pi-web settings (from the DB) as a global before the bundle loads, so
+// theme/widths apply on first paint with no flash and no localStorage.
+// ponytail: server-inlined bootstrap over an async fetch — avoids FOUC.
+function withPiWebSettings(html: string): string {
+  const json = JSON.stringify(getAllAppSettings()).replace(/</g, "\\u003c");
+  return html.replace("<head>", `<head><script>window.__PI_WEB_SETTINGS__=${json}</script>`);
+}
+
+// Root route: serve index.html with settings injected. Registered before the
+// serveStatic middleware so it wins for "/" (serveStatic still serves assets).
+app.get("/", async (c) => {
+  try {
+    const html = await readFile(join(CLIENT_DIST, "index.html"), "utf-8");
+    return c.html(withPiWebSettings(html));
+  } catch {
+    return c.json({ message: "PI Web Server running. Client served separately in dev mode." });
+  }
+});
+
 // Serve static assets from client dist (favicon, icons, /assets/*, etc.)
 // serveStatic passes through if file not found, so API routes are unaffected
 app.use("/*", serveStatic({ root: CLIENT_DIST }));
@@ -2800,7 +2852,7 @@ app.get("*", async (c) => {
   try {
     const indexPath = join(CLIENT_DIST, "index.html");
     const html = await readFile(indexPath, "utf-8");
-    return c.html(html);
+    return c.html(withPiWebSettings(html));
   } catch {
     // In dev mode, client is served separately by Vite
     return c.json({ 

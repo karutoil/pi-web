@@ -42,9 +42,10 @@
       }
     </style>
 
-    <!-- Theme: apply before paint to avoid flash -->
+    <!-- Theme: apply before paint to avoid flash. Reads the server-injected
+         window.__PI_WEB_SETTINGS__ (DB-backed) — no localStorage. -->
     <script>
-      (function(){try{var t=localStorage.getItem("pi-web-theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t)}catch(e){}})();
+      (function(){try{var s=window.__PI_WEB_SETTINGS__;var t=s&&s["pi-web-theme"];if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t)}catch(e){}})();
     </script>
 
     <!-- Service worker registration -->
