@@ -12,6 +12,7 @@ import { SessionActions } from "./SessionActions";
 import { GitBranchSelector } from "./GitBranchSelector";
 import { CompactionIndicator } from "./CompactionIndicator";
 import { ExtensionErrorToast } from "./ExtensionErrorToast";
+import { AgentErrorToast } from "./AgentErrorToast";
 import { turnToMarkdown, copyToClipboard } from "../lib/markdownExport";
 import { MessageQueue } from "./MessageQueue";
 
@@ -315,16 +316,16 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
   }, [ws, buildMessage]);
 
   const handleSteer = useCallback((text: string, images?: { data: string; mimeType: string }[]) => {
-    ws.send({ type: "steer", message: buildMessage(text), ...(images ? { images } : {}) });
+    ws.steer(buildMessage(text), images);
   }, [ws, buildMessage]);
 
   const handleFollowUp = useCallback((text: string, images?: { data: string; mimeType: string }[]) => {
-    ws.send({ type: "follow_up", message: buildMessage(text), ...(images ? { images } : {}) });
+    ws.followUp(buildMessage(text), images);
   }, [ws, buildMessage]);
 
   const handleAbort = useCallback(() => ws.send({ type: "abort" }), [ws]);
   const handleFork = useCallback((entryId: string) => {
-    ws.send({ type: "fork", entryId });
+    ws.fork(entryId);
   }, [ws]);
   const handleRequestCommands = useCallback(() => {
     ws.send({ type: "get_commands" });
@@ -504,11 +505,14 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
 
   const allChatMsgs = useMemo(() => [...historicalMsgs, ...uniqueLiveMsgs], [historicalMsgs, uniqueLiveMsgs]);
 
-  // Show the loading overlay only while we have NOTHING to show: not connected
-  // AND no history yet. History loads over HTTP (sessionDetail) and live messages
-  // stream over the WS, so the session stays visible the moment either arrives —
-  // a wedged get_state can never blank a live (e.g. multi-subagent) session.
-  const isLoading = !ws.isConnected && !sessionDetail;
+  // Show the loading overlay while we have NOTHING to show: no HTTP history,
+  // no live messages, and PI not yet ready (no `state`). This covers both the
+  // disconnected window AND the connected-but-still-booting window (agent.start()
+  // in flight) — the latter used to surface "Agent not ready" error toasts
+  // instead of the Starting PI screen. History loads over HTTP (sessionDetail)
+  // and live messages stream over the WS, so the session stays visible the
+  // moment either arrives — a wedged get_state can never blank a live session.
+  const isLoading = !sessionDetail && ws.messages.length === 0 && !ws.state;
 
   // Build toolCallId → toolResult message map for inline tool result rendering
   const toolResultsMap = useMemo(() => {
@@ -845,6 +849,12 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
         errors={extensionErrorList}
         onDismiss={(idx) => setExtensionErrorList(prev => prev.filter((_, i) => i !== idx))}
         onClearAll={() => setExtensionErrorList([])}
+      />
+
+      <AgentErrorToast
+        errors={ws.agentErrors}
+        onDismiss={(idx) => ws.dismissAgentError(idx)}
+        onClearAll={() => ws.clearAgentErrors()}
       />
 
       <MessageQueue

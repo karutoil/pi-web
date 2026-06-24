@@ -9,6 +9,8 @@ import { ConfirmDialog } from "./components/ConfirmDialog";
 import { AddProjectExplorer } from "./components/AddProjectExplorer";
 import { SettingsModal } from "./components/SettingsModal";
 import { useWebSocketPool } from "./hooks/useWebSocketPool";
+import { authClient, AUTH_ENABLED } from "./lib/auth";
+import { SignIn } from "./components/SignIn";
 import { PWABanner } from "./components/PWABanner";
 import { PreviewPanel } from "./components/preview/PreviewPanel";
 import { ProjectSessionSidebar } from "./components/ProjectSessionSidebar";
@@ -55,6 +57,15 @@ export default function App() {
   const workspaceLayout = useWorkspaceLayout();
   const isMobile = useIsMobile();
   const [activeMobilePanel, setActiveMobilePanel] = useState<WorkspacePanelKind>("chat");
+
+  // ── Auth gate ────────────────────────────────────────────────────────────
+  // AUTH_ENABLED is injected synchronously by the server (window.__PI_WEB_AUTH__),
+  // so there's no flash of the app before the SignIn view. useSession() is the
+  // reactive source of truth: when the session cookie is gone it flips to SignIn.
+  // ws.authExpired (existing plumbing) forces the gate mid-chat without a reload.
+  const authSession = authClient.useSession();
+  const [forceSignIn, setForceSignIn] = useState(false);
+  const signedIn = useRef(false);
 
   const requestWorkspaceReset = useCallback(() => {
     setConfirmDialog({
@@ -111,6 +122,11 @@ export default function App() {
         newSessionId,
       )
     : null;
+
+  // Flip the auth gate when a WS reports its session expired (better-auth
+  // session cookie gone). The reactive useSession() handles initial load; this
+  // catches mid-chat expiry without a full reload.
+  useEffect(() => { if (ws?.authExpired) setForceSignIn(true); }, [ws?.authExpired]);
 
   const loadTerminals = useCallback(async () => {
     if (!selectedProject?.id || !terminalOpen) return;
@@ -171,9 +187,9 @@ export default function App() {
   for (const [key, conn] of wsPool.pool.entries()) {
     if (conn.isActive && conn.state?.sessionId) {
       streamingSessionIds.add(conn.state.sessionId);
-      // Pool key format: `${projectId}:${sessionPath}:${newSessionId}`.
-      // Project IDs are UUIDs (no colons), so split on first ':' is safe.
-      const projectId = key.split(":")[0];
+      // Pool key format: `${projectId}::${sessionPath}::${newSessionId}`.
+      // Project IDs are UUIDs (no colons), so split on "::" is safe.
+      const projectId = key.split("::")[0];
       if (projectId) streamingProjectIds.add(projectId);
     }
   }
@@ -684,13 +700,13 @@ export default function App() {
       setSidebarOpen(false);
     }
   }, [isMobile]);
-  const handleAddProject = useCallback(async (path: string, name: string) => {
+  const handleAddProject = useCallback(async (path: string, name: string, create?: boolean) => {
     setIsAddingProject(true);
     try {
       const r = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path, name }),
+        body: JSON.stringify({ path, name, create }),
       });
       if (r.ok) {
         const d = await r.json();
@@ -769,7 +785,7 @@ export default function App() {
   // Fork session
   const handleForkSession = useCallback((entryId: string) => {
     if (ws) {
-      ws.send({ type: "fork", entryId });
+      ws.fork(entryId);
       safeTimeout(() => fetchSessions(), SESSION_FETCH_DELAY_MS);
     }
   }, [ws, fetchSessions]);
@@ -1077,6 +1093,22 @@ export default function App() {
     };
   }, []);
 
+  // Auth gate: render a splash while the session resolves so the app (and its
+  // 104 fetches) doesn't flash before SignIn. Then gate on SignIn.
+  if (AUTH_ENABLED && authSession.isPending) {
+    return (
+      <div className="flex h-[100dvh] items-center justify-center bg-ink-950">
+        <span className="text-sm text-ink-500">Loading…</span>
+      </div>
+    );
+  }
+  if (AUTH_ENABLED && !signedIn.current && (forceSignIn || !authSession.data)) {
+    return <SignIn onSignedIn={() => {
+      signedIn.current = true;
+      authSession.refetch();
+    }} />;
+  }
+
   return (
     <div className="flex h-[100dvh] overflow-hidden bg-ink-950" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
       <PWABanner />
@@ -1124,7 +1156,7 @@ export default function App() {
         />
       {showAddProject && (
         <AddProjectExplorer
-          onAdd={(path, name) => { handleAddProject(path, name); setShowAddProject(false); }}
+          onAdd={(path, name, create) => { handleAddProject(path, name, create); setShowAddProject(false); }}
           onCancel={() => setShowAddProject(false)}
         />
       )}

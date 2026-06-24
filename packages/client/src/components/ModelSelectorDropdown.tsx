@@ -129,7 +129,7 @@ export function ModelSelectorDropdown({ ws, open, onClose, anchorRef }: Props) {
           <button
             type="button"
             key={l}
-            onClick={() => ws.send({ type: "set_thinking", level: l })}
+            onClick={() => ws.setThinkingLevel(l)}
             className={ws.state?.thinkingLevel === l ? "active" : ""}
           >
             {l}
@@ -150,7 +150,7 @@ export function ModelSelectorDropdown({ ws, open, onClose, anchorRef }: Props) {
               type="button"
               key={m.id}
               onClick={() => {
-                ws.send({ type: "set_model", provider: m.provider, modelId: m.id });
+                ws.setModel(m.provider, m.id);
                 onClose();
               }}
               className={`conversation-model-row ${active ? "active" : ""}`}

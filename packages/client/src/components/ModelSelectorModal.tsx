@@ -84,7 +84,7 @@ export function ModelSelectorModal({ ws, open, onClose }: Props) {
             {thinkingLevels.map(l => (
               <button
                 key={l}
-                onClick={() => ws.send({ type: "set_thinking", level: l })}
+                onClick={() => ws.setThinkingLevel(l)}
                 className={`modal-tag ${ws.state?.thinkingLevel === l ? "modal-tag--active" : ""}`}
               >
                 {l}
@@ -110,7 +110,7 @@ export function ModelSelectorModal({ ws, open, onClose }: Props) {
               <button
                 key={m.id}
                 onClick={() => {
-                  ws.send({ type: "set_model", provider: m.provider, modelId: m.id });
+                  ws.setModel(m.provider, m.id);
                   onClose();
                 }}
                 className={`modal-model-row ${active ? "modal-model-row--active" : ""}`}

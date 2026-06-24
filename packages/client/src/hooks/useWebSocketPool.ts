@@ -1,6 +1,7 @@
 import { useRef, useEffect, useCallback, useState } from "react";
 import type { WSClientMessage, WSServerMessage, AgentState, ChatMessage, SessionDetail,
   ModelInfo, CommandInfo, ForkEntry, SessionStats, ExtensionUIRequest, ImageAttachment, ContentBlock } from "@pi-web/shared";
+import { messageSignature } from "@pi-web/shared";
 import type { ToolEvent, WSBridge } from "../lib/types";
 export type { ToolEvent, WSBridge };
 import { NOTIFY_TIMEOUT_MS } from "../lib/constants";
@@ -14,20 +15,6 @@ export interface WSConnection extends WSBridge {
 }
 
 // ─── Single WS connection to one agent ───
-
-function getMessageSignature(msg: ChatMessage): string {
-  let text = "";
-  if (typeof msg.content === "string") {
-    text = msg.content;
-  } else if (Array.isArray(msg.content)) {
-    text = msg.content
-      .map((c) =>
-        c.type === "text" ? (c.text ?? "") : c.type === "image" ? `image:${c.mimeType ?? ""}` : c.type,
-      )
-      .join("|");
-  }
-  return `${msg.role}:${text}:${msg.toolCallId ?? ""}`;
-}
 
 function createConnection(
   key: string,
@@ -59,6 +46,7 @@ function createConnection(
     runningTools: new Map<string, ToolEvent>(),
     state: null as AgentState | null,
     isConnected: false,
+    authExpired: false,
     lastError: null as string | null,
     isStreaming: false,
     isActive: false,
@@ -81,6 +69,8 @@ function createConnection(
     pendingFollowUp: [] as string[],
     // New: extension errors
     extensionErrors: [] as Array<{ extensionPath: string; event: string; error: string }>,
+    // New: agent errors surfaced in the UI for review/resolve
+    agentErrors: [] as string[],
     // New: compaction result
     compactionResult: null as { reason: string; aborted: boolean; result?: any; willRetry?: boolean; errorMessage?: string } | null,
     // New: session action results
@@ -104,6 +94,18 @@ function createConnection(
   let currentNewSessionId = newSessionId;
   const notify = () => listeners.forEach(l => l());
 
+  // Active means the agent is still doing work the user might care about:
+  // streaming text, or a tool that is still running.
+  function updateIsActive() {
+    data.isActive = data.isStreaming || Array.from(data.runningTools.values()).some((t) => t.status === "running");
+  }
+
+  // Collect agent-level error text into the review/resolve toast list.
+  function addAgentError(text: string) {
+    data.agentErrors = [...data.agentErrors, text];
+    if (data.agentErrors.length > 20) data.agentErrors = data.agentErrors.slice(-20);
+  }
+
   // Auto-reconnect with exponential backoff
   let reconnectAttempts = 0;
   const MAX_RECONNECT = 10;          // fast exponential-backoff attempts; then slow-forever (see ws-pool-logic)
@@ -126,6 +128,24 @@ function createConnection(
   // #LIVE: messages sent while the WS wasn't OPEN (reconnect window). Flushed
   // on reconnect so a prompt/steer sent during a blip isn't silently lost.
   const pendingQueue: WSClientMessage[] = [];
+
+  // CF-ACCESS: detect an expired auth gateway (Cloudflare Access, etc.) so the
+  // UI can offer a re-login button instead of silently retrying a WS upgrade
+  // the gateway will keep rejecting. A dropped WS alone is ambiguous (could be
+  // a deploy/restart), so probe a same-origin API endpoint: the gateway returns
+  // a redirect (opaqueredirect) or 401/403 when the session is dead; a healthy
+  // server returns 200; a dead network throws. Debounced so a flapping socket
+  // can't spam the probe.
+  let authProbeAt = 0;
+  function probeAuthExpired(): Promise<boolean> {
+    if (data.authExpired) return Promise.resolve(true);
+    if (Date.now() - authProbeAt < 10_000) return Promise.resolve(false);
+    authProbeAt = Date.now();
+    return fetch("/api/projects", { cache: "no-store", redirect: "manual" })
+      .then((res) => res.type === "opaqueredirect" || res.status === 401 || res.status === 403)
+      .catch(() => false);
+  }
+
   function connect() {
     const params = new URLSearchParams();
     if (projectId) params.set("projectId", projectId);
@@ -136,6 +156,7 @@ function createConnection(
     ws.onopen = () => {
       data.isConnected = true;
       data.lastError = null;
+      data.authExpired = false;
       reconnectAttempts = 0;
       // #7: keep messagesRef across reconnect — a user prompt sent just before
       // the WS dropped may not be persisted by PI yet. Wiping it here made the
@@ -166,7 +187,10 @@ function createConnection(
         }
       }, 200);
     };
-    ws.onclose = () => {
+    ws.onclose = (ev) => {
+      // F2: a 4401 close means the upgrade was rejected for auth — surface it
+      // as expired so App flips to SignIn instead of reconnecting forever.
+      if (ev?.code === 4401) { data.authExpired = true; }
       data.isConnected = false;
       data.isStreaming = false;
       notify();
@@ -178,7 +202,7 @@ function createConnection(
       // MAX_RECONNECT attempts, then a slow fixed cadence so a long server
       // outage/deploy still recovers instead of leaving the client dead.
       // The 'Offline' badge (ChatHeader) reflects !isConnected the whole time.
-      if (!intentionallyClosed) {
+      if (!intentionallyClosed && !data.authExpired) {
         // #LIVE: clear any pending timer first so a late onclose from a
         // superseded socket can't stack a second connect() (double WS to
         // one agent).
@@ -187,9 +211,24 @@ function createConnection(
         const delay = computeReconnectDelay(reconnectAttempts);
         console.log(`[ws] reconnecting in ${Math.round(delay)}ms (attempt ${reconnectAttempts + 1}${fast ? "" : ", slow"})`);
         reconnectTimer = setTimeout(() => {
+          if (data.authExpired) { reconnectTimer = null; return; }
           reconnectAttempts++;
           connect();
         }, delay);
+        // CF-ACCESS: a dropped WS is ambiguous (server restart vs. expired auth
+        // gateway). Probe a same-origin API endpoint — Cloudflare Access returns
+        // a redirect (opaqueredirect) or 401/403 when the session is dead,
+        // whereas a healthy server returns 200. If expired, stop retrying (a
+        // rejected WS upgrade can't succeed until the user re-logs-in) and
+        // surface a re-login button (ChatHeader). Inconclusive probes leave the
+        // reconnect above intact so genuine outages still recover.
+        probeAuthExpired().then((expired) => {
+          if (expired && !intentionallyClosed) {
+            data.authExpired = true;
+            if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+            notify();
+          }
+        });
       }
     };
     ws.onerror = () => {
@@ -199,7 +238,7 @@ function createConnection(
       // failure, network-stack suspend). Without scheduling here the client
       // would give up forever — defeating the #3 "never give up" invariant.
       // Guard on the timer so onclose+onerror can't stack two reconnects.
-      if (!intentionallyClosed && !reconnectTimer && ws?.readyState !== WebSocket.OPEN) {
+      if (!intentionallyClosed && !data.authExpired && !reconnectTimer && ws?.readyState !== WebSocket.OPEN) {
         const delay = computeReconnectDelay(reconnectAttempts);
         reconnectTimer = setTimeout(() => {
           reconnectAttempts++;
@@ -261,7 +300,7 @@ function createConnection(
         if (msg.data) {
           data.state = msg.data as AgentState;
           data.isStreaming = (msg.data as AgentState).isStreaming;
-          data.isActive = data.isStreaming;
+          updateIsActive();
           // #SDK-MIGRATION: surface the in-flight assistant message on reconnect.
           // Without it a reattach mid-stream shows isStreaming with no text (the
           // perceived "lost live session"). Clear the live bubble when not
@@ -288,36 +327,19 @@ function createConnection(
       }
       case "agent_start":
         data.isStreaming = true;
-        data.isActive = true;
         preRunCountRef = messagesRef.length;
         data.runningTools = new Map();
+        updateIsActive();
         break;
       case "agent_end": {
         data.isStreaming = false;
-        data.isActive = false;
+        data.liveMessages = new Map();
+        data.runningTools = new Map();
+        updateIsActive();
         const preMsgs = messagesRef.slice(0, preRunCountRef);
-        const seen = new Set(preMsgs.map(getMessageSignature));
-        const merged = [...preMsgs];
-        if (msg.messages?.length) {
-          for (const m of msg.messages) {
-            if (m.role === "user" || m.role === "assistant" || m.role === "toolResult") {
-              const sig = getMessageSignature(m);
-              if (!seen.has(sig)) {
-                seen.add(sig);
-                merged.push(m);
-              }
-            }
-          }
-        }
-        // Preserve any user messages that were added locally while streaming but not yet echoed
-        for (const m of messagesRef.slice(preRunCountRef)) {
-          if (m.role === "user" && !seen.has(getMessageSignature(m))) {
-            merged.push(m);
-          }
-        }
-        messagesRef = merged;
+        const serverMessages = (msg.messages || []).filter((m) => m.role === "user" || m.role === "assistant" || m.role === "toolResult");
+        messagesRef = mergeMessagesOnReconnect([...preMsgs, ...serverMessages], messagesRef);
         data.messages = [...messagesRef];
-        data.liveMessages = new Map(); data.runningTools = new Map();
         break;
       }
       case "message_start": data.liveMessages = new Map(data.liveMessages); data.liveMessages.set("current", msg.message); break;
@@ -326,14 +348,15 @@ function createConnection(
         if (msg.message.role === "assistant" || msg.message.role === "toolResult") {
           messagesRef = [...messagesRef, msg.message];
           data.messages = [...messagesRef];
+          if (msg.message.errorMessage) addAgentError(`Agent error: ${msg.message.errorMessage}`);
         } else if (msg.message.role === "user") {
           const text = getChatMessageText(msg.message).trim();
           if (text) {
             data.pendingSteering = data.pendingSteering.filter((t) => t.trim() !== text);
             data.pendingFollowUp = data.pendingFollowUp.filter((t) => t.trim() !== text);
           }
-          const sig = getMessageSignature(msg.message);
-          if (!messagesRef.some((m) => getMessageSignature(m) === sig)) {
+          const sig = messageSignature(msg.message);
+          if (!messagesRef.some((m) => messageSignature(m) === sig)) {
             messagesRef = [...messagesRef, msg.message];
             data.messages = [...messagesRef];
           }
@@ -341,15 +364,16 @@ function createConnection(
         { const lm = new Map(data.liveMessages); lm.delete("current"); data.liveMessages = lm; }
         break;
       }
-      case "tool_start": { const rt = new Map(data.runningTools); rt.set(msg.toolCallId, { toolCallId: msg.toolCallId, toolName: msg.toolName, args: msg.args, status: "running" }); data.runningTools = rt; break; }
+      case "tool_start": { const rt = new Map(data.runningTools); rt.set(msg.toolCallId, { toolCallId: msg.toolCallId, toolName: msg.toolName, args: msg.args, status: "running" }); data.runningTools = rt; updateIsActive(); break; }
       case "tool_update": { const rt = new Map(data.runningTools); const e = rt.get(msg.toolCallId); if (e) rt.set(msg.toolCallId, { ...e, partialResult: msg.partialResult }); data.runningTools = rt; break; }
-      case "tool_end": { const rt = new Map(data.runningTools); const e = rt.get(msg.toolCallId); if (e) rt.set(msg.toolCallId, { ...e, result: msg.result, isError: msg.isError, status: msg.isError ? "error" : "done" }); data.runningTools = rt; break; }
+      case "tool_end": { const rt = new Map(data.runningTools); const e = rt.get(msg.toolCallId); if (e) rt.set(msg.toolCallId, { ...e, result: msg.result, isError: msg.isError, status: msg.isError ? "error" : "done" }); data.runningTools = rt; updateIsActive(); break; }
       case "turn_start": case "turn_end": break;
       case "queue_update": if (data.state) data.state = { ...data.state, steering: msg.steering, followUp: msg.followUp }; break;
       case "compaction_start":
         data.compactionResult = null;
         break;
       case "compaction_end":
+        if (msg.errorMessage) addAgentError(`Compaction error: ${msg.errorMessage}`);
         data.compactionResult = {
           reason: msg.reason,
           aborted: msg.aborted,
@@ -358,9 +382,19 @@ function createConnection(
           errorMessage: msg.errorMessage,
         };
         break;
-      case "error": console.error("Agent error:", msg.message); data.isStreaming = false; break;
+      case "error": {
+        console.error("Agent error:", msg.message);
+        addAgentError(msg.message);
+        data.isStreaming = false;
+        updateIsActive();
+        break;
+      }
       case "response":
         data.lastCommandResponse = { command: msg.command, success: msg.success, error: msg.error, id: msg.id };
+        // "Agent not ready" is the startup-window race (client's onopen flush
+        // beats agent.start()). The server now queues these until ready, but
+        // never toast it — the Starting PI screen covers that state instead.
+        if (!msg.success && msg.error && msg.error !== "Agent not ready") addAgentError(`${msg.command} failed: ${msg.error}`);
         if (onSessionEventRef.current) onSessionEventRef.current(msg);
         break;
       case "session_loaded": if (msg.session && onSessionLoadedRef.current) onSessionLoadedRef.current(msg.session); break;
@@ -451,9 +485,11 @@ function createConnection(
       case "auto_retry_start":
         data.autoRetry = { attempt: msg.attempt, maxAttempts: msg.maxAttempts, delayMs: msg.delayMs, errorMessage: msg.errorMessage };
         break;
-      case "auto_retry_end":
+      case "auto_retry_end": {
         data.autoRetry = null;
+        if (msg.finalError) addAgentError(`Retry failed: ${msg.finalError}`);
         break;
+      }
       case "extension_error":
         data.extensionErrors = [...data.extensionErrors, { extensionPath: msg.extensionPath, event: msg.event, error: msg.error }];
         // Keep only last 20 errors
@@ -501,7 +537,7 @@ function createConnection(
     }
     if (ws?.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(msg));
-    } else if (msg.type === "prompt" || msg.type === "steer" || msg.type === "follow_up" || msg.type === "abort" || msg.type === "abort_retry" || msg.type === "extension_ui_response") {
+    } else if (msg.type === "prompt" || msg.type === "steer" || msg.type === "follow_up" || msg.type === "abort" || msg.type === "force_stop" || msg.type === "abort_retry" || msg.type === "extension_ui_response") {
       // C3: abort/abort_retry/extension_ui_response were previously dropped
       // during a reconnect window — the user couldn't stop a runaway agent or
       // answer a blocking dialog while the WS was down. Queue them too. A
@@ -581,10 +617,17 @@ function createConnection(
     cycleThinkingLevel: () => { send({ type: "cycle_thinking_level" }); },
     compact: (customInstructions?: string) => { send({ type: "compact", customInstructions }); },
     dismissCompactionResult: () => { data.compactionResult = null; notify(); },
+    dismissAgentError: (index: number) => { data.agentErrors = data.agentErrors.filter((_, i) => i !== index); notify(); },
+    clearAgentErrors: () => { data.agentErrors = []; notify(); },
     setAutoCompaction: (enabled: boolean) => { send({ type: "set_auto_compaction", enabled }); },
     setAutoRetry: (enabled: boolean) => { send({ type: "set_auto_retry", enabled }); },
     abortRetry: () => { send({ type: "abort_retry" }); },
     forceStop: () => { send({ type: "force_stop" }); },
+    setModel: (provider: string, modelId: string) => { send({ type: "set_model", provider, modelId }); },
+    setThinkingLevel: (level: string) => { send({ type: "set_thinking_level", level }); },
+    steer: (message: string, images?: ImageAttachment[]) => { send({ type: "steer", message, images }); },
+    followUp: (message: string, images?: ImageAttachment[]) => { send({ type: "follow_up", message, images }); },
+    fork: (entryId: string) => { send({ type: "fork", entryId }); },
     setSteeringMode: (mode: "all" | "one-at-a-time") => { send({ type: "set_steering_mode", mode }); },
     setFollowUpMode: (mode: "all" | "one-at-a-time") => { send({ type: "set_follow_up_mode", mode }); },
     clearQueue: () => {
@@ -609,6 +652,7 @@ function createConnection(
     get state() { return data.state; },
     get lastError() { return data.lastError; },
     get isConnected() { return data.isConnected; },
+    get authExpired() { return data.authExpired; },
     get isStreaming() { return data.isStreaming; },
     get isActive() { return data.isActive; },
     get models() { return data.models; },
@@ -625,6 +669,7 @@ function createConnection(
     get pendingSteering() { return data.pendingSteering; },
     get pendingFollowUp() { return data.pendingFollowUp; },
     get extensionErrors() { return data.extensionErrors; },
+    get agentErrors() { return data.agentErrors; },
     get compactionResult() { return data.compactionResult; },
     get exportHtmlResult() { return data.exportHtmlResult; },
     get cloneResult() { return data.cloneResult; },

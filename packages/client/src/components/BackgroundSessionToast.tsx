@@ -40,7 +40,7 @@ export function BackgroundSessionToast({
       const isActive = conn.isActive;
       if (wasActive && !isActive) {
         const sessionId = conn.state?.sessionId;
-        const projectId = key.split(":")[0];
+        const projectId = key.split("::")[0];
         if (
           sessionId &&
           (sessionId !== activeSessionId || projectId !== activeProjectId)

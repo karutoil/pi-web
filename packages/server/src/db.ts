@@ -4,8 +4,10 @@ import { homedir } from "node:os";
 import { mkdirSync } from "node:fs";
 import type { Project, WorkspaceLayout } from "@pi-web/shared";
 
-// #80: Resolve DB path to $HOME/.pi-web/.pi-web.db
-const DB_PATH = join(homedir(), ".pi-web", ".pi-web.db");
+// #80: DB defaults to $HOME/.pi-web/.pi-web.db; PI_WEB_DB_PATH overrides it.
+// docker-compose sets this so the container's DB stays separate from local dev
+// (dev test accounts/sessions never leak into the exposed container). Mirrors auth.ts.
+const DB_PATH = process.env.PI_WEB_DB_PATH || join(homedir(), ".pi-web", ".pi-web.db");
 
 // Ensure parent directory exists (bun:sqlite doesn't create intermediate dirs)
 mkdirSync(dirname(DB_PATH), { recursive: true });

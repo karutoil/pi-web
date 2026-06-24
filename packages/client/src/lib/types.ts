@@ -85,6 +85,10 @@ export interface WSBridge {
   state: AgentState | null;
   lastError: string | null;
   isConnected: boolean;
+  // True when an auth gateway (Cloudflare Access, etc.) rejected the WS
+  // upgrade because the session expired — retrying can't succeed until the
+  // user re-logs-in, so the UI offers a re-login button instead.
+  authExpired: boolean;
   isStreaming: boolean;
   isActive: boolean;
   models: ModelInfo[]; commands: CommandInfo[];
@@ -110,6 +114,10 @@ export interface WSBridge {
   autoRetry: AutoRetryState | null;
   // New: extension errors
   extensionErrors: ExtensionErrorEntry[];
+  // New: agent-level request errors surfaced for review / resolve
+  agentErrors: string[];
+  dismissAgentError: (index: number) => void;
+  clearAgentErrors: () => void;
   // New: compaction result
   compactionResult: CompactionResultState | null;
   // New: session action results
@@ -135,4 +143,10 @@ export interface WSBridge {
   clone: () => void;
   getMessages: () => void;
   getLastAssistantText: () => void;
+  // Typed command helpers (previously sent as raw ws.send(...))
+  setModel: (provider: string, modelId: string) => void;
+  setThinkingLevel: (level: string) => void;
+  steer: (message: string, images?: ImageAttachment[]) => void;
+  followUp: (message: string, images?: ImageAttachment[]) => void;
+  fork: (entryId: string) => void;
 }

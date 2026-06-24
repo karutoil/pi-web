@@ -1,20 +1,21 @@
 /**
  * Server-side reader for the pi-subagents extension's async run state.
  *
+ * TODO(upstream): pi's RPC mode has no public extension command/tool for
+ * status/interrupt yet, so we read the extension's private on-disk state
+ * directly. Once the extension exposes a registered command (e.g.
+ * `subagent({action:"status"})` / `subagent({action:"interrupt"})`), this
+ * module should call that command instead of reaching into temp files.
+ *
  * The extension (pi-subagents) launches background subagent runs and persists
  * per-run state to disk under a temp-scope root:
  *   {tmpdir}/pi-subagents-{scope}/async-subagent-runs/{runId}/status.json
  *   {tmpdir}/pi-subagents-{scope}/async-subagent-runs/{runId}/events.jsonl
  *   {tmpdir}/pi-subagents-{scope}/async-subagent-runs/{runId}/output-*.log
  *
- * pi's RPC mode has no "invoke tool" command, so we cannot ask the agent to run
- * `subagent({action:"status"})` directly. Instead we read these files straight
- * from disk (same user → same temp scope) and, to interrupt, send the runner's
- * interrupt signal (SIGUSR2 on unix, SIGBREAK on win32) to the PID recorded in
- * status.json — the runner registers a handler for exactly that signal.
- *
- * Resume must go through the agent (it revives a child from the persisted
- * session file), so the UI sends a prompt for that — not handled here.
+ * We load resolveTempScopeId and ASYNC_DIR directly from the installed
+ * extension so the server and the extension agree on the temp scope and run
+ * directory without duplicating that logic.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -28,60 +29,54 @@ import type {
   SubagentInterruptResponse,
 } from "@pi-web/shared";
 
-// ─── Temp-scope resolution (mirrors pi-subagents resolveTempScopeId) ───
+// ─── Import from the installed pi-subagents extension source ───
+//
+// The extension is installed in pi's global npm tree, not in this project's
+// node_modules, so we resolve it at runtime from an absolute path.  Using a
+// non-literal specifier keeps `tsc -b` from trying to typecheck the extension's
+// source files (which reference peer dependencies we don't depend on).
+const PI_SUBAGENTS_TYPES_PATH = path.join(
+  os.homedir(),
+  ".pi/agent/npm/node_modules/pi-subagents/src/shared/types.ts",
+);
+const ext = await import(PI_SUBAGENTS_TYPES_PATH);
 
-function sanitizeScopeSegment(value: string): string {
-  const sanitized = value
-    .trim()
-    .replace(/[^A-Za-z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return sanitized || "unknown";
+function assertExtensionShape(mod: Record<string, unknown>): void {
+  if (typeof mod.resolveTempScopeId !== "function") {
+    throw new Error("pi-subagents: resolveTempScopeId not exported");
+  }
+  if (typeof mod.ASYNC_DIR !== "string" || !mod.ASYNC_DIR.endsWith("async-subagent-runs")) {
+    throw new Error("pi-subagents: ASYNC_DIR missing or unexpected");
+  }
 }
+assertExtensionShape(ext);
 
-function resolveTempScopeId(env: NodeJS.ProcessEnv = process.env): string {
-  const getuid = process.getuid?.bind(process);
-  if (typeof getuid === "function") return `uid-${getuid()}`;
-
-  for (const key of ["USERNAME", "USER", "LOGNAME"] as const) {
-    const value = env[key];
-    if (value) return `user-${sanitizeScopeSegment(value)}`;
-  }
-
-  try {
-    const username = os.userInfo()?.username;
-    if (username) return `user-${sanitizeScopeSegment(username)}`;
-  } catch {
-    // fall through to home-dir scoping
-  }
-
-  const home = env.USERPROFILE ?? env.HOME;
-  if (home) return `home-${sanitizeScopeSegment(home)}`;
-
-  try {
-    const fallbackHome = os.homedir();
-    if (fallbackHome) return `home-${sanitizeScopeSegment(fallbackHome)}`;
-  } catch {
-    // ignore
-  }
-
-  return "shared";
-}
+const resolveTempScopeId = ext.resolveTempScopeId as (options?: {
+  env?: NodeJS.ProcessEnv;
+  getuid?: (() => number) | undefined;
+  userInfo?: (() => { username?: string | null }) | undefined;
+  homedir?: (() => string) | undefined;
+}) => string;
+const ASYNC_DIR: string = ext.ASYNC_DIR;
 
 /** Root temp dir shared by the extension and this server (same scope = same user). */
 export function getTempRootDir(): string {
-  return path.join(os.tmpdir(), `pi-subagents-${resolveTempScopeId()}`);
+  return path.dirname(ASYNC_DIR);
 }
 
 export function getAsyncDir(): string {
-  return path.join(getTempRootDir(), "async-subagent-runs");
+  return ASYNC_DIR;
 }
 
 // ─── Interrupt signal (mirrors the extension's ASYNC_INTERRUPT_SIGNAL) ───
 
 const ASYNC_INTERRUPT_SIGNAL: NodeJS.Signals = process.platform === "win32" ? "SIGBREAK" : "SIGUSR2";
 
-// ─── status.json shape (subset we care about) ───
-
+// ─── status.json shape ───
+//
+// Tracks `pi-subagents/src/shared/types.ts#AsyncStatus`. Kept as a structural
+// copy because the extension source has no generated .d.ts and importing its
+// .ts file directly would force `tsc -b` to typecheck its peer dependencies.
 interface AsyncStatusFile {
   runId?: string;
   sessionId?: string;
@@ -130,7 +125,7 @@ function readJsonFile<T>(filePath: string): T | null {
 /** Resolve a run by id (exact asyncDir match) — returns the dir path or null. */
 function resolveRunDir(runId: string): string | null {
   if (!/^[A-Za-z0-9._-]+$/.test(runId)) return null; // ponytail: guard path traversal
-  const dir = path.join(getAsyncDir(), runId);
+  const dir = path.join(ASYNC_DIR, runId);
   return isDir(dir) ? dir : null;
 }
 
@@ -194,7 +189,7 @@ function statusToRun(asyncDir: string, status: AsyncStatusFile): SubagentAsyncRu
  * async runs root. Cheap enough to poll every couple seconds.
  */
 export function listSubagentRuns(): SubagentRunListResponse {
-  const asyncDirRoot = getAsyncDir();
+  const asyncDirRoot = ASYNC_DIR;
   const runs: SubagentAsyncRun[] = [];
   if (isDir(asyncDirRoot)) {
     let entries: string[] = [];
@@ -236,8 +231,14 @@ export function interruptSubagentRun(runId: string): SubagentInterruptResponse {
   }
 
   const pid = status.pid;
-  if (typeof pid !== "number" || pid <= 0) {
+  if (typeof pid !== "number" || !Number.isFinite(pid)) {
     return { runId, ok: false, message: "No PID recorded for this run" };
+  }
+  // Defensive: never signal init, self, or bogus PIDs. process.kill(pid, 0)
+  // only tells us the process exists; it cannot verify same UID, so we at
+  // least require a positive PID greater than 1.
+  if (pid <= 1) {
+    return { runId, ok: false, message: "Refusing to signal invalid PID" };
   }
 
   try {
@@ -249,7 +250,8 @@ export function interruptSubagentRun(runId: string): SubagentInterruptResponse {
 
   try {
     process.kill(pid, ASYNC_INTERRUPT_SIGNAL);
-    return { runId, ok: true, message: "Interrupt signal sent — run will pause" };
+    // Don't claim the run is paused here; the runner must write that state.
+    return { runId, ok: true, message: "Interrupt signal sent" };
   } catch (err) {
     return { runId, ok: false, message: `Failed to signal: ${err instanceof Error ? err.message : String(err)}` };
   }

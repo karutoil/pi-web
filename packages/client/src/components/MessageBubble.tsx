@@ -4,7 +4,7 @@ import remarkGfm from "remark-gfm";
 import rehypeSanitize from "rehype-sanitize";
 import type { ChatMessage, ContentBlock, ToolDetails } from "@pi-web/shared";
 import type { ToolEvent } from "../lib/types";
-import { formatTokens } from "../lib/utils";
+import { formatTokens, formatTimestamp } from "../lib/utils";
 import { DiffRenderer, isDiffContent } from "./DiffRenderer";
 import { Icon, type IconName } from "./Icon";
 import { ContextMenuPortal, ContextMenuItem, ContextMenuDivider, useLongPress } from "./ContextMenu";
@@ -282,6 +282,9 @@ function MessageBubbleImpl({ message, showThinking, chatPrefs, toolResultsMap, i
         {/* Timestamp / metadata */}
         {!isStreaming && (
           <div className="conversation-metadata" data-user={isUser}>
+            {message.timestamp && (
+              <span className="conversation-metadata-time">{formatTimestamp(message.timestamp)}</span>
+            )}
             {message.model && <span>{message.model}</span>}
             {message.usage && (
               <span className="conversation-metadata-tokens">

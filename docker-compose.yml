@@ -1,3 +1,6 @@
+# All tunables live in .env (gitignored). docker compose auto-loads ./.env for
+# ${VAR} interpolation. Every var has a `:-default` so `docker compose up`
+# still boots localhost-dev mode with no .env present — .env only overrides.
 services:
   pi-web:
     build:
@@ -7,12 +10,26 @@ services:
     tty: true
     stdin_open: true
     environment:
-      HOST: "0.0.0.0"
-      PORT: "3069"
+      HOST: "${HOST:-0.0.0.0}"
+      PORT: "${PORT:-3069}"
       HOME: "${HOME}"
+      # Container-internal PATH (host pi binary + node_modules bin first).
       PATH: "/host-pi-bin:/app/node_modules/.bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      # Container's pi-web DB — separate from local dev's ~/.pi-web/.pi-web.db so
+      # dev test accounts/sessions never leak into the exposed container.
+      PI_WEB_DB_PATH: "${HOME}/.pi-web/.pi-web.docker.db"
+      # ── Auth (better-auth). Auto-on when HOST is not loopback;
+      # PI_WEB_AUTH=off forces open (NOT recommended for an exposed port).
+      PI_WEB_AUTH: "${PI_WEB_AUTH:-on}"
+      PI_WEB_ADMIN_EMAIL: "${PI_WEB_ADMIN_EMAIL:-admin@local.test}"
+      # Unset/blank → a random password is generated and printed ONCE on first run.
+      PI_WEB_ADMIN_PASSWORD: "${PI_WEB_ADMIN_PASSWORD:-}"
+      # ── TLS / domain deployments — set these in .env:
+      BETTER_AUTH_URL: "${BETTER_AUTH_URL:-}"
+      PI_WEB_SECURE_COOKIES: "${PI_WEB_SECURE_COOKIES:-}"
+      PI_WEB_ORIGIN: "${PI_WEB_ORIGIN:-}"
     ports:
-      - "33647:3069"
+      - "${HOST_PORT:-33647}:${PORT:-3069}"
     volumes:
       - "${HOME}:${HOME}"
       - "${PI_BINARY_DIR:-/dev/null}:/host-pi-bin:ro"

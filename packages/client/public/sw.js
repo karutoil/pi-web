@@ -76,6 +76,13 @@ self.addEventListener("fetch", (event) => {
             caches.open(STATIC_CACHE).then((cache) => cache.put(event.request, clone));
             return response;
           }
+          // Auth gateway redirect (Cloudflare Access session expired, etc.):
+          // navigate requests default to redirect:'manual', so an expired
+          // session surfaces here as an opaqueredirect response. Return it so
+          // the browser follows the redirect to the login page natively.
+          // Falling back to the cached shell instead serves a dead app that
+          // can never re-authenticate — the "stuck until hard-refresh" bug.
+          if (response.type === "opaqueredirect") return response;
           // M7: non-OK (5xx) — a transient server error on the HTML route would
           // render a broken page and prevent the app from mounting to reattach.
           // Fall back to the cached shell so the app can at least load + retry WS.

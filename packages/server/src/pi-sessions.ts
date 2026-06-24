@@ -1,7 +1,25 @@
-import { readdir, stat, readFile, writeFile, mkdir, rename } from "node:fs/promises";
-import { join, basename, resolve, normalize } from "node:path";
-import { homedir, tmpdir } from "node:os";
-import type { SessionSummary, SessionDetail, SessionEntry, ChatMessage, ProjectUsage, UsageSummary } from "@pi-web/shared";
+import { stat, readFile, writeFile, mkdir, rename } from "node:fs/promises";
+import { join, resolve, normalize, basename } from "node:path";
+import { existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import {
+  getAgentDir,
+  SessionManager,
+  type SessionEntry,
+  type SessionInfo,
+  type SessionHeader,
+  type SessionMessageEntry,
+} from "@earendil-works/pi-coding-agent";
+import type { UserMessage, AssistantMessage, ToolResultMessage, TextContent, ImageContent, ThinkingContent, ToolCall } from "@earendil-works/pi-ai";
+import type {
+  SessionSummary,
+  SessionDetail,
+  SessionEntry as SharedSessionEntry,
+  ChatMessage,
+  ContentBlock,
+  ProjectUsage,
+  UsageSummary,
+} from "@pi-web/shared";
 
 // ─── Index Cache ───
 // Stores parsed summaries keyed by filePath+mtime to avoid re-parsing unchanged files.
@@ -33,8 +51,7 @@ function getIndexFilePath(projectPath: string): string {
 async function loadIndex(projectPath: string): Promise<SessionIndex> {
   try {
     const raw = await readFile(getIndexFilePath(projectPath), "utf-8");
-    const index = JSON.parse(raw);
-    // #85: Check index version mismatch — discard stale indexes
+    const index = JSON.parse(raw) as SessionIndex;
     if (index.version !== INDEX_VERSION) {
       console.log(`[sessions] index version mismatch (got ${index.version}, expected ${INDEX_VERSION}), rebuilding`);
       return { version: INDEX_VERSION, updatedAt: "", entries: {} };
@@ -45,7 +62,6 @@ async function loadIndex(projectPath: string): Promise<SessionIndex> {
   }
 }
 
-// #89: Atomic index write — write to tmp file then rename
 async function saveIndex(projectPath: string, index: SessionIndex): Promise<void> {
   const dir = getIndexDir();
   await mkdir(dir, { recursive: true });
@@ -56,69 +72,208 @@ async function saveIndex(projectPath: string, index: SessionIndex): Promise<void
   await rename(tmpPath, targetPath);
 }
 
-// ─── List Sessions (with index cache) ───
+// ─── SDK helpers ───
+
+function getAgentSessionsDir(): string {
+  return join(getAgentDir(), "sessions");
+}
+
+async function collectSessionInfos(cwd: string): Promise<SessionInfo[]> {
+  const sessions: SessionInfo[] = [];
+  try {
+    const defaultSessions = await SessionManager.list(cwd);
+    sessions.push(...defaultSessions);
+  } catch (err) {
+    console.warn(`[sessions] failed to list default sessions for ${cwd}:`, err);
+  }
+
+  const localSessionDir = join(cwd, ".pi", "sessions");
+  if (existsSync(localSessionDir)) {
+    try {
+      const localSessions = await SessionManager.list(cwd, localSessionDir);
+      sessions.push(...localSessions);
+    } catch (err) {
+      console.warn(`[sessions] failed to list local sessions for ${cwd}:`, err);
+    }
+  }
+
+  return sessions;
+}
+
+function extractText(content: string | (TextContent | ImageContent)[] | unknown): string | null {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter((b): b is TextContent => typeof b === "object" && b !== null && "type" in b && b.type === "text")
+      .map((b) => b.text)
+      .join(" ");
+  }
+  return null;
+}
+
+interface SummaryMetrics {
+  messageCount: number;
+  lastMessage: string | null;
+  firstMessage: string | null;
+  model: string | null;
+  createdAt: string;
+  lastActiveAt: string;
+  tokenCount: number;
+  cost: number;
+}
+
+function deriveSummaryMetrics(entries: SessionEntry[], mtime: string): SummaryMetrics {
+  let messageCount = 0;
+  let lastMessage: string | null = null;
+  let firstMessage: string | null = null;
+  let model: string | null = null;
+  let totalTokens = 0;
+  let totalCost = 0;
+  let lastActiveAt = "";
+  let createdAt = "";
+
+  for (const entry of entries) {
+    if (entry.type === "message") {
+      const msg = (entry as SessionMessageEntry).message;
+      messageCount++;
+
+      if (msg.role === "user") {
+        const text = extractText((msg as UserMessage).content);
+        if (text && !firstMessage) {
+          firstMessage = text.slice(0, 200);
+          createdAt = entry.timestamp || createdAt;
+        }
+        if (text) {
+          lastMessage = text.slice(0, 200);
+        }
+        if (entry.timestamp) {
+          lastActiveAt = entry.timestamp;
+        }
+      } else if (msg.role === "assistant") {
+        const assistant = msg as AssistantMessage;
+        if (assistant.model) {
+          model = assistant.model;
+        }
+        if (assistant.usage) {
+          totalTokens += assistant.usage.totalTokens ?? (assistant.usage.input + assistant.usage.output);
+          totalCost += assistant.usage.cost.total ?? 0;
+        }
+        if (entry.timestamp) {
+          lastActiveAt = entry.timestamp;
+        }
+      }
+    } else if (entry.type === "session_info") {
+      if (entry.timestamp) {
+        lastActiveAt = entry.timestamp;
+      }
+    }
+  }
+
+  return {
+    messageCount,
+    lastMessage,
+    model,
+    firstMessage,
+    createdAt,
+    lastActiveAt: lastActiveAt || mtime,
+    tokenCount: totalTokens,
+    cost: totalCost,
+  };
+}
+
+async function buildSessionSummary(filePath: string, mtime: string, info: SessionInfo): Promise<SessionSummary | null> {
+  try {
+    const manager = SessionManager.open(filePath);
+    const header = manager.getHeader();
+    const entries = manager.getEntries();
+
+    const derived = deriveSummaryMetrics(entries, mtime);
+    const timestamp = header?.timestamp ?? info.created.toISOString();
+    const lastActive = derived.lastActiveAt || timestamp;
+    const isRecentlyActive = Date.now() - new Date(lastActive).getTime() < 5 * 60 * 1000;
+
+    return {
+      id: info.id || basename(filePath, ".jsonl"),
+      filePath: info.path,
+      cwd: info.cwd || "",
+      timestamp,
+      name: info.name ?? null,
+      messageCount: info.messageCount ?? derived.messageCount,
+      lastMessage: derived.lastMessage,
+      model: derived.model,
+      firstMessage: derived.firstMessage ?? info.firstMessage ?? null,
+      createdAt: derived.createdAt || info.created.toISOString(),
+      lastActiveAt: lastActive,
+      tokenCount: derived.tokenCount,
+      cost: derived.cost,
+      isRecentlyActive,
+    };
+  } catch (err) {
+    console.warn(`[sessions] failed to summarize ${filePath}:`, err);
+    return null;
+  }
+}
+
+function refreshRecentlyActive(summary: SessionSummary): SessionSummary {
+  const lastActive = summary.lastActiveAt || summary.timestamp;
+  return {
+    ...summary,
+    isRecentlyActive: Date.now() - new Date(lastActive).getTime() < 5 * 60 * 1000,
+  };
+}
+
+// ─── List Project Sessions ───
 
 export async function listProjectSessions(projectPath: string): Promise<SessionSummary[]> {
-  const home = process.env.HOME || process.env.USERPROFILE || tmpdir();
-  const sanitized = sanitizePath(projectPath);
-  const sessionDir = join(home, ".pi", "agent", "sessions", sanitized);
-  const localSessionDir = join(projectPath, ".pi", "sessions");
+  const infos = await collectSessionInfos(projectPath);
 
-  // Collect all .jsonl files with their mtimes
-  const fileEntries: { filePath: string; mtime: string }[] = [];
-  for (const dir of [sessionDir, localSessionDir]) {
-    try {
-      const files = await readdir(dir);
-      for (const file of files.filter(f => f.endsWith(".jsonl"))) {
-        const filePath = join(dir, file);
-        try {
-          const s = await stat(filePath);
-          fileEntries.push({ filePath, mtime: s.mtime.toISOString() });
-        } catch {}
-      }
-    } catch {}
+  // Unique by path; SDK list may overlap between default and local dirs.
+  const byPath = new Map<string, SessionInfo>();
+  for (const info of infos) {
+    byPath.set(info.path, info);
   }
 
-  // Load index and determine which files need re-parsing
+  // Collect mtimes for cache keying
+  const mtimes = new Map<string, string>();
+  for (const filePath of byPath.keys()) {
+    try {
+      const s = await stat(filePath);
+      mtimes.set(filePath, s.mtime.toISOString());
+    } catch {
+      mtimes.set(filePath, new Date().toISOString());
+    }
+  }
+
   const index = await loadIndex(projectPath);
   const results: SessionSummary[] = [];
-  const needsParse: { filePath: string; mtime: string }[] = [];
-  const now = Date.now();
+  const toParse: SessionInfo[] = [];
 
-  for (const fe of fileEntries) {
-    const cached = index.entries[fe.filePath];
-    if (cached && cached.mtime === fe.mtime) {
-      // Cache hit — but update isRecentlyActive dynamically
-      const lastActive = cached.summary.lastActiveAt
-        ? new Date(cached.summary.lastActiveAt).getTime()
-        : new Date(cached.summary.timestamp).getTime();
-      results.push({
-        ...cached.summary,
-        isRecentlyActive: (now - lastActive) < 5 * 60 * 1000,
-      });
+  for (const info of byPath.values()) {
+    const filePath = info.path;
+    const mtime = mtimes.get(filePath) || new Date().toISOString();
+    const cached = index.entries[filePath];
+    if (cached && cached.mtime === mtime) {
+      results.push(refreshRecentlyActive(cached.summary));
     } else {
-      needsParse.push(fe);
+      toParse.push(info);
     }
   }
 
-  // Parse only the changed/new files (streaming, with early exit)
-  if (needsParse.length > 0) {
+  if (toParse.length > 0) {
     const parsed = await Promise.all(
-      needsParse.map(fe => parseSessionSummaryFull(fe.filePath, fe.mtime))
+      toParse.map((info) => buildSessionSummary(info.path, mtimes.get(info.path) || new Date().toISOString(), info))
     );
     for (let i = 0; i < parsed.length; i++) {
-      const s = parsed[i];
-      if (s) {
-        results.push(s);
-        index.entries[needsParse[i].filePath] = { mtime: needsParse[i].mtime, summary: s };
-      }
+      const summary = parsed[i];
+      if (!summary) continue;
+      results.push(summary);
+      index.entries[toParse[i].path] = { mtime: mtimes.get(toParse[i].path) || summary.timestamp, summary };
     }
-    // Save updated index
     await saveIndex(projectPath, index);
   }
 
-  // Remove index entries for files that no longer exist
-  const filePaths = new Set(fileEntries.map(f => f.filePath));
+  // Remove stale index entries
+  const filePaths = new Set(byPath.keys());
   let indexChanged = false;
   for (const key of Object.keys(index.entries)) {
     if (!filePaths.has(key)) {
@@ -128,225 +283,196 @@ export async function listProjectSessions(projectPath: string): Promise<SessionS
   }
   if (indexChanged) await saveIndex(projectPath, index);
 
-  // Deduplicate by id and sort
-  const seen = new Set<string>();
-  const unique = results.filter(s => {
-    if (seen.has(s.id)) return false;
-    seen.add(s.id);
-    return true;
-  });
-  unique.sort((a, b) => new Date(b.lastActiveAt || b.timestamp).getTime() - new Date(a.lastActiveAt || a.timestamp).getTime());
-  return unique;
+  results.sort((a, b) => new Date(b.lastActiveAt || b.timestamp).getTime() - new Date(a.lastActiveAt || a.timestamp).getTime());
+  return results;
 }
 
-// ─── Full-file Parse (with index cache for speed) ───
-// Reads full file, parses all lines. Fast enough when combined with index cache.
-// Index cache avoids re-parsing unchanged files on subsequent loads.
-
-async function parseSessionSummaryFull(filePath: string, mtime: string): Promise<SessionSummary | null> {
-  try {
-    const content = await readFile(filePath, "utf-8");
-    const lines = content.trim().split("\n");
-
-    let header: any = null;
-    let messageCount = 0;
-    let lastMessage: string | null = null;
-    let firstMessage: string | null = null;
-    let model: string | null = null;
-    let name: string | null = null;
-    let totalTokens = 0;
-    let totalCost = 0;
-    let lastActiveAt = "";
-    let firstUserTimestamp = "";
-
-    for (const line of lines) {
-      try {
-        const entry = JSON.parse(line);
-        if (entry.type === "session") {
-          header = entry;
-        } else if (entry.type === "message" && entry.message) {
-          messageCount++;
-          const msg = entry.message;
-          if (msg.role === "user") {
-            const text = extractText(msg.content);
-            if (text && !firstMessage) {
-              firstMessage = text.slice(0, 200);
-              firstUserTimestamp = entry.timestamp || "";
-            }
-            if (text) {
-              lastMessage = text.slice(0, 200);
-            }
-            lastActiveAt = entry.timestamp || lastActiveAt;
-          }
-          if (msg.role === "assistant") {
-            lastActiveAt = entry.timestamp || lastActiveAt;
-            if (msg.model) model = msg.model;
-            if (msg.usage) {
-              // #37: Use ?? defaults to prevent NaN accumulation
-              totalTokens += (msg.usage.totalTokens ?? ((msg.usage.input ?? 0) + (msg.usage.output ?? 0)));
-              totalCost += (msg.usage.cost?.total ?? 0);
-            }
-          }
-        } else if (entry.type === "session_info" && entry.name) {
-          name = entry.name;
-          lastActiveAt = entry.timestamp || lastActiveAt;
-        }
-      } catch {}
-    }
-
-    const timestamp = header?.timestamp || mtime;
-    const now = Date.now();
-    const lastActive = lastActiveAt ? new Date(lastActiveAt).getTime() : new Date(timestamp).getTime();
-    const isRecentlyActive = (now - lastActive) < 5 * 60 * 1000;
-
-    return {
-      id: header?.id || basename(filePath, ".jsonl"),
-      filePath,
-      cwd: header?.cwd || "",
-      timestamp,
-      name,
-      messageCount,
-      lastMessage,
-      model,
-      firstMessage,
-      createdAt: firstUserTimestamp || timestamp,
-      lastActiveAt: lastActiveAt || timestamp,
-      tokenCount: totalTokens,
-      cost: totalCost,
-      isRecentlyActive,
-    };
-  } catch {
-    return null;
-  }
-}
-
-// ─── Read last N lines of a file efficiently ───
-// Reads from the end of the file using a buffer, avoids loading full file into memory.
-
-// ─── Session Detail (full parse, only loaded when user opens a session) ───
+// ─── Session Detail ───
 
 export async function getSessionDetail(filePath: string): Promise<SessionDetail | null> {
   try {
-    const content = await readFile(filePath, "utf-8");
-    const lines = content.trim().split("\n");
+    const manager = SessionManager.open(filePath);
+    const header = manager.getHeader();
+    const sdkEntries = manager.getEntries();
 
-    let header: any = null;
-    const entries: SessionEntry[] = [];
-
-    for (const line of lines) {
-      try {
-        const entry = JSON.parse(line);
-        if (entry.type === "session") {
-          header = entry;
-          continue;
-        }
-
-        const sessionEntry: SessionEntry = {
-          id: entry.id || "",
-          parentId: entry.parentId || null,
-          type: entry.type || "message",
-          timestamp: entry.timestamp || "",
-        };
-
-        if (entry.message) sessionEntry.message = normalizeMessage(entry.message);
-        if (entry.provider) sessionEntry.provider = entry.provider;
-        if (entry.modelId) sessionEntry.modelId = entry.modelId;
-        if (entry.thinkingLevel) sessionEntry.thinkingLevel = entry.thinkingLevel;
-        if (entry.summary) sessionEntry.summary = entry.summary;
-        if (entry.label) sessionEntry.label = entry.label;
-        if (entry.targetId) sessionEntry.targetId = entry.targetId;
-        if (entry.fromId) sessionEntry.fromId = entry.fromId;
-        if (entry.customType) sessionEntry.customType = entry.customType;
-        if (entry.data !== undefined) sessionEntry.data = entry.data;
-        if (entry.content !== undefined) sessionEntry.content = entry.content;
-        if (entry.display !== undefined) sessionEntry.display = entry.display;
-
-        entries.push(sessionEntry);
-      } catch {}
-    }
+    const entries: SharedSessionEntry[] = sdkEntries.map(mapSdkEntry);
 
     return {
-      id: header?.id || basename(filePath, ".jsonl"),
+      id: header?.id ?? basename(filePath, ".jsonl"),
       filePath,
-      cwd: header?.cwd || "",
-      timestamp: header?.timestamp || "",
-      name: findSessionName(entries),
-      version: header?.version || 1,
+      cwd: header?.cwd ?? "",
+      timestamp: header?.timestamp ?? "",
+      name: manager.getSessionName() ?? null,
+      version: header?.version ?? 1,
       entries,
     };
-  } catch {
+  } catch (err) {
+    console.warn(`[sessions] failed to load detail ${filePath}:`, err);
     return null;
   }
+}
+
+function mapSdkEntry(entry: SessionEntry): SharedSessionEntry {
+  const base: SharedSessionEntry = {
+    id: entry.id,
+    parentId: entry.parentId,
+    type: entry.type,
+    timestamp: entry.timestamp,
+  };
+
+  switch (entry.type) {
+    case "message": {
+      const msg = entry.message;
+      base.message = normalizeMessage(msg);
+      break;
+    }
+    case "model_change": {
+      base.provider = entry.provider;
+      base.modelId = entry.modelId;
+      break;
+    }
+    case "thinking_level_change": {
+      base.thinkingLevel = entry.thinkingLevel;
+      break;
+    }
+    case "compaction": {
+      base.summary = entry.summary;
+      break;
+    }
+    case "branch_summary": {
+      base.fromId = entry.fromId;
+      base.summary = entry.summary;
+      break;
+    }
+    case "label": {
+      base.targetId = entry.targetId;
+      base.label = entry.label;
+      break;
+    }
+    case "custom": {
+      base.customType = entry.customType;
+      base.data = entry.data;
+      break;
+    }
+    case "custom_message": {
+      base.customType = entry.customType;
+      base.content = entry.content;
+      base.display = entry.display;
+      base.data = entry.details;
+      break;
+    }
+    case "session_info": {
+      // name is surfaced at the session level, not on the entry itself.
+      break;
+    }
+  }
+
+  return base;
+}
+
+function normalizeContent(content: string | (TextContent | ImageContent)[] | (TextContent | ThinkingContent | ToolCall)[] | unknown): string | ContentBlock[] {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+
+  return content
+    .map((block): ContentBlock | null => {
+      if (typeof block === "string") return { type: "text", text: block };
+      if (!block || typeof block !== "object" || !("type" in block)) return null;
+      const b = block as { type: string };
+      switch (b.type) {
+        case "text": {
+          const t = b as TextContent;
+          return { type: "text", text: t.text };
+        }
+        case "image": {
+          const img = b as ImageContent;
+          return { type: "image", data: img.data, mimeType: img.mimeType };
+        }
+        case "thinking": {
+          const th = b as ThinkingContent;
+          return { type: "thinking", thinking: th.thinking };
+        }
+        case "toolCall": {
+          const tc = b as ToolCall;
+          return { type: "toolCall", id: tc.id, name: tc.name, arguments: tc.arguments };
+        }
+      }
+      return null;
+    })
+    .filter((c): c is ContentBlock => c !== null);
+}
+
+function normalizeMessage(msg: SessionMessageEntry["message"]): ChatMessage {
+  const role = msg.role;
+  const timestamp = typeof msg.timestamp === "number" ? new Date(msg.timestamp).toISOString() : new Date().toISOString();
+  const base: ChatMessage = { role, content: "", timestamp };
+
+  if (role === "user") {
+    const user = msg as UserMessage;
+    base.content = normalizeContent(user.content);
+  } else if (role === "assistant") {
+    const assistant = msg as AssistantMessage;
+    base.content = normalizeContent(assistant.content);
+    if (assistant.api) base.api = assistant.api;
+    if (assistant.provider) base.provider = assistant.provider;
+    if (assistant.model) base.model = assistant.model;
+    if (assistant.usage) base.usage = assistant.usage;
+    if (assistant.stopReason) base.stopReason = assistant.stopReason;
+    if (assistant.errorMessage) base.errorMessage = assistant.errorMessage;
+  } else if (role === "toolResult") {
+    const tool = msg as ToolResultMessage;
+    base.content = normalizeContent(tool.content);
+    base.toolCallId = tool.toolCallId;
+    base.toolName = tool.toolName;
+    base.isError = tool.isError;
+    if (tool.details) base.details = tool.details as Record<string, unknown>;
+  } else if (role === "bashExecution") {
+    const bash = msg as { command?: string; output?: string; exitCode?: number; cancelled?: boolean; truncated?: boolean; fullOutputPath?: string };
+    base.content = bash.command ?? "";
+    if (bash.command) base.command = bash.command;
+    if (bash.output) base.output = bash.output;
+    if (bash.exitCode !== undefined) base.exitCode = bash.exitCode;
+    if (bash.cancelled !== undefined) base.cancelled = bash.cancelled;
+    if (bash.truncated !== undefined) base.truncated = bash.truncated;
+    if (bash.fullOutputPath) base.fullOutputPath = bash.fullOutputPath;
+  } else if (role === "custom") {
+    const custom = msg as { content: string | (TextContent | ImageContent)[]; details?: unknown };
+    base.content = normalizeContent(custom.content);
+    if (custom.details) base.details = custom.details as Record<string, unknown>;
+  } else if (role === "branchSummary" || role === "compactionSummary") {
+    const summaryMsg = msg as { summary?: string; tokensBefore?: number };
+    base.content = summaryMsg.summary ?? "";
+    if (summaryMsg.tokensBefore !== undefined) base.tokensBefore = summaryMsg.tokensBefore;
+  }
+
+  return base;
 }
 
 // ─── Helpers ───
 
-function normalizeMessage(msg: any): ChatMessage {
-  const normalized: ChatMessage = {
-    role: msg.role || "unknown",
-    content: msg.content || "",
-    timestamp: msg.timestamp || new Date().toISOString(),
-  };
-
-  if (msg.api) normalized.api = msg.api;
-  if (msg.provider) normalized.provider = msg.provider;
-  if (msg.model) normalized.model = msg.model;
-  if (msg.usage) normalized.usage = msg.usage;
-  if (msg.stopReason) normalized.stopReason = msg.stopReason;
-  if (msg.errorMessage) normalized.errorMessage = msg.errorMessage;
-  if (msg.toolCallId) normalized.toolCallId = msg.toolCallId;
-  if (msg.toolName) normalized.toolName = msg.toolName;
-  if (msg.isError !== undefined) normalized.isError = msg.isError;
-  if (msg.details) normalized.details = msg.details;
-  if (msg.command) normalized.command = msg.command;
-  if (msg.output) normalized.output = msg.output;
-  if (msg.exitCode !== undefined) normalized.exitCode = msg.exitCode;
-  if (msg.cancelled !== undefined) normalized.cancelled = msg.cancelled;
-  if (msg.truncated !== undefined) normalized.truncated = msg.truncated;
-  if (msg.fullOutputPath) normalized.fullOutputPath = msg.fullOutputPath;
-  if (msg.tokensBefore !== undefined) normalized.tokensBefore = msg.tokensBefore;
-  if (msg.thinking) normalized.thinking = msg.thinking;
-
-  if (Array.isArray(normalized.content)) {
-    normalized.content = (normalized.content as any[]).map((block: any) => {
-      if (typeof block === "string") return { type: "text", text: block };
-      return block;
-    });
-  }
-
-  return normalized;
-}
-
-function extractText(content: unknown): string | null {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .filter((b: any) => b.type === "text")
-      .map((b: any) => b.text)
-      .join(" ");
-  }
-  return null;
-}
-
-function findSessionName(entries: any[]): string | null {
-  for (let i = entries.length - 1; i >= 0; i--) {
-    if (entries[i].type === "session_info" && entries[i].name) return entries[i].name;
-  }
-  return null;
-}
-
 function sanitizePath(p: string): string {
-  // #86: Normalize to absolute path before sanitizing
   const abs = resolve(normalize(p));
   let s = abs.replace(/^[\\/]/, "").replace(/[\\/]$/, "");
   s = s.replace(/[\\/:]/g, "-");
   return `--${s || "root"}--`;
 }
 
-// ─── Aggregate usage across sessions ───
-// Sums token/cost/message counts from the per-project session index cache.
+// ─── Rename Session ───
 
-export function computeProjectUsage(sessions: SessionSummary[]): { sessionCount: number; totalTokens: number; totalCost: number; totalMessages: number } {
+export async function renameSession(filePath: string, name: string): Promise<void> {
+  SessionManager.open(filePath).appendSessionInfo(name);
+}
+
+// ─── Aggregate usage across sessions ───
+
+export interface ProjectSessionUsage {
+  sessionCount: number;
+  totalTokens: number;
+  totalCost: number;
+  totalMessages: number;
+}
+
+export function computeProjectUsage(sessions: SessionSummary[]): ProjectSessionUsage {
   let totalTokens = 0;
   let totalCost = 0;
   let totalMessages = 0;
@@ -369,8 +495,6 @@ export async function buildUsageSummary(projects: { id: string; name: string; pa
   let totalSessions = 0;
   const byModel = new Map<string, { tokens: number; cost: number; sessions: number }>();
 
-  // Iterate projects sequentially to avoid stampeding the index cache with
-  // N concurrent full parses on a cold start.
   for (const p of projects) {
     let sessions: SessionSummary[] = [];
     try {
@@ -378,8 +502,8 @@ export async function buildUsageSummary(projects: { id: string; name: string; pa
     } catch {
       sessions = [];
     }
-    const u = computeProjectUsage(sessions);
-    perProject.push({ id: p.id, name: p.name, path: p.path, ...u });
+    const u: ProjectSessionUsage = computeProjectUsage(sessions);
+    perProject.push({ id: p.id, name: p.name, path: p.path, sessionCount: u.sessionCount, totalTokens: u.totalTokens, totalCost: u.totalCost, totalMessages: u.totalMessages });
     totalTokens += u.totalTokens;
     totalCost += u.totalCost;
     totalSessions += u.sessionCount;

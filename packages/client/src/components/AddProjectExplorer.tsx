@@ -15,7 +15,7 @@ interface BrowseResult {
 }
 
 interface Props {
-  onAdd: (path: string, name: string) => void;
+  onAdd: (path: string, name: string, create?: boolean) => void;
   onCancel: () => void;
   initialPath?: string;
 }
@@ -103,43 +103,62 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
     if (trimmed) browse(trimmed, { select: true });
   }, [pathInput, browse]);
 
-  const handleSubmit = useCallback(async () => {
-    if (!selectedPath) return;
+  // Add the SELECTED existing directory. Never creates — fixes the bug where
+  // an existing folder was reported as "will create". Name is just the label.
+  const handleAddExisting = useCallback(() => {
+    if (isAdding || !selectedPath) return;
     setIsAdding(true);
-    const name = displayName.trim() || selectedName || "";
-    onAdd(selectedPath, name);
-  }, [selectedPath, displayName, selectedName, onAdd]);
+    onAdd(selectedPath, displayName.trim() || selectedName || "", false);
+  }, [isAdding, selectedPath, displayName, selectedName, onAdd]);
+
+  // Create a brand-new folder inside the current location, then add it. Joins
+  // with the server's native separator (inferred from currentPath) so the path
+  // is correct on any platform. Refuses names that already exist here.
+  const handleCreateNew = useCallback(() => {
+    if (isAdding) return;
+    const name = displayName.trim();
+    const exists = items.some(i => i.name.toLowerCase() === name.toLowerCase());
+    const valid = !!name && !!currentPath && !/[\\/]/.test(name) && name !== "." && name !== ".." && !exists;
+    if (!valid) return;
+    const sep = currentPath.includes("\\") ? "\\" : "/";
+    const target = currentPath.replace(/[\\/]+$/, "") + sep + name;
+    setIsAdding(true);
+    onAdd(target, name, true);
+  }, [isAdding, displayName, currentPath, items, onAdd]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    const listFocused = document.activeElement === listRef.current;
+    const pathFocused = document.activeElement?.id === "explorer-path-input";
     switch (e.key) {
       case "ArrowDown":
+        if (!listFocused) return;
         e.preventDefault();
         setFocusedIdx(i => Math.min(i + 1, items.length - 1));
         break;
       case "ArrowUp":
+        if (!listFocused) return;
         e.preventDefault();
         setFocusedIdx(i => Math.max(i - 1, 0));
         break;
       case "Enter":
-        e.preventDefault();
-        if (focusedIdx >= 0 && focusedIdx < items.length) {
-          handleSelect(items[focusedIdx]);
-        } else if (selectedPath) {
-          handleSubmit();
+        if (listFocused) {
+          e.preventDefault();
+          if (focusedIdx >= 0 && focusedIdx < items.length) handleSelect(items[focusedIdx]);
+        } else if (!pathFocused) {
+          // Enter from the name field adds the selected dir, or creates one.
+          e.preventDefault();
+          if (selectedPath) handleAddExisting(); else handleCreateNew();
         }
         break;
       case "Backspace":
-        if (document.activeElement === listRef.current && parentPath) {
-          e.preventDefault();
-          navigateTo(parentPath);
-        }
+        if (listFocused && parentPath) { e.preventDefault(); navigateTo(parentPath); }
         break;
       case "Escape":
         e.preventDefault();
         onCancel();
         break;
     }
-  }, [focusedIdx, items, handleSelect, handleSubmit, selectedPath, parentPath, navigateTo, onCancel]);
+  }, [focusedIdx, items, handleSelect, handleAddExisting, handleCreateNew, selectedPath, parentPath, navigateTo, onCancel]);
 
   useEffect(() => {
     if (focusedIdx >= 0 && listRef.current) {
@@ -148,7 +167,21 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
     }
   }, [focusedIdx]);
 
-  const canAdd = !!selectedPath && !isAdding;
+  const trimmedName = displayName.trim();
+  const nameIsValid = trimmedName.length > 0 && !/[\\/]/.test(trimmedName) && trimmedName !== "." && trimmedName !== "..";
+  const nameExists = items.some(i => i.name.toLowerCase() === trimmedName.toLowerCase());
+  const canCreate = !isAdding && nameIsValid && !!currentPath && !nameExists;
+  const canAddExisting = !isAdding && !!selectedPath;
+  const addLabel = isAdding
+    ? "Adding…"
+    : selectedPath
+      ? "Add Project"
+      : "Select a Directory";
+  const newFolderTitle = !trimmedName
+    ? "Type a folder name below, then create it here"
+    : nameExists
+      ? "A folder with this name already exists here"
+      : `Create “${trimmedName}” in ${currentPath}`;
 
   return (
     <div
@@ -165,7 +198,7 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
             </div>
             <div className="modal-title-wrap">
               <h2 className="modal-title">Add Project</h2>
-              <div className="modal-subtitle">Pick a directory to add as a project.</div>
+              <div className="modal-subtitle">Pick a directory to add, or create a new folder here.</div>
             </div>
             <button onClick={onCancel} className="modal-close explorer-iconbtn" aria-label="Close">
               <Icon name="close" size={14} />
@@ -185,6 +218,7 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
               <Icon name="chevron-left" size={14} />
             </button>
             <input
+              id="explorer-path-input"
               type="text"
               value={pathInput}
               onChange={e => setPathInput(e.target.value)}
@@ -206,6 +240,23 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
               <Icon name="chevron-right" size={14} />
             </button>
           </form>
+
+          {/* ── Toolbar: new-folder action + current location ─── */}
+          <div className="explorer-toolbar">
+            <span className="explorer-location" title={currentPath || ""}>
+              {currentPath || "—"}
+            </span>
+            <button
+              type="button"
+              onClick={handleCreateNew}
+              disabled={!canCreate}
+              className="explorer-newfolder-btn"
+              title={newFolderTitle}
+            >
+              <Icon name="folder" size={13} />
+              <span>New Folder</span>
+            </button>
+          </div>
 
           {/* ── File list (scrolls) ────────────────────────────── */}
           <div
@@ -270,7 +321,7 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
                 type="text"
                 value={displayName}
                 onChange={e => setDisplayName(e.target.value)}
-                placeholder={selectedName || "Folder name"}
+                placeholder={selectedName || "New folder name"}
                 className="modal-field explorer-name-input"
                 spellCheck={false}
                 autoCapitalize="off"
@@ -290,11 +341,11 @@ export function AddProjectExplorer({ onAdd, onCancel, initialPath }: Props) {
                 Cancel
               </button>
               <button
-                onClick={handleSubmit}
-                disabled={!canAdd}
+                onClick={handleAddExisting}
+                disabled={!canAddExisting}
                 className="modal-button modal-button--primary explorer-add"
               >
-                {isAdding ? "Adding…" : selectedPath ? "Add Project" : "Select a Directory"}
+                {addLabel}
               </button>
             </div>
           </div>

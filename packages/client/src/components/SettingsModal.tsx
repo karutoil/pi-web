@@ -7,6 +7,8 @@ import type { UsageSummary } from "@pi-web/shared";
 import { formatTokenCount } from "../lib/formatters";
 import { formatCost } from "../lib/utils";
 import { piWebStorage } from "../lib/piWebStorage";
+import { AUTH_ENABLED } from "../lib/auth";
+import { AccountSettings } from "./AccountSettings";
 
 
 // ─── PI Web settings ───
@@ -487,7 +489,7 @@ interface SettingsModalProps {
   projectId?: string;
 }
 
-type SettingsTab = "usage" | "pi-settings" | "pi-models" | "pi-web" | "project";
+type SettingsTab = "usage" | "pi-settings" | "pi-models" | "pi-web" | "project" | "account";
 
 
 export function SettingsModal({ onClose, onResetWorkspace, projectId }: SettingsModalProps) {
@@ -497,6 +499,7 @@ export function SettingsModal({ onClose, onResetWorkspace, projectId }: Settings
     { id: "pi-models", label: "PI Models" },
     { id: "pi-web", label: "PI Web" },
     ...(projectId ? [{ id: "project" as const, label: "Project" }] : []),
+    ...(AUTH_ENABLED ? [{ id: "account" as const, label: "Account" }] : []),
   ];
   const [activeTab, setActiveTab] = useState<SettingsTab>("usage");
 
@@ -1477,6 +1480,7 @@ export function SettingsModal({ onClose, onResetWorkspace, projectId }: Settings
             {activeTab === "pi-models" && renderPiModels()}
             {activeTab === "pi-web" && renderPiWeb()}
             {activeTab === "project" && renderProjectSettings()}
+            {activeTab === "account" && <AccountSettings />}
           </div>
           <div className="modal-footer mobile-safe-bottom">
             <button onClick={onClose} className="modal-button modal-button--primary">Done</button>

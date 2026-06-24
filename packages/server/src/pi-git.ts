@@ -73,7 +73,25 @@ export interface GitResult {
   stderr?: string;
 }
 
+// ponytail: Bun pumps the event loop while child_process.execFileSync waits, so
+// Bun.serve dispatches queued HTTP requests re-entrantly on the same stack
+// (native HTTP frames are hidden in JS traces → looks like spawnSync → app.fetch).
+// The client fires /api/git/status + one /api/git/diff-stats per changed file per
+// poll (GitPanel.refresh); when refreshes overlap the queue drains nested and
+// overflows the stack. Bound the nesting: bailed calls return empty (transient
+// 404/zero that self-corrects on the next poll). Sequential calls within one
+// request never nest, so legit usage is unaffected.
+// Ceiling: 128 nested git ops is far past any real concurrency yet ~1.5k frames,
+// well under the stack limit. Upgrade path: async Bun.spawn in the routes, or
+// fold per-file diff-stats into the /api/git/status response (kills the storm).
+const GIT_DEPTH_LIMIT = 128;
+let gitDepth = 0;
+
 function runGit(cwd: string, ...args: string[]): GitResult {
+  if (gitDepth >= GIT_DEPTH_LIMIT) {
+    return { ok: false, stdout: "", stderr: "git-reentrancy-guard" };
+  }
+  gitDepth++;
   try {
     const stdout = execFileSync("git", args, {
       cwd,
@@ -84,6 +102,8 @@ function runGit(cwd: string, ...args: string[]): GitResult {
     return { ok: true, stdout };
   } catch (e: any) {
     return { ok: false, stdout: "", stderr: e.stderr?.toString()?.trim() || e.message };
+  } finally {
+    gitDepth--;
   }
 }
 

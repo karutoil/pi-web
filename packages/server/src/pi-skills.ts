@@ -1,21 +1,23 @@
 import { Hono } from "hono";
 import { join, dirname, isAbsolute, relative } from "node:path";
 import { homedir, platform } from "node:os";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import {
+  getAgentDir,
+  loadSkills,
+  SettingsManager,
+  type Skill,
+} from "@earendil-works/pi-coding-agent";
 
 const HOME = homedir();
-const PI_SETTINGS_PATH = join(HOME, ".pi", "agent", "settings.json");
-const projectSettingsPath = (cwd: string) => join(cwd, ".pi", "settings.json");
+const AGENT_DIR = getAgentDir();
+const AGENT_SKILLS_DIR = join(AGENT_DIR, "skills");
+const PROJECT_SKILLS_REL = ".pi/skills";
 
 const REGISTRY_SEARCH_URL = "https://skills.sh/api/search";
 const SKILL_FETCH_TIMEOUT_MS = 15_000;
 const SKILLS_EXEC_TIMEOUT_MS = 120_000;
-
-interface PiSettings {
-  skills?: string[];
-  [key: string]: unknown;
-}
 
 interface InstalledSkill {
   id: string;
@@ -35,44 +37,13 @@ interface SearchResult {
   installs: number;
 }
 
-async function readSettings(path: string): Promise<PiSettings> {
-  try {
-    const raw = await readFile(path, "utf-8");
-    return JSON.parse(raw) as PiSettings;
-  } catch {
-    return {};
-  }
-}
-
-async function writeSettings(path: string, settings: PiSettings): Promise<void> {
-  const raw = JSON.stringify(settings, null, 2) + "\n";
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, raw, "utf-8");
-}
-
-function readPiSettings(): Promise<PiSettings> {
-  return readSettings(PI_SETTINGS_PATH);
-}
-
-function writePiSettings(settings: PiSettings): Promise<void> {
-  return writeSettings(PI_SETTINGS_PATH, settings);
-}
-
-function readProjectPiSettings(cwd: string): Promise<PiSettings> {
-  return readSettings(projectSettingsPath(cwd));
-}
-
-function writeProjectPiSettings(cwd: string, settings: PiSettings): Promise<void> {
-  return writeSettings(projectSettingsPath(cwd), settings);
-}
-
 function skillEntryName(name: string): string {
   return `skills/${name}/SKILL.md`;
 }
 
-function isSkillEnabled(settings: PiSettings, name: string): boolean {
+function isSkillEnabled(skillPaths: readonly string[], name: string): boolean {
   const entry = skillEntryName(name);
-  const found = (settings.skills || []).find((s) => s.replace(/^[+-]/, "") === entry);
+  const found = skillPaths.find((s) => s.replace(/^[+-]/, "") === entry);
   if (found) return found.startsWith("+");
   // Installed but not explicitly listed => PI auto-discovers and enables it
   return true;
@@ -119,144 +90,146 @@ async function runSkills(
   }
 }
 
-async function listInstalledSkills(
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function mapSkill(
+  scope: "global" | "project",
+  skill: Skill,
+  skillPaths: readonly string[],
+): InstalledSkill {
+  return {
+    id: `${scope}:${skill.name}`,
+    name: skill.name,
+    path: skill.baseDir,
+    scope,
+    agents: ["pi"],
+    enabled: isSkillEnabled(skillPaths, skill.name),
+    source: skill.sourceInfo.source,
+  };
+}
+
+function createManager(cwd: string): SettingsManager {
+  return SettingsManager.create(cwd, AGENT_DIR);
+}
+
+function listSkillPaths(manager: SettingsManager, scope: "global" | "project"): string[] {
+  return scope === "project"
+    ? manager.getProjectSettings().skills ?? []
+    : manager.getSkillPaths();
+}
+
+export async function listProjectSkills(
   scope: "global" | "project",
   cwd?: string | null,
 ): Promise<InstalledSkill[]> {
   if (scope === "project" && (!cwd || !isAbsolute(cwd))) return [];
-  const args = ["ls", "-a", "pi", "--json"];
-  if (scope === "global") args.push("-g");
-  const cwdPath = scope === "project" && cwd ? cwd : HOME;
-  const { ok, stdout, stderr } = await runSkills(args, cwdPath);
-  if (!ok) {
-    console.warn("[skills] failed to list skills:", stderr);
-    return [];
-  }
-  try {
-    const raw = JSON.parse(stdout);
-    if (!Array.isArray(raw)) return [];
-    const settings = await (scope === "global"
-      ? readPiSettings()
-      : readProjectPiSettings(cwd!));
-    return raw.map((item: any) => ({
-      id: `${scope}:${item.name}`,
-      name: item.name,
-      path: item.path,
-      scope: scope === "global" ? "global" : "project",
-      agents: item.agents || [],
-      enabled: isSkillEnabled(settings, item.name),
-      source: item.source,
-    }));
-  } catch (e) {
-    console.warn("[skills] failed to parse skill list:", e);
-    return [];
-  }
+  const cwdPath = scope === "project" ? cwd! : HOME;
+  const manager = createManager(cwdPath);
+  const skillPaths = listSkillPaths(manager, scope);
+  const { skills } = loadSkills({ cwd: cwdPath, agentDir: AGENT_DIR, skillPaths, includeDefaults: true });
+
+  return skills
+    .filter((skill) =>
+      scope === "global"
+        ? skill.sourceInfo.scope === "user"
+        : skill.sourceInfo.scope === "project",
+    )
+    .map((skill) => mapSkill(scope, skill, skillPaths));
 }
 
-async function searchSkills(query: string): Promise<SearchResult[]> {
+export async function searchSkills(query: string): Promise<SearchResult[]> {
   const url = `${REGISTRY_SEARCH_URL}?${new URLSearchParams({ q: query.trim() || "" })}`;
   const res = await fetch(url, {
     headers: { accept: "application/json" },
     signal: AbortSignal.timeout(SKILL_FETCH_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`skills.sh search failed (${res.status})`);
-  const data = (await res.json()) as { skills?: any[] };
+  const data = (await res.json()) as { skills?: Array<Record<string, unknown>> };
   return (data.skills || []).map((s) => ({
-    id: s.id,
-    skillId: s.skillId,
-    name: s.name,
-    source: s.source,
+    id: String(s.id ?? ""),
+    skillId: String(s.skillId ?? ""),
+    name: String(s.name ?? ""),
+    source: String(s.source ?? ""),
     installs: typeof s.installs === "number" ? s.installs : 0,
   }));
 }
 
-async function installSkill(
+export async function installSkill(
   source: string,
   skillId: string,
   scope: "global" | "project",
   cwd?: string | null,
 ): Promise<void> {
+  const cwdPath = scope === "project" && cwd ? cwd : HOME;
   const args = ["add", source, "--skill", skillId, "--agent", "pi", "-y"];
   args.push(scope === "global" ? "-g" : "--copy");
-  const cwdPath = scope === "project" && cwd ? cwd : HOME;
   const { ok, stderr } = await runSkills(args, cwdPath);
   if (!ok) throw new Error(stderr.trim() || "Installation failed");
 
   // Enable the skill in PI settings so new PI sessions pick it up
-  if (scope === "global") {
-    const settings = await readPiSettings();
-    const entry = skillEntryName(skillId);
-    const skills = settings.skills || [];
-    if (!skills.some((s) => s.replace(/^[+-]/, "") === entry)) {
-      settings.skills = [...skills, `+${entry}`];
-      await writePiSettings(settings);
+  const manager = createManager(cwdPath);
+  const entry = skillEntryName(skillId);
+  const paths = listSkillPaths(manager, scope);
+  if (!paths.some((s) => s.replace(/^[+-]/, "") === entry)) {
+    paths.push(`+${entry}`);
+    if (scope === "project") {
+      manager.setProjectSkillPaths(paths);
+    } else {
+      manager.setSkillPaths(paths);
     }
-  } else if (cwd) {
-    const settings = await readProjectPiSettings(cwd);
-    const entry = skillEntryName(skillId);
-    const skills = settings.skills || [];
-    if (!skills.some((s) => s.replace(/^[+-]/, "") === entry)) {
-      settings.skills = [...skills, `+${entry}`];
-      await writeProjectPiSettings(cwd, settings);
-    }
+    await manager.flush();
   }
 }
 
-async function uninstallSkill(
+export async function uninstallSkill(
   name: string,
   scope: "global" | "project",
   cwd?: string | null,
 ): Promise<void> {
+  const cwdPath = scope === "project" && cwd ? cwd : HOME;
   const args = ["remove", name, "--agent", "pi", "-y"];
   if (scope === "global") args.push("-g");
-  const cwdPath = scope === "project" && cwd ? cwd : HOME;
   const { ok, stderr } = await runSkills(args, cwdPath);
   if (!ok) throw new Error(stderr.trim() || "Remove failed");
 
   // Clean up the PI settings entry
-  if (scope === "global") {
-    const settings = await readPiSettings();
-    const entry = skillEntryName(name);
-    settings.skills = (settings.skills || []).filter((s) => s.replace(/^[+-]/, "") !== entry);
-    await writePiSettings(settings);
-  } else if (cwd) {
-    const settings = await readProjectPiSettings(cwd);
-    const entry = skillEntryName(name);
-    settings.skills = (settings.skills || []).filter((s) => s.replace(/^[+-]/, "") !== entry);
-    await writeProjectPiSettings(cwd, settings);
+  const manager = createManager(cwdPath);
+  const entry = skillEntryName(name);
+  const paths = listSkillPaths(manager, scope).filter(
+    (s) => s.replace(/^[+-]/, "") !== entry,
+  );
+  if (scope === "project") {
+    manager.setProjectSkillPaths(paths);
+  } else {
+    manager.setSkillPaths(paths);
   }
+  await manager.flush();
 }
 
-async function toggleSkill(
+export async function toggleSkill(
   name: string,
   enabled: boolean,
   scope: "global" | "project",
   cwd?: string | null,
 ): Promise<void> {
+  const cwdPath = scope === "project" && cwd ? cwd : HOME;
   const entry = skillEntryName(name);
-  if (scope === "global") {
-    const settings = await readPiSettings();
-    const skills = settings.skills || [];
-    const idx = skills.findIndex((s) => s.replace(/^[+-]/, "") === entry);
-    if (idx >= 0) {
-      skills[idx] = enabled ? `+${entry}` : `-${entry}`;
-    } else {
-      skills.push(enabled ? `+${entry}` : `-${entry}`);
-    }
-    settings.skills = skills;
-    await writePiSettings(settings);
-  } else if (cwd) {
-    const settings = await readProjectPiSettings(cwd);
-    const skills = settings.skills || [];
-    const idx = skills.findIndex((s) => s.replace(/^[+-]/, "") === entry);
-    if (idx >= 0) {
-      skills[idx] = enabled ? `+${entry}` : `-${entry}`;
-    } else {
-      skills.push(enabled ? `+${entry}` : `-${entry}`);
-    }
-    settings.skills = skills;
-    await writeProjectPiSettings(cwd, settings);
+  const manager = createManager(cwdPath);
+  const paths = listSkillPaths(manager, scope);
+  const idx = paths.findIndex((s) => s.replace(/^[+-]/, "") === entry);
+  if (idx >= 0) {
+    paths[idx] = enabled ? `+${entry}` : `-${entry}`;
+  } else {
+    paths.push(enabled ? `+${entry}` : `-${entry}`);
   }
+  if (scope === "project") {
+    manager.setProjectSkillPaths(paths);
+  } else {
+    manager.setSkillPaths(paths);
+  }
+  await manager.flush();
 }
 
 function safeInside(child: string, parent: string): boolean {
@@ -268,8 +241,12 @@ function safeInside(child: string, parent: string): boolean {
 
 function isSafeSkillPath(input: string, projectCwd?: string | null): boolean {
   if (!isAbsolute(input)) return false;
-  const allowedRoots = [join(HOME, ".pi", "agent", "skills"), join(HOME, ".agents", "skills")];
-  if (projectCwd) allowedRoots.push(join(projectCwd, ".pi", "skills"), join(projectCwd, ".agents", "skills"));
+  const allowedRoots = [AGENT_SKILLS_DIR];
+  if (projectCwd) {
+    allowedRoots.push(join(projectCwd, PROJECT_SKILLS_REL));
+    // ponytail: historical alias used by some installs; kept for compatibility.
+    allowedRoots.push(join(projectCwd, ".agents", "skills"));
+  }
   return allowedRoots.some((root) => safeInside(input, root));
 }
 
@@ -293,14 +270,14 @@ export function createSkillsRoutes() {
   app.get("/", async (c) => {
     const cwd = c.req.query("cwd");
     try {
-      const globalSkills = await listInstalledSkills("global");
+      const globalSkills = await listProjectSkills("global");
       const projectSkills =
         cwd && isAbsolute(cwd) && existsSync(cwd)
-          ? await listInstalledSkills("project", cwd)
+          ? await listProjectSkills("project", cwd)
           : [];
       return c.json({ skills: [...globalSkills, ...projectSkills] });
-    } catch (e: any) {
-      return c.json({ error: e.message || "Failed to list skills" }, 500);
+    } catch (e) {
+      return c.json({ error: errorMessage(e) || "Failed to list skills" }, 500);
     }
   });
 
@@ -309,8 +286,8 @@ export function createSkillsRoutes() {
     try {
       const results = await searchSkills(q);
       return c.json({ skills: results });
-    } catch (e: any) {
-      return c.json({ error: e.message || "Search failed" }, 500);
+    } catch (e) {
+      return c.json({ error: errorMessage(e) || "Search failed" }, 500);
     }
   });
 
@@ -336,9 +313,9 @@ export function createSkillsRoutes() {
     try {
       await installSkill(body.source, body.skillId, scope, projectCwd);
       return c.json({ success: true, restartRequired: true });
-    } catch (e: any) {
+    } catch (e) {
       console.warn("[skills] install failed:", e);
-      return c.json({ error: e.message || "Install failed" }, 500);
+      return c.json({ error: errorMessage(e) || "Install failed" }, 500);
     }
   });
 
@@ -361,9 +338,9 @@ export function createSkillsRoutes() {
     try {
       await uninstallSkill(body.name, scope, projectCwd);
       return c.json({ success: true, restartRequired: true });
-    } catch (e: any) {
+    } catch (e) {
       console.warn("[skills] uninstall failed:", e);
-      return c.json({ error: e.message || "Uninstall failed" }, 500);
+      return c.json({ error: errorMessage(e) || "Uninstall failed" }, 500);
     }
   });
 
@@ -386,9 +363,9 @@ export function createSkillsRoutes() {
     try {
       await toggleSkill(name, body.enabled, scope, projectCwd);
       return c.json({ success: true, restartRequired: true });
-    } catch (e: any) {
+    } catch (e) {
       console.warn("[skills] toggle failed:", e);
-      return c.json({ error: e.message || "Toggle failed" }, 500);
+      return c.json({ error: errorMessage(e) || "Toggle failed" }, 500);
     }
   });
 
@@ -404,7 +381,7 @@ export function createSkillsRoutes() {
     try {
       let content: string | null = null;
       let resolvedPath: string | undefined;
-      let error: string | undefined;
+      let skillError: string | undefined;
       const name = typeof c.req.query("name") === "string" ? c.req.query("name")! : skillIdParam || "";
 
       if (pathParam) {
@@ -416,17 +393,17 @@ export function createSkillsRoutes() {
           content = await readFile(skillFile, "utf-8");
           resolvedPath = pathParam;
         } catch {
-          error = "SKILL.md not found";
+          skillError = "SKILL.md not found";
         }
       }
 
       if (!content && source && skillIdParam) {
         content = await fetchRemoteSkill(source, skillIdParam);
-        if (!content) error = error || "Could not fetch SKILL.md";
+        if (!content) skillError = skillError || "Could not fetch SKILL.md";
       }
 
       if (!content) {
-        return c.json({ error: error || "Skill detail not found" }, 404);
+        return c.json({ error: skillError || "Skill detail not found" }, 404);
       }
 
       return c.json({
@@ -436,9 +413,9 @@ export function createSkillsRoutes() {
         path: resolvedPath,
         content,
       });
-    } catch (e: any) {
+    } catch (e) {
       console.warn("[skills] detail failed:", e);
-      return c.json({ error: e.message || "Failed to load skill detail" }, 500);
+      return c.json({ error: errorMessage(e) || "Failed to load skill detail" }, 500);
     }
   });
 

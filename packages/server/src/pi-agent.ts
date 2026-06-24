@@ -7,6 +7,7 @@ import {
 	AuthStorage,
 	ModelRegistry,
 	SessionManager,
+	Theme,
 	createAgentSessionServices,
 	createAgentSessionFromServices,
 	createAgentSessionRuntime,
@@ -17,7 +18,7 @@ import {
 	type AgentSessionRuntime,
 	type CreateAgentSessionRuntimeFactory,
 	type ExtensionUIContext,
-	type Theme,
+	type ThemeColor,
 } from "@earendil-works/pi-coding-agent";
 
 // ─── Pooled Agent ───
@@ -44,24 +45,81 @@ const STALE_STREAMING_MS = Math.max(1000, (parseInt(process.env.PI_WEB_STALE_STR
 // the per-agent timer is cheap; STALE_STREAMING_MS is what bounds recovery.
 const WATCHDOG_TICK_MS = 60 * 1000; // 1 minute
 
-// The in-process SDK path skips the CLI's initTheme(), so the SDK's theme
-// singleton is never seeded and tool renderers crash on `theme.fg(...)` with
-// "undefined is not an object (evaluating 'theme.fg')". Lazily seed the default
-// theme once; extensions read it back via the SDK's own global symbol (the
-// mechanism it uses to share the theme across module loaders).
-const THEME_GLOBAL = Symbol.for("@earendil-works/pi-coding-agent:theme");
+// The CLI normally seeds the SDK theme via initTheme(). In the headless server
+// there is no CLI, so tool renderers that call `ui.theme.fg(...)` would crash
+// on an uninitialized theme. Use a minimal fallback Theme instance. The SDK
+// exposes `Theme` and `initTheme()` but not a clean theme getter from the main
+// package, so we construct the instance directly.
 let headlessTheme: Theme | undefined;
 function getHeadlessTheme(): Theme {
   if (!headlessTheme) {
     initTheme();
-    headlessTheme = (globalThis as any)[THEME_GLOBAL] as Theme;
+    headlessTheme = new Theme(FALLBACK_THEME_FG, FALLBACK_THEME_BG, "truecolor");
   }
   return headlessTheme;
 }
 
+const gray = "#9ca3af";
+const FALLBACK_THEME_FG: Record<ThemeColor, string | number> = {
+  accent: "#3b82f6",
+  border: "#52525b",
+  borderAccent: "#3b82f6",
+  borderMuted: "#3f3f46",
+  success: "#22c55e",
+  error: "#ef4444",
+  warning: "#f59e0b",
+  muted: gray,
+  dim: "#71717a",
+  text: "#e4e4e7",
+  thinkingText: "#a1a1aa",
+  userMessageText: "#e4e4e7",
+  customMessageText: "#e4e4e7",
+  customMessageLabel: "#3b82f6",
+  toolTitle: "#e4e4e7",
+  toolOutput: "#d4d4d8",
+  mdHeading: "#f4f4f5",
+  mdLink: "#60a5fa",
+  mdLinkUrl: "#93c5fd",
+  mdCode: "#f4f4f5",
+  mdCodeBlock: "#27272a",
+  mdCodeBlockBorder: "#3f3f46",
+  mdQuote: "#a1a1aa",
+  mdQuoteBorder: "#52525b",
+  mdHr: "#52525b",
+  mdListBullet: "#d4d4d8",
+  toolDiffAdded: "#22c55e",
+  toolDiffRemoved: "#ef4444",
+  toolDiffContext: "#71717a",
+  syntaxComment: "#71717a",
+  syntaxKeyword: "#c084fc",
+  syntaxFunction: "#60a5fa",
+  syntaxVariable: "#e4e4e7",
+  syntaxString: "#a3e635",
+  syntaxNumber: "#fbbf24",
+  syntaxType: "#22d3ee",
+  syntaxOperator: "#e4e4e7",
+  syntaxPunctuation: "#a1a1aa",
+  thinkingOff: gray,
+  thinkingMinimal: "#d4d4d8",
+  thinkingLow: "#93c5fd",
+  thinkingMedium: "#60a5fa",
+  thinkingHigh: "#3b82f6",
+  thinkingXhigh: "#2563eb",
+  bashMode: "#f59e0b",
+};
+const FALLBACK_THEME_BG = {
+  selectedBg: "#27272a",
+  userMessageBg: "#18181b",
+  customMessageBg: "#18181b",
+  toolPendingBg: "#27272a",
+  toolSuccessBg: "#052e16",
+  toolErrorBg: "#450a0a",
+};
+
 export interface IPIAgent {
   setHandler(handler: (msg: WSServerMessage) => void): void;
   setExitHandler(handler: (code: number | null) => void): void;
+  setRebindHandler?(handler: (sessionFile: string) => boolean): void;
   start(): Promise<void>;
   stop(): Promise<void>;
   getOptions(): PIAgentOptions;
@@ -84,11 +142,6 @@ export interface LiveSessionSnapshot {
   isCompacting: boolean;
   clientCount: number;
   lastActivityAt: number;
-  // #LIVE: for a pending new session that hasn't resolved its sessionFile yet,
-  // the server-side /live-sessions restore reattaches by newSessionId (reverse
-  // lookup) instead of sessionPath. `pending` marks these boot-only snapshots.
-  newSessionId?: string | null;
-  pending?: boolean;
 }
 
 export class PooledAgent {
@@ -104,12 +157,6 @@ export class PooledAgent {
   // #LIVE: how long an active run with no activity + no clients is tolerated.
   private staleStreamingMs: number;
   private isPendingNewSession: boolean;
-  // #CLONE: after a clone, PI rebinds to a new forked session file ASYNC and
-  // never notifies us of the new path. We poll get_state and rekey to whatever
-  // new sessionFile comes back. Cleared on first rekey or after the poll budget
-  // runs out. (SDK: switchSession/fork resolve the new path synchronously, so
-  // this stays as a safety net for the state-driven rekey path.)
-  private isPendingCloneRekey: boolean = false;
   // #LIVE: the last *blocking* extension_ui_request (select/confirm/input/editor)
   // that PI is waiting on. Replayed to a reconnecting client on attach so a
   // disconnect mid-dialog can't wedge PI forever.
@@ -117,16 +164,13 @@ export class PooledAgent {
   // #LIVE: watchdog timer. While an agent is active we keep this ticking; if it
   // goes stale (no activity, no clients) the watchdog force-stops the run.
   private watchdogTimer: Timer | null = null;
-  // #REATTACH: the newSessionId this agent was created with (for pending new
-  // sessions). After the session resolves and the agent is rekeyed to its real
-  // sessionFile, a client that reconnects with the ORIGINAL newSessionId (its WS
-  // dropped before it processed the rekey) must still reattach to THIS agent
-  // instead of spawning a duplicate. See getOrCreateAgent's reverse lookup.
-  // Non-readonly so it can be cleared once the agent switches to a different
-  // session (session_loaded from switch_session/clone) — at that point the
-  // original newSessionId is stale and a reverse-lookup reattach would land
-  // on the WRONG session. See handleAgentMessage's session_loaded branch.
-  originalNewSessionId: string | null;
+  // Boot guard: while agent.start() is in-flight, queue client commands instead
+  // of letting doSend() answer "Agent not ready" (which surfaced as spurious
+  // error toasts during the startup window). Flushed in start() once the
+  // session/runtime exist, so the bootstrap reads (get_state/get_models/...)
+  // arrive answered with real data instead of erroring out.
+  private booting = true;
+  private bootQueue: unknown[] = [];
   /** Get the current pool key for this agent. */
   getKey(): string {
     return this.agentKey;
@@ -153,14 +197,24 @@ export class PooledAgent {
     this.idleTimeoutMs = idleTimeoutMs;
     this.staleStreamingMs = staleStreamingMs;
     this.isPendingNewSession = !options.sessionPath;
-    // Extract the newSessionId from a pending `__new__:<uuid>` key (if any) so a
-    // stale-newSessionId reconnect can reattach after rekey (#REATTACH).
-    this.originalNewSessionId = this.isPendingNewSession ? extractNewSessionId(agentKey) : null;
     this.createAgent = createAgent;
     this.agent = createAgent(options);
 
     // Forward agent messages to clients and track activity for keepalive
     this.agent.setHandler((msg) => this.handleAgentMessage(msg));
+
+    // Register the SDK runtime replacement callback so fork/clone/new/switch
+    // rekey the pool synchronously inside the SDK transaction. The SDK provides
+    // no public listener, so the underlying agent invokes this callback after
+    // it binds to the replacement session.
+    this.agent.setRebindHandler?.((sessionFile) => {
+      const cwd = agentKeyCwd(this.agentKey);
+      if (!cwd) return true;
+      const ok = this.rekeyToSessionPath(cwd, sessionFile);
+      if (ok && this.isPendingNewSession) this.isPendingNewSession = false;
+      projectSessionsChangedHandler?.(cwd);
+      return ok;
+    });
 
     // Handle unexpected agent failure
     this.agent.setExitHandler((code) => {
@@ -176,7 +230,6 @@ export class PooledAgent {
       this.closeClients();
       // #LIVE: drop any orphaned dialog + stop the watchdog — the agent is gone.
       this.pendingDialog = null;
-      this.isPendingCloneRekey = false;
       this.cancelWatchdog();
       // #REKEY-EXIT: delete by the CURRENT key (this.agentKey), not the closure
       // `agentKey` captured at construction. A new-session agent is rekeyed
@@ -198,6 +251,14 @@ export class PooledAgent {
 
   async start(): Promise<void> {
     await this.agent.start();
+    // Boot complete — flush commands queued during startup so they're answered
+    // with real data (state/models/commands/stats/messages) instead of the
+    // "Agent not ready" error. Order preserved. Not flushed if start() threw
+    // (the pool entry is discarded by the caller, so the queue dies with it).
+    this.booting = false;
+    const queued = this.bootQueue;
+    this.bootQueue = [];
+    for (const m of queued) this.agent.doSend(m);
     this.startWatchdog();
     // Send initial state to any already-attached clients
     setTimeout(() => this.agent.getState(), 300);
@@ -207,8 +268,10 @@ export class PooledAgent {
   attach(ws: ServerWebSocket) {
     this.clients.add(ws);
     this.cancelIdleTimer();
-    // Send current state to the newly attached client
-    setTimeout(() => this.agent.getState(), 100);
+    // Send current state to the newly attached client — but NOT while booting:
+    // start() pushes get_state to all clients once ready, and a pre-boot probe
+    // here would only answer "Agent not ready".
+    if (!this.booting) setTimeout(() => this.agent.getState(), 100);
     // #LIVE: replay any blocking dialog PI is still waiting on. Without this,
     // a refresh while a modal is open leaves PI blocked forever — the dialog
     // was broadcast to the now-gone client and never re-delivered (the
@@ -229,42 +292,17 @@ export class PooledAgent {
   get clientCount() { return this.clients.size; }
 
   /** Snapshot this agent's session identity + liveness for the recovery
-   * endpoint. For a pending new session (no sessionFile yet) we still surface a
-   * `pending` snapshot carrying newSessionId so the server-side restore can
-   * reattach to the booting agent via getOrCreateAgent's reverse lookup. */
+   * endpoint. The SDK now resolves the sessionFile synchronously inside its
+   * replacement transaction, so the pool is always keyed at the canonical path
+   * and no boot-time pending snapshot is needed. */
   getLiveSnapshot(): LiveSessionSnapshot | null {
     const snap = this.agent.getLiveSnapshot();
-    if (!snap) {
-      if (this.isPendingNewSession && this.originalNewSessionId) {
-        return {
-          sessionPath: "",
-          sessionId: "",
-          sessionName: null,
-          isStreaming: this.streaming,
-          isCompacting: false,
-          clientCount: this.clients.size,
-          lastActivityAt: this.lastActivityAt,
-          newSessionId: this.originalNewSessionId,
-          pending: true,
-        };
-      }
-      return null;
-    }
+    if (!snap) return null;
     snap.clientCount = this.clients.size;
     snap.lastActivityAt = this.lastActivityAt;
     // Reflect the pool's authoritative streaming flag (it tracks agent_start/end
     // and tool activity, which may differ from the SDK's momentary read).
     snap.isStreaming = this.streaming || snap.isStreaming;
-    // #SDK-MIGRATION: the SDK allocates sessionFile synchronously in start(),
-    // but the pool key stays `__new__:<uuid>` until the first state/session_loaded
-    // rekey lands (~300ms). In that window a /live-sessions client reconnecting
-    // by sessionPath would miss the `__new__` key and spawn a duplicate. Surface
-    // newSessionId+pending so the client reattaches via the reverse lookup
-    // (getOrCreateAgent's originalNewSessionId scan) instead.
-    if (this.isPendingNewSession && this.originalNewSessionId) {
-      snap.newSessionId = this.originalNewSessionId;
-      snap.pending = true;
-    }
     return snap;
   }
 
@@ -277,6 +315,8 @@ export class PooledAgent {
       const dlg = this.pendingDialog as any;
       if (dlg && dlg?.ui?.id === id) this.pendingDialog = null;
     }
+    // Queue while the agent is still booting — flushed in start() once ready.
+    if (this.booting) { this.bootQueue.push(msg); return; }
     this.agent.doSend(msg);
   }
 
@@ -344,6 +384,7 @@ export class PooledAgent {
     this.cancelIdleTimer();
     this.cancelWatchdog();
     this.pendingDialog = null;
+    this.bootQueue.length = 0;
     // E8: bound the stop so a hung runtime.dispose() (stuck I/O) can't leave the
     // SDK session lingering in memory indefinitely. The pool entry is deleted
     // regardless after the race.
@@ -413,54 +454,22 @@ export class PooledAgent {
     if (cwd) {
       if (msg.type === "state") {
         const sessionFile = (msg as any).data?.sessionFile;
+        // Fallback: if the initial lifecycle rekey didn't fire (e.g. the
+        // underlying agent did its own startup path), a state event carrying the
+        // real sessionFile still rekeys the pending `__new__` entry.
         if (this.isPendingNewSession && sessionFile) {
-          // M1: only clear isPendingNewSession on a SUCCESSFUL rekey — if the
-          // target key is occupied (rekeyAgent refused), keep the flag so a
-          // later state event retries instead of stranding the agent at
-          // __new__ forever (undiscoverable by sessionPath reconnect).
-          if (this.rekeyToSessionPath(cwd, sessionFile)) {
-            this.isPendingNewSession = false;
-            projectSessionsChangedHandler?.(cwd);
-          }
-        } else if (this.isPendingCloneRekey) {
-          // #CLONE: SDK rebinding to the forked session reports it via get_state.
-          // Rekey to the NEW path the moment it differs from our current key so a
-          // reconnect lands on THIS agent. Only clear the flag on success (M1).
-          const currentPath = agentKeySessionPath(this.agentKey);
-          if (sessionFile && sessionFile !== currentPath) {
-            if (this.rekeyToSessionPath(cwd, sessionFile)) {
-              this.isPendingCloneRekey = false;
-              projectSessionsChangedHandler?.(cwd);
-            }
-          }
+          if (this.rekeyToSessionPath(cwd, sessionFile)) this.isPendingNewSession = false;
         }
       } else if (msg.type === "session_loaded") {
         // #REATTACH: switch_session / load_session switch the runtime to a
-        // DIFFERENT session in-place (used by the clone flow). The client
-        // rekeys its pool entry to the loaded filePath (App.handleSessionLoaded),
-        // so the SERVER must rekey too — otherwise the keys desync and a
-        // reconnect spawns a fresh agent, orphaning this in-process-switched
-        // runtime (and running two agents on the cloned session file -> corruption).
+        // DIFFERENT session in-place. The client rekeys its pool entry to the
+        // loaded filePath, so the SERVER must rekey too — otherwise the keys
+        // desync and a reconnect spawns a fresh agent, orphaning this
+        // in-process-switched runtime (and running two agents on the cloned
+        // session file -> corruption).
         const loadedPath = (msg as any).session?.filePath;
         if (loadedPath) this.rekeyToSessionPath(cwd, loadedPath);
-        // #SDK-MIGRATION (M2+H6 interaction): new_session ALSO emits
-        // session_loaded (M2, for deterministic rekey), and it fires while
-        // isPendingNewSession is still true. Clearing originalNewSessionId here
-        // would break the #REATTACH reverse-lookup for a WS that drops during
-        // the new-session resolution window — orphaning the live agent and
-        // spawning a duplicate. Only invalidate the new-session token for an
-        // EXPLICIT switch away (load/switch/clone/fork), which arrives AFTER
-        // the new session has resolved (isPendingNewSession == false, cleared
-        // by the `state` branch above).
-        if (!this.isPendingNewSession) this.originalNewSessionId = null;
         projectSessionsChangedHandler?.(cwd);
-      } else if (msg.type === "clone_result") {
-        // #CLONE: clone forks to a new session file; the SDK resolves it but
-        // we still arm the poll as a safety net in case the state-driven
-        // rekey hasn't landed yet.
-        // ponytail: !cancelled gates it (a failed clone just polls harmlessly; the
-        // state branch's sessionFile!==currentPath guard blocks any spurious rekey).
-        if (!(msg as any).cancelled) this.rekeyAfterClone();
       } else if (msg.type === "session_name_changed" || msg.type === "agent_end") {
         projectSessionsChangedHandler?.(cwd);
       }
@@ -495,31 +504,6 @@ export class PooledAgent {
     return false;
   }
 
-  /**
-   * #CLONE: after a successful clone, the SDK asynchronously rebinds to the
-   * forked session file. The state-driven rekey path (isPendingCloneRekey)
-   * catches it when get_state reports the new path; this method arms the flag
-   * and drives a few get_state polls in case the client never asks for state.
-   * Bounded: stops after a few attempts so a stuck session can't loop us.
-   */
-  private rekeyAfterClone() {
-    if (this.isPendingCloneRekey) return;
-    this.isPendingCloneRekey = true;
-    // The SDK's rebind may land between events — retry a few times with short
-    // delays until the forked path lands in state.
-    let attempts = 0;
-    const poll = () => {
-      if (!this.isPendingCloneRekey || attempts++ >= 10) {
-        this.isPendingCloneRekey = false;
-        return;
-      }
-      this.agent.getState();
-      // Re-check shortly; if the state handler rekeyed it cleared the flag and
-      // we stop. Otherwise try again.
-      setTimeout(poll, 400);
-    };
-    setTimeout(poll, 200);
-  }
   private noteActivity(msg: WSServerMessage) {
     this.lastActivityAt = Date.now();
     if (msg.type === "agent_start") {
@@ -612,6 +596,7 @@ export class PooledAgent {
   async forceStopAndRemove() {
     this.cancelWatchdog();
     this.cancelIdleTimer();
+    this.bootQueue.length = 0;
     // #LIVE: delete the pool entry BEFORE awaiting agent.stop() so a client
     // that reconnects during the (I/O-yielding) dispose can't attach to this
     // dying agent and then get kicked by the exit handler — losing the live
@@ -653,15 +638,6 @@ export function setProjectSessionsChangedHandler(handler: (cwd: string) => void 
 function agentKeyCwd(key: string): string | null {
   const parts = key.split("::");
   return parts[0] || null;
-}
-// #CLONE: the sessionPath half of a pool key (everything after the first `::`).
-// Used to detect when a post-clone get_state reports a DIFFERENT path than the
-// one we're keyed under, so we can rekey to the forked session.
-function agentKeySessionPath(key: string): string | null {
-  const idx = key.indexOf("::");
-  if (idx < 0) return null;
-  const rest = key.slice(idx + 2);
-  return rest.startsWith("__new__") ? null : rest;
 }
 
 export function broadcastToProjectClients(cwd: string, msg: WSServerMessage) {
@@ -715,8 +691,9 @@ export function sweepPool() {
  * Build the pool key for a (cwd, sessionPath) pair.
  * ponytail: pending-new-session keys embed newSessionId so two concurrent
  * new sessions in the same project don't collapse onto one `__new__` agent.
- * On resolution the agent is rekeyed to the real sessionFile path (see
- * handleAgentMessage).
+ * The SDK resolves the real sessionFile synchronously and rekeys the agent
+ * during start / runtime replacement via the `setRebindSession` hook, so the
+ * pending-key window is short.
  * #REATTACH: sessionPath is normalized (trailing slash / `//` / `./` collapsed)
  * so a client that reconnects with a path-equivalent string reattaches to the
  * SAME agent instead of spawning a duplicate that orphans the live one.
@@ -741,16 +718,6 @@ function normalizeSessionPath(p: string): string {
   try { return realpathSync(n); } catch { return n; }
 }
 
-/** Pull the <uuid> out of a pending `__new__:<uuid>` key (or null).
- * Uses lastIndexOf so a cwd that itself contains `__new__:` (unusual but valid
- * on POSIX) can't corrupt the extracted id and break the #REATTACH reverse
- * lookup (which would then spawn a duplicate on a stale-newSessionId reconnect). */
-function extractNewSessionId(key: string): string | null {
-  const i = key.lastIndexOf("__new__:");
-  return i === -1 ? null : key.slice(i + "__new__:".length);
-}
-
-
 export function getOrCreateAgent(
   cwd: string,
   sessionPath: string | null,
@@ -766,20 +733,6 @@ export function getOrCreateAgent(
   if (existing) {
     console.log(`[pool] reusing existing agent ${key} (${existing.clientCount} clients)`);
     return { agent: existing, isNew: false };
-  }
-
-  // #REATTACH: a pending new session may have already resolved and been rekeyed
-  // from `__new__:<uuid>` to its real sessionFile. A client whose WS dropped
-  // before it processed the rekey will reconnect with the ORIGINAL newSessionId;
-  // without this reverse lookup it would spawn a 2nd agent and orphan the live
-  // one. Scan is O(pool size) — small, and only hit on the rare stale reconnect.
-  if (!sessionPath && newSessionId) {
-    for (const a of agentPool.values()) {
-      if (a.originalNewSessionId === newSessionId) {
-        console.log(`[pool] reattaching to rekeyed agent by newSessionId=${newSessionId} -> ${a.getKey()}`);
-        return { agent: a, isNew: false };
-      }
-    }
   }
 
   console.log(`[pool] creating new agent ${key}`);
@@ -876,8 +829,8 @@ export async function stopAllAgents() {
   await Promise.all(promises);
 }
 
-// ponytail: test-only escape hatch so the pool's module-level state can be
-// reset between tests. Not for production use.
+// ponytail: test-only escape hatch so the pool's state can be reset between
+// tests. Not for production use.
 export function _resetPoolForTesting() {
   for (const a of agentPool.values()) { try { a.closeClients(); } catch {} }
   agentPool.clear();
@@ -903,9 +856,9 @@ export interface PIAgentOptions {
 // replay-on-reconnect (see PooledAgent.pendingDialog).
 const BLOCKING_DIALOG_METHODS = new Set(["select", "confirm", "input", "editor"]);
 
-// ponytail: one shared AuthStorage/ModelRegistry/SettingsManager for the whole
-// process — credentials and custom models live in ~/.pi/agent. SDK reads the
-// same files the CLI does, so behavior is identical to `pi --mode rpc`.
+// ponytail: one shared AuthStorage/ModelRegistry for the whole process —
+// credentials and custom models live in ~/.pi/agent. SDK reads the same files
+// the CLI does, so behavior is identical to `pi --mode rpc`.
 let sharedAuthStorage: ReturnType<typeof AuthStorage.create> | null = null;
 let sharedModelRegistry: ModelRegistry | null = null;
 function getSharedAuth() {
@@ -913,7 +866,10 @@ function getSharedAuth() {
   return sharedAuthStorage;
 }
 function getSharedModelRegistry() {
-  if (!sharedModelRegistry) sharedModelRegistry = ModelRegistry.create(getSharedAuth());
+  if (!sharedModelRegistry) {
+    sharedModelRegistry = ModelRegistry.create(getSharedAuth());
+    sharedModelRegistry.refresh();
+  }
   return sharedModelRegistry;
 }
 
@@ -923,6 +879,7 @@ export class SDKAgent implements IPIAgent {
   private runtime: AgentSessionRuntime | null = null;
   private session: AgentSession | null = null;
   private unsubscribe: (() => void) | null = null;
+  private extensionRunnerEmitUnwrap: (() => void) | null = null;
   private explicitlyStopped = false;
   private started = false;
   // #LIVE: dedupe concurrent stop() calls (idle timer + shutdown racing) so
@@ -933,11 +890,16 @@ export class SDKAgent implements IPIAgent {
   // Mirrors runRpcMode's pendingExtensionRequests. Fire-and-forget UI methods
   // (notify/setStatus/...) are not tracked — they just broadcast.
   private pendingDialogs = new Map<string, { resolve: (v: any) => void; reject: (e: any) => void; timer: Timer | null }>();
+  // Callback that rekeys the server pool when the SDK resolves a new sessionFile.
+  // Supplied by PooledAgent via setRebindHandler; return value indicates whether
+  // the rekey succeeded.
+  private rebindHandler: ((sessionFile: string) => boolean) | null = null;
 
   constructor(private options: PIAgentOptions) {}
 
   setHandler(handler: (msg: WSServerMessage) => void) { this.onMessage = handler; }
   setExitHandler(handler: (code: number | null) => void) { this.onExit = handler; }
+  setRebindHandler(handler: (sessionFile: string) => boolean) { this.rebindHandler = handler; }
   getOptions(): PIAgentOptions { return this.options; }
 
   getLiveSnapshot(): LiveSessionSnapshot | null {
@@ -1025,6 +987,10 @@ export class SDKAgent implements IPIAgent {
       sessionManager,
     });
     this.runtime = runtime;
+    // Register SDK lifecycle hooks *before* bindSession so replacement
+    // operations can bind and rekey inside the SDK transaction.
+    runtime.setRebindSession((session) => this.onRuntimeRebind(session));
+    runtime.setBeforeSessionInvalidate(() => this.onBeforeSessionInvalidate());
     // Resolve + set initial model BEFORE binding extensions so the first prompt
     // has a valid model (SDK throws if no model/auth when streaming starts).
     const initialModel = await this.resolveInitialModel();
@@ -1035,6 +1001,10 @@ export class SDKAgent implements IPIAgent {
       }
     }
     await this.bindSession(runtime.session);
+    // The initial runtime is not created via a replacement transaction, so
+    // notify the pool of the resolved sessionFile here (synchronously after bind).
+    const sessionFile = runtime.session.sessionFile;
+    if (sessionFile) this.notifySessionLoaded(sessionFile);
   }
 
   /** Bind to a session: subscribe to events, wire extension UI context. Used on
@@ -1042,8 +1012,12 @@ export class SDKAgent implements IPIAgent {
   private async bindSession(session: AgentSession): Promise<void> {
     // Tear down the previous binding if any.
     this.unsubscribe?.();
+    this.extensionRunnerEmitUnwrap?.();
     this.session = session;
     this.unsubscribe = session.subscribe((event) => this.handleEvent(event));
+    // Intercept extension events produced by model_select / thinking_level_select
+    // so they are forwarded to the client as model_changed / thinking_changed.
+    this.interceptExtensionRunner(session);
     // Extension UI context: dialog methods block on a client response we track
     // in pendingDialogs; fire-and-forget methods just broadcast. Mirrors
     // runRpcMode's createExtensionUIContext.
@@ -1058,6 +1032,58 @@ export class SDKAgent implements IPIAgent {
         });
       },
     });
+  }
+
+  /** The SDK emits model/thinking changes as extension events, not as
+   * AgentSessionEvent. The runner has no public `on(type, fn)` API outside the
+   * extension factory context, so we wrap its emit() method to intercept these
+   * events and translate them to client-facing messages. We only intercept
+   * model_select / thinking_level_select; all other events are forwarded verbatim. */
+  private interceptExtensionRunner(session: AgentSession): void {
+    const runner = session.extensionRunner as any;
+    if (!runner || typeof runner.emit !== "function") return;
+    const original = runner.emit.bind(runner);
+    const handler = this.onMessage;
+    runner.emit = async (event: any) => {
+      if (handler && event && typeof event === "object") {
+        if (event.type === "model_select" && event.model) {
+          handler({ type: "model_changed", provider: event.model.provider, modelId: event.model.id });
+        } else if (event.type === "thinking_level_select") {
+          handler({ type: "thinking_changed", level: event.level });
+        }
+      }
+      return original(event);
+    };
+    this.extensionRunnerEmitUnwrap = () => {
+      runner.emit = original;
+    };
+  }
+
+  private onRuntimeRebind(session: AgentSession): Promise<void> {
+    return this.bindSession(session);
+  }
+
+  private onBeforeSessionInvalidate(): void {
+    // The current session is about to be torn down by a new/switch/fork.
+    // Reject pending UI dialogs so extensions blocked on client input don't
+    // wait for an answer on the old session.
+    this.rejectAllDialogs("Session replaced");
+  }
+
+  private rejectAllDialogs(reason: string): void {
+    for (const [, entry] of this.pendingDialogs) {
+      if (entry.timer) clearTimeout(entry.timer);
+      entry.reject(new Error(reason));
+    }
+    this.pendingDialogs.clear();
+  }
+
+  private notifySessionLoaded(sessionFile: string): boolean {
+    const ok = this.rebindHandler?.(sessionFile) ?? true;
+    if (ok) {
+      this.onMessage?.({ type: "session_loaded", session: { filePath: sessionFile } as any });
+    }
+    return ok;
   }
 
   private createExtensionUIContext(): ExtensionUIContext {
@@ -1110,7 +1136,12 @@ export class SDKAgent implements IPIAgent {
       setTitle(title) {
         handler()?.({ type: "extension_ui_request", ui: { id: cryptoId(), method: "setTitle", title } });
       },
-      async custom<T>(_factory: any, _options?: any): Promise<T> { return undefined as T; },
+      async custom<T>(_factory: any, _options?: any): Promise<T> {
+        // TUI components require a terminal environment that the WebSocket
+        // server doesn't provide. Reject explicitly rather than silently
+        // returning undefined, which masks the unsupported operation.
+        return Promise.reject(new Error("Custom UI overlays are not supported in server mode"));
+      },
       pasteToEditor(text) { this.setEditorText(text); },
       setEditorText(text) {
         handler()?.({ type: "extension_ui_request", ui: { id: cryptoId(), method: "set_editor_text", text } });
@@ -1209,14 +1240,11 @@ export class SDKAgent implements IPIAgent {
 
   private async _stop(): Promise<void> {
     this.explicitlyStopped = true;
-    // Reject any pending dialogs so extensions don't hang.
-    for (const [, entry] of this.pendingDialogs) {
-      if (entry.timer) clearTimeout(entry.timer);
-      entry.reject(new Error("Agent stopped"));
-    }
-    this.pendingDialogs.clear();
+    this.rejectAllDialogs("Agent stopped");
     this.unsubscribe?.();
     this.unsubscribe = null;
+    this.extensionRunnerEmitUnwrap?.();
+    this.extensionRunnerEmitUnwrap = null;
     // #SDK-MIGRATION: runtime.dispose() only disconnects event listeners; it
     // does NOT abort the in-flight turn. Subprocess-era tree-kill ended
     // everything; the in-process SDK would otherwise keep streaming (LLM calls,
@@ -1392,28 +1420,30 @@ export class SDKAgent implements IPIAgent {
 
       // ── Model ──
       case "set_model": {
-        const models = await session.modelRegistry.getAvailable();
-        const model = models.find((m: any) => m.provider === msg.provider && m.id === msg.modelId);
+        const model = session.modelRegistry.find(msg.provider, msg.modelId);
         if (!model) {
           this.onMessage?.({ type: "response", command: "set_model", success: false, error: `Model not found: ${msg.provider}/${msg.modelId}` });
           break;
         }
         await session.setModel(model);
-        // model_changed is emitted as an event by the SDK; also send a response.
+        // SDK setModel() emits a `model_select` extension event (and a
+        // `thinking_level_select` event when it re-clamps thinking), which we
+        // intercept and translate into client model_changed / thinking_changed
+        // messages. No manual broadcast needed here.
         this.onMessage?.({ type: "response", command: "set_model", success: true });
         break;
       }
       case "cycle_model": {
-        const result = await session.cycleModel();
-        if (result) {
-          this.onMessage?.({ type: "model_changed", provider: result.model.provider, modelId: result.model.id });
-          if (result.thinkingLevel) this.onMessage?.({ type: "thinking_changed", level: result.thinkingLevel });
-        }
+        await session.cycleModel();
+        // cycleModel() emits model_select / thinking_level_select extension
+        // events that we translate to model_changed / thinking_changed.
         this.onMessage?.({ type: "response", command: "cycle_model", success: true });
         break;
       }
       case "get_available_models": {
-        const models = await session.modelRegistry.getAvailable();
+        // Shared registry is refreshed once in getSharedModelRegistry(), so a
+        // first call after server start already sees loaded models.
+        const models = session.modelRegistry.getAvailable();
         this.onMessage?.({
           type: "available_models",
           models: models.map((m: any) => ({
@@ -1428,12 +1458,14 @@ export class SDKAgent implements IPIAgent {
       // ── Thinking ──
       case "set_thinking_level":
         session.setThinkingLevel(msg.level);
-        this.onMessage?.({ type: "thinking_changed", level: msg.level });
+        // setThinkingLevel() emits a thinking_level_select extension event
+        // that we translate to thinking_changed.
         this.onMessage?.({ type: "response", command: "set_thinking_level", success: true });
         break;
       case "cycle_thinking_level": {
-        const level = session.cycleThinkingLevel();
-        if (level) this.onMessage?.({ type: "thinking_changed", level });
+        session.cycleThinkingLevel();
+        // cycleThinkingLevel() emits a thinking_level_select extension event
+        // that we translate to thinking_changed.
         this.onMessage?.({ type: "response", command: "cycle_thinking_level", success: true });
         break;
       }
@@ -1480,44 +1512,36 @@ export class SDKAgent implements IPIAgent {
 
       // ── Session ──
       case "new_session": {
-        const result = await runtime.newSession();
-        if (!result.cancelled) {
-          await this.bindSession(runtime.session);
-          // M2: emit session_loaded so the server rekeys to the resolved
-          // sessionFile deterministically (same as load_session/switch_session/
-          // clone) — instead of racing the 300ms getState(), which could key
-          // the agent under the wrong session and make a reconnect spawn a
-          // duplicate / orphan the live one.
-          if (runtime.session.sessionFile) {
-            this.onMessage?.({ type: "session_loaded", session: { filePath: runtime.session.sessionFile } as any });
-          }
-        }
+        const result = await runtime.newSession({
+          // The withSession callback fires inside the SDK's replacement
+          // transaction, after runtime.session has been updated. We use it
+          // to rekey the pool and broadcast session_loaded to clients.
+          withSession: async () => {
+            const sessionFile = this.runtime?.session?.sessionFile;
+            if (sessionFile) this.notifySessionLoaded(sessionFile);
+          },
+        });
         this.onMessage?.({ type: "response", command: "new_session", success: !result.cancelled, data: result });
         break;
       }
       case "load_session":
       case "switch_session": {
-        const result = await runtime.switchSession(msg.sessionPath);
-        if (!result.cancelled) {
-          await this.bindSession(runtime.session);
-          // session_loaded drives the server-side rekey (PooledAgent.handleAgentMessage).
-          this.onMessage?.({
-            type: "session_loaded",
-            session: { filePath: runtime.session.sessionFile ?? msg.sessionPath } as any,
-          });
-        }
+        const result = await runtime.switchSession(msg.sessionPath, {
+          withSession: async () => {
+            const sessionFile = this.runtime?.session?.sessionFile;
+            if (sessionFile) this.notifySessionLoaded(sessionFile);
+          },
+        });
         this.onMessage?.({ type: "response", command: msg.type, success: !result.cancelled, data: result });
         break;
       }
       case "fork": {
-        const result = await runtime.fork(msg.entryId);
-        if (!result.cancelled) await this.bindSession(runtime.session);
-        // Emit session_loaded so the server rekeys to the forked path (same as
-        // clone) — otherwise a reconnect by the new path misses the stale
-        // (pre-fork) pool key and spawns a duplicate, orphaning the live fork.
-        if (!result.cancelled && runtime.session.sessionFile) {
-          this.onMessage?.({ type: "session_loaded", session: { filePath: runtime.session.sessionFile } as any });
-        }
+        const result = await runtime.fork(msg.entryId, {
+          withSession: async () => {
+            const sessionFile = this.runtime?.session?.sessionFile;
+            if (sessionFile) this.notifySessionLoaded(sessionFile);
+          },
+        });
         this.onMessage?.({ type: "response", command: "fork", success: !result.cancelled, data: { text: result.selectedText, cancelled: result.cancelled } });
         break;
       }
@@ -1527,14 +1551,13 @@ export class SDKAgent implements IPIAgent {
           this.onMessage?.({ type: "response", command: "clone", success: false, error: "Cannot clone session: no current entry selected" });
           break;
         }
-        const result = await runtime.fork(leafId, { position: "at" });
-        if (!result.cancelled) await this.bindSession(runtime.session);
-        // Emit session_loaded so the server rekeys to the forked path
-        // deterministically (same path as switch_session). clone_result is
-        // kept for the client's clone-specific UI.
-        if (!result.cancelled && runtime.session.sessionFile) {
-          this.onMessage?.({ type: "session_loaded", session: { filePath: runtime.session.sessionFile } as any });
-        }
+        const result = await runtime.fork(leafId, {
+          position: "at",
+          withSession: async () => {
+            const sessionFile = this.runtime?.session?.sessionFile;
+            if (sessionFile) this.notifySessionLoaded(sessionFile);
+          },
+        });
         this.onMessage?.({ type: "clone_result", cancelled: result.cancelled, sessionPath: runtime.session.sessionFile });
         this.onMessage?.({ type: "response", command: "clone", success: !result.cancelled, data: { cancelled: result.cancelled } });
         break;
@@ -1615,4 +1638,3 @@ function cryptoId(): string {
     return `id-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   }
 }
-

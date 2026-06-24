@@ -201,7 +201,7 @@ export type WSClientMessage =
   | { type: "switch_session"; sessionPath: string }
   | { type: "set_model"; provider: string; modelId: string }
   | { type: "cycle_model" }
-  | { type: "set_thinking"; level: string }
+  | { type: "set_thinking_level"; level: string }
   | { type: "cycle_thinking_level" }
   | { type: "delete_session"; sessionId: string }
   | { type: "rename_session"; sessionId: string; name: string }

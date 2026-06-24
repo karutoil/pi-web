@@ -52,8 +52,8 @@ describe("buildAgentKey — server/client key parity", () => {
     // the trailing `::` on the client key is harmless (used to look up the
     // client pool entry, the server pool is keyed by its own format). The
     // cross-side link is via the WebSocket, not the key. On resolution the
-    // server rekeys the agent from `__new__:<uuid>` to the real sessionFile
-    // path (see handleAgentMessage) so a reconnecting client reattaches.
+    // runtime's rebind callback rekeys the agent from `__new__:<uuid>` to the
+    // real sessionFile path so a reconnecting client reattaches.
     //
     // The invariant: buildAgentKey with a real sessionPath must produce
     // a stable, deterministic key the server can re-derive.
@@ -82,6 +82,8 @@ class FakeAgent implements IPIAgent {
   options: PIAgentOptions;
   handler: ((msg: WSServerMessage) => void) | null = null;
   exitHandler: ((code: number | null) => void) | null = null;
+  rebindHandler: ((sessionFile: string) => boolean) | null = null;
+  rebindedTo: string | null = null;
   startCalls = 0;
   stopCalls = 0;
   /** Configurable live snapshot for getLiveSnapshot(); defaults to a snapshot
@@ -95,6 +97,11 @@ class FakeAgent implements IPIAgent {
 
   setHandler(handler: (msg: WSServerMessage) => void) { this.handler = handler; }
   setExitHandler(handler: (code: number | null) => void) { this.exitHandler = handler; }
+  setRebindHandler(handler: (sessionFile: string) => boolean) { this.rebindHandler = handler; }
+  rebindTo(sessionFile: string): boolean {
+    this.rebindedTo = sessionFile;
+    return this.rebindHandler?.(sessionFile) ?? true;
+  }
   async start() { this.startCalls++; }
   async stop() { this.stopCalls++; }
   getOptions() { return this.options; }
@@ -587,28 +594,37 @@ describe("reattach: sessionPath normalization", () => {
   });
 });
 
-describe("reattach: stale newSessionId after rekey", () => {
+describe("reattach: SDK lifecycle rebind callback", () => {
   beforeEach(() => _resetPoolForTesting());
   afterEach(() => _resetPoolForTesting());
 
-  it("reconnecting with the ORIGINAL newSessionId after rekey finds the rekeyed agent (no duplicate)", () => {
-    const fake = new FakeAgent({ cwd: "/proj" });
-    const { agent } = getOrCreateAgent("/proj", null, "uuid-R", undefined, undefined, () => fake);
-    expect(agent.getKey()).toBe("/proj::__new__:uuid-R");
-    // PI resolves the session -> server rekeys to the real sessionFile.
-    expect(fake.handler).not.toBeNull();
-    fake.handler!({ type: "state", data: { isStreaming: false, isCompacting: false, sessionFile: "/home/x/.pi/agent/sessions/r.json", sessionId: "sessR", sessionName: null, model: null, thinkingLevel: "off", messageCount: 0, pendingMessageCount: 0, steering: [], followUp: [] } });
-    const resolvedKey = buildAgentKey("/proj", "/home/x/.pi/agent/sessions/r.json");
-    expect(agent.getKey()).toBe(resolvedKey);
-    expect(lookupAgent("/proj::__new__:uuid-R")).toBeNull(); // old key gone
+  it("rekeys the pool to the forked session path when the SDK fires the rebind handler", () => {
+    const fake = new FakeAgent({ cwd: "/proj", sessionPath: "/orig.json" });
+    const { agent } = getOrCreateAgent("/proj", "/orig.json", undefined, undefined, undefined, () => fake);
+    expect(agent.getKey()).toBe(buildAgentKey("/proj", "/orig.json"));
 
-    // Client's WS dropped before it processed the rekey -> it reconnects with
-    // the ORIGINAL newSessionId. Must reattach to the rekeyed agent, NOT spawn
-    // a 2nd __new__ agent that would orphan the live run.
-    const { agent: again, isNew } = getOrCreateAgent("/proj", null, "uuid-R", undefined, undefined, () => new FakeAgent({ cwd: "/proj" }));
+    // SDK runtime.newSession/switchSession/fork/clone resolves the new path
+    // synchronously and invokes the rebind handler inside the replacement
+    // transaction.
+    fake.rebindTo("/forked.json");
+    expect(agent.getKey()).toBe(buildAgentKey("/proj", "/forked.json"));
+    expect(lookupAgent(buildAgentKey("/proj", "/orig.json"))).toBeNull();
+    expect(lookupAgent(buildAgentKey("/proj", "/forked.json"))).toBe(agent);
+
+    // A reconnect with the new path finds the SAME agent.
+    const { agent: again, isNew } = getOrCreateAgent("/proj", "/forked.json", undefined, undefined, undefined, () => new FakeAgent({ cwd: "/proj" }));
     expect(isNew).toBe(false);
     expect(again).toBe(agent);
-    expect(agent.clientCount).toBe(0); // no duplicate agent was created
+  });
+
+  it("clears the pending-new flag when rebind resolves the initial sessionFile", () => {
+    const fake = new FakeAgent({ cwd: "/proj" });
+    const { agent } = getOrCreateAgent("/proj", null, "uuid-P", undefined, undefined, () => fake);
+    expect(agent.getKey()).toBe(buildAgentKey("/proj", null, "uuid-P"));
+
+    fake.rebindTo("/home/x/.pi/agent/sessions/p.json");
+    expect(agent.getKey()).toBe(buildAgentKey("/proj", "/home/x/.pi/agent/sessions/p.json"));
+    expect(lookupAgent(buildAgentKey("/proj", null, "uuid-P"))).toBeNull();
   });
 });
 
@@ -690,47 +706,27 @@ describe("reattach: switch_session/load_session rekeys the agent to the loaded p
   });
 });
 
-// #CLONE: PI forks to a new session file async and never reports the path.
-// The server polls get_state and rekeys to the first NEW sessionFile it sees.
-describe("reattach: clone rekeys the agent to the forked session via get_state poll", () => {
+// #CLONE: PI forks to a new session file and reports it synchronously via the
+// SDK runtime's rebind hook. The server pool rekeys inside that transaction;
+// no polling is required.
+describe("reattach: clone rekeys the agent to the forked session via lifecycle rebind", () => {
   beforeEach(() => _resetPoolForTesting());
   afterEach(() => _resetPoolForTesting());
 
-  it("a clone_result arms a get_state poll; the first state with a NEW sessionFile rekeys (reconnect finds the SAME agent)", async () => {
+  it("the rebind handler rekeys to the forked path; a reconnect finds the SAME agent", () => {
     const fake = new FakeAgent({ cwd: "/proj", sessionPath: "/orig.json" });
     const { agent } = getOrCreateAgent("/proj", "/orig.json", undefined, undefined, undefined, () => fake);
     expect(agent.getKey()).toBe(buildAgentKey("/proj", "/orig.json"));
 
-    // PI clone succeeds — emits clone_result with NO sessionPath (as it does in reality).
-    expect(fake.handler).not.toBeNull();
-    fake.handler!({ type: "clone_result", cancelled: false, sessionPath: undefined } as any);
+    // SDK clone resolves the forked path synchronously and fires rebind.
+    fake.rebindTo("/cloned.json");
 
-    // The first get_state poll may still report the OLD path (PI rebinds async);
-    // a spurious rekey must NOT happen.
-    fake.handler!({ type: "state", data: { sessionFile: "/orig.json", isStreaming: false } } as any);
-    expect(agent.getKey()).toBe(buildAgentKey("/proj", "/orig.json"));
-
-    // Give the poll loop a tick, then deliver the NEW (forked) sessionFile.
-    await new Promise(r => setTimeout(r, 250));
-    fake.handler!({ type: "state", data: { sessionFile: "/cloned.json", isStreaming: false } } as any);
-
-    // The agent rekeyed to the forked path; a reconnect finds THIS agent.
     expect(agent.getKey()).toBe(buildAgentKey("/proj", "/cloned.json"));
     expect(lookupAgent(buildAgentKey("/proj", "/orig.json"))).toBeNull();
     expect(lookupAgent(buildAgentKey("/proj", "/cloned.json"))).toBe(agent);
     const { agent: again, isNew } = getOrCreateAgent("/proj", "/cloned.json", undefined, undefined, undefined, () => new FakeAgent({ cwd: "/proj" }));
     expect(isNew).toBe(false);
     expect(again).toBe(agent);
-  });
-
-  it("a cancelled clone does not arm the poll (no spurious rekey)", async () => {
-    const fake = new FakeAgent({ cwd: "/proj", sessionPath: "/orig.json" });
-    const { agent } = getOrCreateAgent("/proj", "/orig.json", undefined, undefined, undefined, () => fake);
-    fake.handler!({ type: "clone_result", cancelled: true, sessionPath: undefined } as any);
-    await new Promise(r => setTimeout(r, 250));
-    fake.handler!({ type: "state", data: { sessionFile: "/cloned.json", isStreaming: false } } as any);
-    // No fork happened — must stay keyed at the original.
-    expect(agent.getKey()).toBe(buildAgentKey("/proj", "/orig.json"));
   });
 });
 
@@ -769,22 +765,6 @@ describe("getLiveSessionsForCwd (cache-cleared recovery)", () => {
     const liveA = getLiveSessionsForCwd("/projA");
     expect(liveA).toHaveLength(1);
     expect(liveA[0].sessionPath).toBe("/a.json");
-  });
-
-  it("includes pending-new agents (with newSessionId) so a server-side restore can reattach to the booting agent", () => {
-    // A brand-new session (pre-resolve) has no sessionPath yet. With the
-    // SERVER-SIDE restore (no localStorage token), /live-sessions is the only
-    // way the client learns the booting agent exists — so we surface it with
-    // pending:true + newSessionId, and the client reattaches via
-    // getOrCreateAgent's reverse lookup (getOrConnect(projectId, null, newSessionId)).
-    const fake = new FakeAgent({ cwd: "/proj" });
-    fake.liveSnapshot = null;
-    getOrCreateAgent("/proj", null, "uuid-pending", undefined, undefined, () => fake);
-    const live = getLiveSessionsForCwd("/proj");
-    expect(live).toHaveLength(1);
-    expect(live[0].pending).toBe(true);
-    expect(live[0].newSessionId).toBe("uuid-pending");
-    expect(live[0].sessionPath).toBe("");
   });
 
   it("includes streaming agents (the real live-session case)", () => {

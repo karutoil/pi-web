@@ -1,3 +1,9 @@
+export function formatTimestamp(ts: string): string {
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
 export function formatTimeAgo(ts: string): string {
   const d = new Date(ts);
   const now = Date.now();

@@ -10,13 +10,14 @@ import { homedir, platform } from "node:os";
 
 import { addProject, removeProject, listProjects, getProject, touchProject, getLayout, saveLayout, deleteLayout, getProjectSettings, saveProjectSettings, getAllAppSettings, setAppSetting, deleteAppSetting, clearAppSettings } from "./db";
 import { listSubagentRuns, interruptSubagentRun, readSubagentRunOutput, isSubagentExtensionAvailable } from "./pi-subagents";
-import { listProjectSessions, getSessionDetail, buildUsageSummary, computeProjectUsage } from "./pi-sessions";
+import { listProjectSessions, getSessionDetail, buildUsageSummary, computeProjectUsage, renameSession } from "./pi-sessions";
 import { buildSessionHtmlPretty } from "./sessionExportPretty";
 import { getOrCreateAgent, stopAllAgents, getPoolStats, lookupAgent, detachFromAgent, deleteFromPool, stopAgentsForCwd, setProjectSessionsChangedHandler, broadcastToProjectClients, getLiveSessionsForCwd, sweepPool } from "./pi-agent";
 import { createTerminal, getTerminal, listTerminals, killTerminal } from "./pi-terminal";
 import { getGitStatus, getGitDiff, getGitDiffForCommit, gitStage, gitStageAll, gitUnstage, gitCommit, gitLog, gitCheckout, gitDiscard, gitBranches, gitPush, gitPull, gitFetch, gitCreateBranch, gitDeleteBranch, gitRenameBranch, gitTags, gitCreateTag, gitDeleteTag, gitStashList, gitStashShow, gitStashPush, gitStashPop, gitStashApply, gitStashDrop, gitAmend, gitCherryPick, gitRevert, gitResolveConflict, getGitDiffStats, gitDiffWithRef, gitShowCommit, gitLogSearch, gitBlame, gitRemotes, gitUnstageAll } from "./pi-git";
 import type { GitResult } from "./pi-git";
 import { getVersionInfo } from "./pi-version";
+import { authHandler, requireAuth, wsAuthOk, AUTH_ENABLED, computeAuthEnabled, initAuth, userExists } from "./auth";
 import { searchProject } from "./lib/search";
 import { previewReplace, executeReplace } from "./lib/replace";
 import { startPreview, stopPreview, getPreview, listPreviews, addLogListener, stopAllPreviews, setPreviewPort, setPreviewRemoteUrl } from "./pi-preview";
@@ -60,6 +61,15 @@ app.onError((err, c) => {
 });
 
 app.notFound((c) => c.json({ error: "Not found", path: c.req.path }, 404));
+
+// ==================== Auth (better-auth) ====================
+// Mount the better-auth handler FIRST so /api/auth/* is served before the
+// requireAuth middleware gates /api/*. /api/health and /api/auth-status stay
+// open; WS is guarded inside its upgradeWebSocket handlers.
+app.all("/api/auth/*", (c) => authHandler(c.req.raw));
+app.get("/api/auth-status", (c) => c.json({ enabled: computeAuthEnabled() }));
+app.get("/api/auth-users", async (c) => c.json({ exists: await userExists() }));
+app.use("*", requireAuth);
 
 // ==================== Path Validation (#2) ====================
 
@@ -258,13 +268,22 @@ app.get("/api/projects", async (c) => {
   return c.json({ projects: enriched });
 });
 
-// Add project (#43: check isDirectory)
+// Add project (#43: check isDirectory). When `create` is true, mkdir -p the
+// path first so the picker can start a brand-new project folder in place.
 app.post("/api/projects", async (c) => {
   const body = await c.req.json();
-  const { path, name } = body;
+  const { path, name, create } = body;
 
   if (!path || typeof path !== "string") {
     return c.json({ error: "Path is required" }, 400);
+  }
+
+  if (create) {
+    try {
+      await mkdir(path, { recursive: true });
+    } catch (e: any) {
+      return c.json({ error: `Could not create directory: ${e.message}` }, 400);
+    }
   }
 
   // Verify path exists and is a directory
@@ -506,14 +525,10 @@ app.delete("/api/sessions/:path", async (c) => {
 app.patch("/api/sessions/rename", async (c) => {
   const { sessionPath, name } = await c.req.json();
   if (!sessionPath || !name) return c.json({ error: "sessionPath and name required" }, 400);
-  
+
   try {
     const safePath = validateSessionPath(sessionPath);
-    const content = await readFile(safePath, "utf-8");
-    // Append a session_info entry with the name
-    const renameEntry = JSON.stringify({ type: "session_info", name, timestamp: new Date().toISOString() });
-    const newContent = content.trim() + "\n" + renameEntry + "\n";
-    await writeFile(safePath, newContent);
+    await renameSession(safePath, name);
     return c.json({ success: true, name });
   } catch (e: any) {
     return c.json({ error: e.message }, 403);
@@ -2405,7 +2420,10 @@ app.post("/api/preview/:projectId/:label/open", async (c) => {
 // Preview WS log stream
 app.get(
   "/ws/preview/:projectId/:label",
-  upgradeWebSocket(() => {
+  upgradeWebSocket(async (c) => {
+    if (!(await wsAuthOk(c.req.raw.headers))) {
+      return { onOpen(_e, ws) { ws.close(4401, "unauthorized"); }, onMessage() {}, onClose() {} };
+    }
     return {
       onOpen(_event, ws) {
         // Params are extracted inside from the URL
@@ -2499,7 +2517,10 @@ const wsToPreviewLog = new Map<ServerWebSocket, { projectId: string; label: stri
 // Routes to chat or terminal handler based on ?type= query param
 app.get(
   "/ws",
-  upgradeWebSocket((c) => {
+  upgradeWebSocket(async (c) => {
+    if (!(await wsAuthOk(c.req.raw.headers))) {
+      return { onOpen(_e, ws) { try { ws.send(JSON.stringify({ type: "error", message: "unauthorized" })); } catch {} ws.close(4401, "unauthorized"); }, onMessage() {}, onClose() {} };
+    }
     const wsType = c.req.query("type") || "chat";
 
     // ── Terminal route ──
@@ -2682,9 +2703,9 @@ app.get(
             }
             case "set_model": agent.send({ type: "set_model", provider: msg.provider, modelId: msg.modelId }); break;
             case "cycle_model": agent.send({ type: "cycle_model" }); break;
-            case "set_thinking": {
+            case "set_thinking_level": {
               const level = msg.level;
-              // #91: Nested try/catch around ws.send for set_thinking
+              // #91: Nested try/catch around ws.send for set_thinking_level
               try {
                 if (ws.readyState === 1) ws.send(JSON.stringify({ type: "thinking_changed", level }));
               } catch {}
@@ -2809,7 +2830,9 @@ const CLIENT_DIST = join(import.meta.dir, "..", "..", "client", "dist");
 // ponytail: server-inlined bootstrap over an async fetch — avoids FOUC.
 function withPiWebSettings(html: string): string {
   const json = JSON.stringify(getAllAppSettings()).replace(/</g, "\\u003c");
-  return html.replace("<head>", `<head><script>window.__PI_WEB_SETTINGS__=${json}</script>`);
+  // Inject auth-enabled flag so the client can gate on it synchronously (no
+  // sign-in flash). Sourced from the server's AUTH_ENABLED, not a client guess.
+  return html.replace("<head>", `<head><script>window.__PI_WEB_SETTINGS__=${json};window.__PI_WEB_AUTH__=${AUTH_ENABLED ? "true" : "false"}</script>`);
 }
 
 // Root route: serve index.html with settings injected. Registered before the
@@ -2872,6 +2895,10 @@ async function refreshProjectSessions(cwd: string) {
 }
 
 setProjectSessionsChangedHandler(refreshProjectSessions);
+
+// Run auth migrations + first-run onboarding before binding the port, so a
+// public sign-up can't race the seed (single-user: A1 caps accounts at one).
+if (import.meta.main) await initAuth();
 
 const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 0;
 const hostname = process.env.HOST || "127.0.0.1";

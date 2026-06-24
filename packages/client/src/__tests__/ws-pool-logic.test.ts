@@ -73,4 +73,29 @@ describe("mergeMessagesOnReconnect (#7: don't drop in-flight user messages)", ()
     const b: ChatMessage = { role: "user", content: "x", timestamp: "", toolCallId: "tc2" } as any;
     expect(messageSignature(a)).not.toBe(messageSignature(b));
   });
+
+  it("does NOT duplicate an image-attachment user message (SDK echoes typeless image blocks)", () => {
+    // The optimistic copy tags images {type:"image",...}; the SDK echoes them
+    // as {data, mimeType} (no type). Same message, different shapes — the
+    // signature must collide so the optimistic copy dedups against the echo.
+    const optimistic: ChatMessage = {
+      role: "user",
+      content: [
+        { type: "text", text: "see this" },
+        { type: "image", data: "AAA", mimeType: "image/png" },
+      ],
+      timestamp: "",
+    };
+    const echoed: ChatMessage = {
+      role: "user",
+      content: [
+        { type: "text", text: "see this" },
+        { data: "AAA", mimeType: "image/png" } as any,
+      ],
+      timestamp: "",
+    };
+    expect(messageSignature(optimistic)).toBe(messageSignature(echoed));
+    const merged = mergeMessagesOnReconnect([echoed], [optimistic]);
+    expect(merged.filter((m) => m.role === "user")).toHaveLength(1);
+  });
 });

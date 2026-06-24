@@ -24,8 +24,6 @@ COPY bun.lock* ./
 COPY packages/client/package.json packages/client/
 COPY packages/server/package.json packages/server/
 COPY packages/shared/package.json packages/shared/
-COPY scripts/patch-pi-clear-queue.ts scripts/
-
 # Install workspace dependencies
 RUN bun install
 

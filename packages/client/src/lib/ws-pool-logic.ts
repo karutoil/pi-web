@@ -4,6 +4,7 @@
 // without needing a React render environment.
 
 import type { ChatMessage } from "@pi-web/shared";
+import { messageSignature } from "@pi-web/shared";
 
 export const MAX_RECONNECT = 10;        // fast exponential-backoff attempts
 export const SLOW_RECONNECT_MS = 30_000; // #3: then keep trying slowly forever
@@ -22,26 +23,7 @@ export function reconnectDelay(attempt: number): number {
   return SLOW_RECONNECT_MS;
 }
 
-/**
- * Signature used to dedup messages across the reconnect merge (#7). Two
- * messages with the same role+text(+toolCallId) are treated as the same
- * persisted message. Known ceiling: two genuinely-distinct user messages
- * with identical text collide (e.g. "yes" twice) — acceptable for a chat UI
- * where that's rare and the second is a deliberate repeat.
- */
-export function messageSignature(msg: ChatMessage): string {
-  let text = "";
-  if (typeof msg.content === "string") {
-    text = msg.content;
-  } else if (Array.isArray(msg.content)) {
-    text = msg.content
-      .map((c) =>
-        c.type === "text" ? (c.text ?? "") : c.type === "image" ? `image:${c.mimeType ?? ""}` : c.type,
-      )
-      .join("|");
-  }
-  return `${msg.role}:${text}:${msg.toolCallId ?? ""}`;
-}
+export { messageSignature } from "@pi-web/shared";
 
 /**
  * Merge server-persisted history with locally-held messages on reconnect (#7).

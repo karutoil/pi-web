@@ -1,6 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
+    <!-- Fetch auth status from server before any app code loads -->
+    <script>fetch('/api/auth-status').then(r=>r.json()).then(d=>{window.__PI_WEB_AUTH__=d.enabled===true}).catch(()=>{window.__PI_WEB_AUTH__=false})</script>
+    <!-- Patch fetch to always send session cookies with API requests -->
+    <script>(function(){var _f=window.fetch;window.fetch=function(u,c){if(typeof u==='string'&&u.startsWith('/api/')&&(c==null||c.credentials==null)){c=c||{};c.credentials='include';return _f.call(this,u,c)}return _f.call(this,u,c)}})()</script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>PI Web</title>

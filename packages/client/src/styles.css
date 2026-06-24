@@ -2919,6 +2919,21 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   color: var(--workspace-rust);
 }
 
+/* CF-ACCESS: re-login pill shown when the Cloudflare Access session expired.
+   Same offline/rust palette as the Offline badge but interactive (clickable). */
+.conversation-status-reauth {
+  cursor: pointer;
+  border-color: color-mix(in srgb, var(--workspace-rust) 45%, transparent);
+  background: color-mix(in srgb, var(--workspace-rust) 14%, transparent);
+  color: var(--workspace-rust);
+  transition: background 0.15s, border-color 0.15s;
+}
+.conversation-status-reauth:hover {
+  background: color-mix(in srgb, var(--workspace-rust) 22%, transparent);
+  border-color: color-mix(in srgb, var(--workspace-rust) 60%, transparent);
+}
+.conversation-status-reauth .conversation-status-dot { animation: pulse 2s ease-in-out infinite; }
+
 .conversation-status-dot {
   width: 0.45rem;
   height: 0.45rem;
@@ -14481,6 +14496,53 @@ button.pkg-name-clickable:focus-visible { outline: 2px solid var(--color-amber-5
 
 .explorer-go { color: var(--workspace-brass); }
 
+/* ── Toolbar: new-folder action + current location ───────────────────── */
+.explorer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 1.1rem;
+  border-bottom: 1px solid var(--workspace-seam);
+  background: color-mix(in srgb, var(--color-ink-950) 8%, transparent);
+}
+
+.explorer-location {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  color: var(--color-ink-500);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.explorer-newfolder-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+  min-height: 2.35rem;
+  padding: 0 0.85rem;
+  border-radius: 0.6rem;
+  border: 1px solid color-mix(in srgb, var(--workspace-brass) 30%, transparent);
+  background: color-mix(in srgb, var(--workspace-brass) 10%, transparent);
+  color: var(--workspace-brass);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  transition: background-color 140ms ease, border-color 140ms ease, transform 100ms ease;
+}
+
+.explorer-newfolder-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--workspace-brass) 18%, transparent);
+  border-color: color-mix(in srgb, var(--workspace-brass) 44%, transparent);
+  transform: translateY(-1px);
+}
+
+.explorer-newfolder-btn:active:not(:disabled) { transform: translateY(0) scale(0.98); }
+.explorer-newfolder-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
 /* ── File list ───────────────────────────────────────────────────────── */
 .explorer-list {
   flex: 1 1 auto;
@@ -14624,6 +14686,7 @@ button.pkg-name-clickable:focus-visible { outline: 2px solid var(--color-amber-5
   .explorer-name-input { min-height: 2.85rem; }
 
   .explorer-actions .modal-button { min-height: 2.85rem; font-size: 0.86rem; }
+  .explorer-newfolder-btn { min-height: 2.85rem; font-size: 0.86rem; padding: 0 1rem; }
 }
 
 /* ── Subagent Live View modal ──────────────────────────────────────────── */
@@ -15281,3 +15344,6 @@ button.pkg-name-clickable:focus-visible { outline: 2px solid var(--color-amber-5
   .workspace-closed-panel:hover,
   .workspace-closed-panel:active { animation: none !important; transform: none !important; }
 }
+/* ponytail: shared auth form input — used by SignIn/AuthForm + TwoFactorSetup. */
+.auth-input{width:100%;border-radius:8px;border:1px solid rgb(63 63 70);background:rgb(24 24 27);padding:8px 10px;font-size:13px;color:rgb(228 228 231);outline:none}
+.auth-input:focus{border-color:rgb(245 158 11)}

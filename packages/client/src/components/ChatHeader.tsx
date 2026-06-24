@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { SessionStats } from "@pi-web/shared";
 import type { WSBridge } from "../lib/types";
 import { Icon } from "./Icon";
@@ -58,6 +58,23 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar,
     }
   }, [ws.isStreaming, ws.isConnected]);
 
+  // CF-ACCESS: the WS upgrade is rejected when the Cloudflare Access session
+  // expires (useWebSocketPool sets ws.authExpired). Unregister the service
+  // worker first so the reload hits the network directly — Access then redirects
+  // to its login page instead of the SW serving the stale cached shell.
+  // index.html re-registers /sw.js on load, so offline support returns after
+  // re-login. This also works against an OLD sw.js that still maskes the
+  // redirect (the SW fix deploys alongside this).
+  const handleReauth = useCallback(() => {
+    const reload = () => window.location.reload();
+    const sw = navigator.serviceWorker;
+    if (!sw) return reload();
+    sw.getRegistrations()
+      .then((regs) => Promise.all(regs.map((r) => r.unregister())))
+      .catch(() => {})
+      .finally(reload);
+  }, []);
+
   const stats = ws.sessionStats;
 
   const handleSaveName = () => {
@@ -97,7 +114,12 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar,
             </button>
           )}
 
-          {!ws.isConnected && (
+          {ws.authExpired ? (
+            <button type="button" onClick={handleReauth} className="conversation-status conversation-status-reauth" title="Your session expired. Click to sign in again.">
+              <span className="conversation-status-dot" />
+              Session expired · Sign in
+            </button>
+          ) : !ws.isConnected && (
             <span className="conversation-status" data-status="offline" title="Offline">
               <span className="conversation-status-dot" />
               Offline
@@ -192,7 +214,12 @@ export function ChatHeader({ ws, cwd, sessionName, onToggleSidebar, showSidebar,
       </div>
 
       <div className="conversation-header-actions">
-        {!ws.isConnected && (
+        {ws.authExpired ? (
+          <button type="button" onClick={handleReauth} className="conversation-status conversation-status-reauth" title="Your session expired. Click to sign in again.">
+            <span className="conversation-status-dot" />
+            Session expired · Sign in
+          </button>
+        ) : !ws.isConnected && (
           <span className="conversation-status" data-status="offline">
             <span className="conversation-status-dot" />
             Offline
