@@ -17,7 +17,9 @@
     "generate-icons": "bun run --cwd packages/client generate-icons",
     "docker:build": "docker build -t pi-web .",
     "docker:start": "./scripts/docker-start.sh",
-    "docker:start:win": "pwsh -ExecutionPolicy Bypass -File scripts/docker-start.ps1"
+    "docker:start:win": "pwsh -ExecutionPolicy Bypass -File scripts/docker-start.ps1",
+    "native:install": "bash scripts/install.sh",
+    "native:install:win": "pwsh -ExecutionPolicy Bypass -File scripts/install.ps1"
   },
   "devDependencies": {
     "@types/bun": "^1.2.0",

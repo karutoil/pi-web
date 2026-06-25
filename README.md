@@ -52,6 +52,47 @@ cd client && bun run build && cd ..
 bun run server/index.ts
 ```
 
+## Native install (no container)
+
+An alternative to the Docker/Podman image: a single manager script that builds PI Web for production and registers it as a **native OS service** that survives reboot and runs as **you** (so it sees your `~/.pi` sessions and projects).
+
+| OS | Service mechanism |
+|----|-------------------|
+| Linux (arch / debian / ubuntu / fedora) | systemd **user** unit (`systemctl --user`) |
+| macOS | launchd **LaunchAgent** (`launchctl`) |
+| Windows | NSSM Windows Service (Scheduled-Task fallback) |
+
+```bash
+# Linux / macOS
+bash scripts/install.sh            # interactive menu
+# or: bun run native:install
+
+# Windows
+pwsh -ExecutionPolicy Bypass -File scripts/install.ps1
+# or: bun run native:install:win
+```
+
+**Subcommands:** `install` · `update` · `uninstall` · `start` · `stop` · `restart` · `status` · `logs` · `doctor`
+
+**Flags:** `--source git[:ref]` (default `git:main`) · `--source local:/path/to/pi-web` · `--port N` (default `33647`, matching docker's `HOST_PORT` for a drop-in URL) · `--host H` · `--domain https://pi.example.com` (pre-set public origin; skips the deploy prompt) · `--no-domain` (force localhost; skips the prompt) · `--dry-run` · `--purge` (uninstall also drops `~/.pi-web`) · `--no-deps`
+
+**Public domain?** During `install` the script asks whether PI Web will sit behind a public domain (reverse proxy like nginx/caddy). Answering yes writes `HOST=0.0.0.0`, `PI_WEB_AUTH=on`, `BETTER_AUTH_URL`, and `PI_WEB_SECURE_COOKIES=on` (plus `PI_WEB_ORIGIN` if the client is on a different domain). **DNS, TLS cert, and the proxy itself are yours to set up** — the script only configures what the app needs to trust the public origin. Skip the prompt with `--domain` or `--no-domain`.
+
+The script auto-installs missing `git` / `ripgrep` / `bun` per distro (pacman / apt / dnf / brew / bun.sh / winget), clones or copies the source, runs `bun install && bun run build`, then registers the service.
+
+**Layout** (Unix):
+
+| Path | Contents |
+|------|----------|
+| `~/.local/share/pi-web` | app code + built client + `run-service.sh` wrapper |
+| `~/.config/pi-web/env` | editable env (`HOST`/`PORT`/auth) — edit then `restart` |
+| `~/.pi-web/.pi-web.db` | project metadata (kept on uninstall; `--purge` removes) |
+| `~/.pi` | PI agent sessions (never touched) |
+
+**Exposing beyond localhost:** edit `~/.config/pi-web/env` (or `%USERPROFILE%\.config\pi-web\env.cmd` on Windows) — set `HOST=0.0.0.0`, `PI_WEB_AUTH=on`, `BETTER_AUTH_URL`, `PI_WEB_SECURE_COOKIES=on`, then `bash scripts/install.sh restart`. Reverse-proxy (nginx/caddy) for TLS.
+
+> systemd `--user` note: the script runs `loginctl enable-linger` so the service runs without an active login. On Windows without NSSM it uses a Scheduled Task at logon (runs only while logged in) — install NSSM (`winget install NSSM.NSSM`) for an always-on service.
+
 ## Authentication
 
 PI Web ships optional auth (email/password + TOTP 2FA + passkey) via [better-auth](https://www.better-auth.com). It is controlled by a single env flag and is **off by default on localhost**.

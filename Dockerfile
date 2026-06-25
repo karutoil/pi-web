@@ -4,8 +4,14 @@ FROM oven/bun:1.2
 # ca-certificates + openssh-client are pulled in transitively by git today,
 # but listed explicitly so HTTPS clone / git@ / ssh:// keep working if that
 # dependency ever changes. curl covers pi's install.sh and common dev workflows.
+# DB clients (psql/mysql/sqlite3) let the agent reach host databases via
+# host.docker.internal instead of only seeing them on a screenshot.
+# ponytail: rustc/cargo via apt (bookworm ~1.63, old but compiles most crates).
+#   If a crate needs a current toolchain, swap for rustup into /usr/local/bin
+#   (compose overrides PATH, so it must land on a dir already on it, not ~/.cargo).
 RUN apt-get update && apt-get install -y \
       git ca-certificates openssh-client curl bash lsof procps iproute2 ripgrep \
+      postgresql-client default-mysql-client sqlite3 rustc cargo \
     && rm -rf /var/lib/apt/lists/*
 
 # The bundled @earendil-works/pi-coding-agent dependency provides a `pi` CLI shim
