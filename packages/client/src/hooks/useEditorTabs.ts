@@ -137,6 +137,20 @@ export function useEditorTabs(projectId: string, cwd: string) {
     );
   }, []);
 
+  // Re-point a tab to a new path in place — used after rename/move so that
+  // unsaved edits are preserved. closeTab({force}) + openFile would re-read
+  // from disk and discard the dirty buffer.
+  const renameTab = useCallback((oldId: string, newId: string, newFilePath: string) => {
+    setTabs(prev =>
+      prev
+        // A tab at the destination shouldn't exist after a move (the server
+        // 409s on collision), but drop it defensively to avoid duplicate ids.
+        .filter(t => t.id !== newId)
+        .map(t => (t.id === oldId ? { ...t, id: newId, filePath: newFilePath } : t)));
+    setMru(prev => prev.map(x => (x === oldId ? newId : x)));
+    setActiveTabId(prev => (prev === oldId ? newId : prev));
+  }, []);
+
   const setTabError = useCallback((id: string, error: string | null) => {
     setTabs(prev => prev.map(t => (t.id === id ? { ...t, error } : t)));
   }, []);
@@ -192,6 +206,7 @@ export function useEditorTabs(projectId: string, cwd: string) {
     setActiveTabId,
     updateUnsaved,
     markSaved,
+    renameTab,
     setTabError,
     gotoTabLine,
     clearGotoLine,

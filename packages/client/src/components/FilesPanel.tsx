@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { FileTree, useFileTree, useFileTreeSearch } from "@pierre/trees/react";
-import type { GitStatusEntry } from "@pierre/trees";
+import { FileTree, useFileTree, useFileTreeSelection, useFileTreeSearch } from "@pierre/trees/react";
+import type { GitStatusEntry, FileTreeDropResult, FileTreeDropTarget } from "@pierre/trees";
 import CodeMirror from "@uiw/react-codemirror";
 import { vscodeDark, vscodeLight } from "@uiw/codemirror-theme-vscode";
 import { EditorView } from "@codemirror/view";
@@ -31,6 +31,25 @@ interface FilesPanelProps {
 
 function joinPath(a: string, b: string) {
   return a.replace(/\/+$/, "") + "/" + b.replace(/^\/+/, "");
+}
+
+// ponytail: mirror the model's getPathBasename/resolveMoveDestinationPath
+// (not exported) to compute each dragged path's destination inside a folder.
+function computeMoveDest(draggedPath: string, target: FileTreeDropTarget): string {
+  const dir = target.directoryPath;
+  const isDir = draggedPath.endsWith("/");
+  const base = draggedPath.replace(/\/+$/, "").split("/").pop();
+  if (!base) return draggedPath;
+  const name = isDir ? base + "/" : base;
+  return dir ? joinPath(dir, name) : name;
+}
+
+// ponytail: the model already rejects self/descendant drops before reaching
+// onDropComplete/canDrop (isSelfOrDescendantDrop in dragAndDrop.js); this is a
+// defensive prefix guard. Upgrade path: rely on the model alone.
+function isMoveIntoSelfOrDescendant(draggedPath: string, destRel: string): boolean {
+  const src = draggedPath.replace(/\/+$/, "");
+  return destRel === draggedPath || destRel === src || destRel.startsWith(src + "/");
 }
 
 async function loadLanguageExtension(fileName: string): Promise<Extension> {
@@ -251,7 +270,11 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
   const [outlineCollapsed, setOutlineCollapsed] = useState(false);
 
   // File operations (create/rename/delete/duplicate)
-  const [pendingDelete, setPendingDelete] = useState<{ relativePath: string; fullPath: string; isFolder: boolean } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<
+    | { kind: "single"; relativePath: string; fullPath: string; isFolder: boolean }
+    | { kind: "bulk"; paths: string[] }
+    | null
+  >(null);
   const [busy, setBusy] = useState(false);
   const [fsError, setFsError] = useState<string | null>(null);
   // Project-wide search state
@@ -274,6 +297,7 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
     setActiveTabId,
     updateUnsaved,
     markSaved,
+    renameTab,
     setTabError,
     gotoTabLine,
     clearGotoLine,
@@ -448,16 +472,16 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
         return;
       }
       await refreshAfterMutation();
-      // If an editor tab was open for the old path, switch it to the new one.
+      // If an editor tab was open for the old path, re-point it to the new path
+      // in place — preserving any unsaved edits (closeTab+openFile would
+      // discard them).
       const oldId = makeEditorTabId(projectId, fromFull);
       const newId = makeEditorTabId(projectId, toFull);
       if (tabs.some(t => t.id === oldId)) {
-        closeTab(oldId, { force: true });
-        openFile(toFull);
+        renameTab(oldId, newId, toFull);
       }
-      void newId;
     } catch (e: any) { showFsError(e); } finally { setBusy(false); }
-  }, [cwd, projectId, refreshAfterMutation, tabs, closeTab, openFile, showFsError]);
+  }, [cwd, projectId, refreshAfterMutation, tabs, renameTab, showFsError]);
 
   // ── Delete ──
   const handleDelete = useCallback(async (relativePath: string) => {
@@ -474,6 +498,41 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
       if (!data.success) { showFsError(data.error); return; }
       await refreshAfterMutation({ deletedPaths: [relativePath] });
     } catch (e: any) { showFsError(e); } finally { setBusy(false); }
+  }, [cwd, projectId, refreshAfterMutation, showFsError]);
+
+  // ── Bulk delete (loops /api/fs/delete via Promise.allSettled) ──
+  const handleBulkDelete = useCallback(async (relativePaths: string[]) => {
+    if (relativePaths.length === 0) return;
+    setBusy(true);
+    try {
+      const results = await Promise.allSettled(
+        relativePaths.map((p) =>
+          fetch("/api/fs/delete", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path: joinPath(cwd, p), projectId }),
+          }).then((r) => r.json()),
+        ),
+      );
+      const deleted: string[] = [];
+      const errors: string[] = [];
+      results.forEach((res, i) => {
+        const p = relativePaths[i];
+        if (res.status === "rejected") errors.push(`${p}: ${res.reason?.message ?? "failed"}`);
+        else if (!res.value?.success) errors.push(`${p}: ${res.value?.error ?? "failed"}`);
+        else deleted.push(p);
+      });
+      if (errors.length) {
+        // ponytail: surface only the first error in the toast; a per-path
+        // results list would need a richer UI. Add when bulk ops grow.
+        showFsError(`Failed to delete ${errors.length} of ${relativePaths.length}: ${errors[0]}`);
+      }
+      await refreshAfterMutation({ deletedPaths: deleted });
+    } catch (e: any) {
+      showFsError(e);
+    } finally {
+      setBusy(false);
+    }
   }, [cwd, projectId, refreshAfterMutation, showFsError]);
 
   // ── Duplicate (read + create copy) ──
@@ -505,6 +564,62 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
       await refreshAfterMutation();
     } catch (e: any) { showFsError(e); } finally { setBusy(false); }
   }, [cwd, projectId, refreshAfterMutation, showFsError]);
+  // ── Drag-to-folder move (loops /api/fs/rename; same endpoint as handleRename) ──
+  const handleDropMove = useCallback(async (event: FileTreeDropResult) => {
+    const { draggedPaths, target } = event;
+    if (draggedPaths.length === 0) return;
+    // Build the move list (relative source → relative destination), skipping
+    // self/descendant moves defensively. The model already blocks these, so
+    // this guard is defense-in-depth (see ponytail on dragAndDrop.canDrop).
+    const moves: { fromRel: string; toRel: string }[] = [];
+    for (const draggedPath of draggedPaths) {
+      const toRel = computeMoveDest(draggedPath, target);
+      if (isMoveIntoSelfOrDescendant(draggedPath, toRel)) continue;
+      moves.push({ fromRel: draggedPath, toRel });
+    }
+    if (moves.length === 0) return;
+    setBusy(true);
+    try {
+      const results = await Promise.allSettled(
+        moves.map((m) =>
+          fetch("/api/fs/rename", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path: joinPath(cwd, m.fromRel), destination: joinPath(cwd, m.toRel), projectId }),
+          }).then((r) => r.json()),
+        ),
+      );
+      const errors: string[] = [];
+      moves.forEach((m, i) => {
+        const res = results[i];
+        if (res.status === "rejected") errors.push(`${m.fromRel}: ${res.reason?.message ?? "failed"}`);
+        else if (!res.value?.success && !res.value?.noop) errors.push(`${m.fromRel}: ${res.value?.error ?? "failed"}`);
+      });
+      if (errors.length) {
+        // ponytail: surface only the first error (e.g. a 409 collision).
+        showFsError(`Failed to move ${errors.length} of ${moves.length}: ${errors[0]}`);
+      }
+      await refreshAfterMutation();
+      // Follow moved editor tabs: close the old path's tab and reopen at the
+      // new location, mirroring handleRename. Skips failed moves.
+      for (let i = 0; i < moves.length; i++) {
+        const res = results[i];
+        if (res.status !== "fulfilled" || (!res.value?.success && !res.value?.noop)) continue;
+        const { fromRel, toRel } = moves[i];
+        const oldId = makeEditorTabId(projectId, joinPath(cwd, fromRel));
+        const newId = makeEditorTabId(projectId, joinPath(cwd, toRel));
+        if (tabs.some((t) => t.id === oldId)) {
+          // Re-point in place to preserve unsaved edits (see handleRename).
+          renameTab(oldId, newId, joinPath(cwd, toRel));
+        }
+      }
+    } catch (e: any) {
+      showFsError(e);
+    } finally {
+      setBusy(false);
+    }
+  }, [cwd, projectId, refreshAfterMutation, tabs, renameTab, showFsError]);
+
 // Keep callbacks in refs so the model's stale closure still calls current versions
   const handleFileSelectRef = useRef(handleFileSelect);
   handleFileSelectRef.current = handleFileSelect;
@@ -512,6 +627,8 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
   handleViewDiffRef.current = handleViewDiff;
   const handleRenameRef = useRef(handleRename);
   handleRenameRef.current = handleRename;
+  const handleDropMoveRef = useRef(handleDropMove);
+  handleDropMoveRef.current = handleDropMove;
 
   const handleRenameError = useCallback((error: string) => {
     showFsError(error);
@@ -520,6 +637,21 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
   const { model } = useFileTree({
     paths: [],
     gitStatus: [],
+    dragAndDrop: {
+      // ponytail: the model already blocks self/descendant drops via
+      // isSelfOrDescendantDrop (dragAndDrop.js); canDrop is a defensive guard
+      // so the intent is explicit at the boundary. Upgrade path: rely on the
+      // model alone and drop canDrop.
+      canDrop: (event) => {
+        for (const draggedPath of event.draggedPaths) {
+          if (isMoveIntoSelfOrDescendant(draggedPath, computeMoveDest(draggedPath, event.target))) return false;
+        }
+        return true;
+      },
+      onDropComplete: (event) => {
+        handleDropMoveRef.current(event);
+      },
+    },
     renaming: {
       canRename: () => true,
       onRename: (event) => {
@@ -528,7 +660,9 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
       onError: handleRenameError,
     },
     onSelectionChange: (selectedPaths) => {
-      if (selectedPaths.length > 0) {
+      // Open the clicked file only for a single-file selection. Extending a
+      // selection (cmd/ctrl- or shift-click → length > 1) must not open files.
+      if (selectedPaths.length === 1) {
         const path = selectedPaths[0];
         if (!path.endsWith("/")) {
           handleFileSelectRef.current(path);
@@ -536,6 +670,22 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
       }
     },
   });
+
+  // Live selection array for the toolbar + bulk ops. The model already supports
+  // cmd/ctrl-click (toggle) and shift-click (range) out of the box — no option
+  // needs to be toggled on (see rowClickPlan.js).
+  const selectedPaths = useFileTreeSelection(model);
+  const selectedPathsRef = useRef(selectedPaths);
+  selectedPathsRef.current = selectedPaths;
+  const treeAreaRef = useRef<HTMLDivElement>(null);
+  const clearSelection = useCallback(() => {
+    // ponytail: no bulk clearSelection on the model; loop deselect per path.
+    // Each deselect emits → N selected yields N renders. Upgrade path: a model
+    // clearSelection() if multi-select churn becomes visible.
+    for (const p of selectedPathsRef.current) {
+      model.getItem(p)?.deselect();
+    }
+  }, [model]);
 
   useEffect(() => {
     model.resetPaths(paths);
@@ -598,8 +748,30 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
     if ((e.metaKey || e.ctrlKey) && e.key === "p") {
       e.preventDefault();
       fileSearch.open();
+      return;
     }
-  }, [fileSearch]);
+    const inInput = e.nativeEvent.composedPath().some((el) => el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement);
+    const treeFocused = !!treeAreaRef.current?.contains(document.activeElement);
+    // Delete / Backspace on the tree (not inside the rename input) deletes the
+    // current selection — single → existing confirm flow, multi → bulk flow.
+    if ((e.key === "Delete" || e.key === "Backspace") && treeFocused && !inInput) {
+      const sel = selectedPathsRef.current;
+      if (sel.length === 0) return;
+      e.preventDefault();
+      if (sel.length >= 2) {
+        setPendingDelete({ kind: "bulk", paths: [...sel] });
+      } else {
+        const p = sel[0];
+        setPendingDelete({ kind: "single", relativePath: p, fullPath: joinPath(cwd, p), isFolder: p.endsWith("/") });
+      }
+      return;
+    }
+    // Esc clears a multi-selection when the tree has focus and no dialog is open.
+    if (e.key === "Escape" && treeFocused && !inInput && !pendingDelete && selectedPathsRef.current.length >= 2) {
+      e.preventDefault();
+      clearSelection();
+    }
+  }, [fileSearch, cwd, clearSelection, pendingDelete]);
 
   const treeStyle = useMemo(() => ({
     ["--trees-bg-override" as string]: "var(--files-bg)",
@@ -762,7 +934,21 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
 
           {leftMode === "files" ? (
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-              <div className="files-panel-tree flex-1 min-h-0 overflow-auto custom-scrollbar">
+              {selectedPaths.length >= 2 && (
+                <div className="shrink-0 flex items-center gap-2 px-2 py-1.5 text-xs" style={{ background: "var(--files-surface)", borderBottom: "1px solid var(--files-border)", color: "var(--files-text)" }}>
+                  <span className="files-panel-footer-dot" aria-hidden />
+                  <span>{selectedPaths.length} selected</span>
+                  <div className="ml-auto flex items-center gap-1">
+                    <button type="button" disabled={busy} onClick={() => setPendingDelete({ kind: "bulk", paths: [...selectedPaths] })} className="files-panel-icon-button" title="Delete selected" aria-label="Delete selected">
+                      <Icon name="trash" size={12} />
+                    </button>
+                    <button type="button" onClick={clearSelection} className="files-panel-icon-button" title="Clear selection (Esc)" aria-label="Clear selection">
+                      <Icon name="close" size={12} />
+                    </button>
+                  </div>
+                </div>
+              )}
+              <div ref={treeAreaRef} className="files-panel-tree flex-1 min-h-0 overflow-auto custom-scrollbar">
             {loading ? (
               <div className="files-panel-empty">
                 <div className="files-panel-loading-spinner" />
@@ -828,9 +1014,15 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
                         </button>
                       )}
                       <div className="files-context-menu-separator" />
-                      <button type="button" role="menuitem" disabled={busy} className="files-context-menu-item files-context-menu-item-danger" onClick={() => { context.close(); setPendingDelete({ relativePath: item.path, fullPath: joinPath(cwd, item.path), isFolder }); }}>
-                        <Icon name="trash" size={11} /> Delete
-                      </button>
+                      {(() => {
+                        const sel = selectedPathsRef.current;
+                        const inMulti = sel.length >= 2 && sel.includes(item.path);
+                        return (
+                          <button type="button" role="menuitem" disabled={busy} className="files-context-menu-item files-context-menu-item-danger" onClick={() => { context.close(); setPendingDelete(inMulti ? { kind: "bulk", paths: [...sel] } : { kind: "single", relativePath: item.path, fullPath: joinPath(cwd, item.path), isFolder }); }}>
+                            <Icon name="trash" size={11} /> {inMulti ? `Delete ${sel.length} items` : "Delete"}
+                          </button>
+                        );
+                      })()}
                     </div>
                   );
                 }}
@@ -991,13 +1183,26 @@ export function FilesPanel({ cwd, projectId, visible, onClose, embedded }: Files
       )}
       <ConfirmDialog
         open={!!pendingDelete}
-        title={`Delete ${pendingDelete?.isFolder ? "folder" : "file"}?`}
-        message={pendingDelete
-          ? `Are you sure you want to delete “${pendingDelete.relativePath.replace(/\/+$/, "").split("/").pop()}”?${pendingDelete.isFolder ? " This will remove the folder and everything inside it." : ""}`
-          : ""}
+        title={
+          pendingDelete?.kind === "bulk"
+            ? `Delete ${pendingDelete.paths.length} items?`
+            : `Delete ${pendingDelete?.isFolder ? "folder" : "file"}?`
+        }
+        message={
+          pendingDelete?.kind === "bulk"
+            ? `Are you sure you want to delete ${pendingDelete.paths.length} selected item${pendingDelete.paths.length !== 1 ? "s" : ""}? Folders and everything inside them will be removed.`
+            : pendingDelete
+            ? `Are you sure you want to delete “${pendingDelete.relativePath.replace(/\/+$/, "").split("/").pop()}”?${pendingDelete.isFolder ? " This will remove the folder and everything inside it." : ""}`
+            : ""
+        }
         confirmLabel="Delete"
         onConfirm={() => {
-          if (pendingDelete) {
+          if (!pendingDelete) return;
+          if (pendingDelete.kind === "bulk") {
+            const paths = pendingDelete.paths;
+            setPendingDelete(null);
+            handleBulkDelete(paths);
+          } else {
             const p = pendingDelete;
             setPendingDelete(null);
             handleDelete(p.relativePath);
