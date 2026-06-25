@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense } from "react";
 import type { Project, SessionSummary, SessionDetail, ChatMessage, WorkspacePanelKind } from "@pi-web/shared";
 import { formatTimeAgo } from "./lib/utils";
 import { SESSION_CACHE_TTL, SESSION_FETCH_DELAY_MS, SESSIONS_POLL_MS } from "./lib/constants";
@@ -6,24 +6,25 @@ import { ChatView } from "./components/ChatView";
 import { EmptyState } from "./components/EmptyState";
 import { BackgroundSessionToast } from "./components/BackgroundSessionToast";
 import { ConfirmDialog } from "./components/ConfirmDialog";
-import { AddProjectExplorer } from "./components/AddProjectExplorer";
-import { SettingsModal } from "./components/SettingsModal";
+// ponytail: code-split heavy panels/modals — rarely needed on first paint.
+const AddProjectExplorer = lazy(() => import("./components/AddProjectExplorer").then(m => ({ default: m.AddProjectExplorer })));
+const SettingsModal = lazy(() => import("./components/SettingsModal").then(m => ({ default: m.SettingsModal })));
 import { useWebSocketPool } from "./hooks/useWebSocketPool";
 import { authClient, AUTH_ENABLED } from "./lib/auth";
 import { SignIn } from "./components/SignIn";
 import { PWABanner } from "./components/PWABanner";
-import { PreviewPanel } from "./components/preview/PreviewPanel";
+const PreviewPanel = lazy(() => import("./components/preview/PreviewPanel").then(m => ({ default: m.PreviewPanel })));
 import { ProjectSessionSidebar } from "./components/ProjectSessionSidebar";
-import { GitPanel } from "./components/GitPanel";
-import { FilesPanel } from "./components/FilesPanel";
+const GitPanel = lazy(() => import("./components/GitPanel").then(m => ({ default: m.GitPanel })));
+const FilesPanel = lazy(() => import("./components/FilesPanel").then(m => ({ default: m.FilesPanel })));
 import { TerminalPanel, TerminalPanelHeader, type TerminalTab } from "./components/TerminalPanel";
 import { usePreviewStore } from "./hooks/usePreviewStore";
 import { useRightPanelStore } from "./hooks/useRightPanelStore";
 import { useWorkspaceLayout } from "./hooks/useWorkspaceLayout";
 import { useIsMobile } from "./hooks/useIsMobile";
-import { ExtensionsPanel } from "./components/ExtensionsPanel";
-import { SkillsPanel } from "./components/SkillsPanel";
-import { SubagentsPanel } from "./components/SubagentsPanel";
+const ExtensionsPanel = lazy(() => import("./components/ExtensionsPanel").then(m => ({ default: m.ExtensionsPanel })));
+const SkillsPanel = lazy(() => import("./components/SkillsPanel").then(m => ({ default: m.SkillsPanel })));
+const SubagentsPanel = lazy(() => import("./components/SubagentsPanel").then(m => ({ default: m.SubagentsPanel })));
 import { WorkspaceDock } from "./components/WorkspaceDock";
 import { MobileShell } from "./components/MobileShell";
 import { Icon } from "./components/Icon";
@@ -179,33 +180,49 @@ export default function App() {
     setTerminalTabs(prev => prev.map(t => t.id === tabId ? { ...t, name } : t));
   }, []);
 
-  // Compute which sessions are actively streaming from the pool
-  // Must be inline (not useMemo) — pool is a ref Map, its identity never changes,
-  // but pool subscriptions trigger forceUpdate so we recompute on every render
-  const streamingSessionIds = new Set<string>();
-  const streamingProjectIds = new Set<string>();
-  for (const [key, conn] of wsPool.pool.entries()) {
-    if (conn.isActive && conn.state?.sessionId) {
-      streamingSessionIds.add(conn.state.sessionId);
-      // Pool key format: `${projectId}::${sessionPath}::${newSessionId}`.
-      // Project IDs are UUIDs (no colons), so split on "::" is safe.
-      const projectId = key.split("::")[0];
-      if (projectId) streamingProjectIds.add(projectId);
+  // ponytail: content-keyed memo — derive a stable string signature from the
+  // actual streaming state, so the Set references stay identical across
+  // per-token forceUpdate re-renders that don't change the streaming set.
+  // Without this, new Set() inline busts the panels useMemo on every token.
+  const _streamingSig = (() => {
+    const parts: string[] = [];
+    for (const [key, conn] of wsPool.pool.entries()) {
+      if (conn.isActive && conn.state?.sessionId) parts.push(`${key}:${conn.state.sessionId}`);
     }
-  }
-  // #LIVE: the client pool only knows about sessions it has an open WS to.
-  // After a refresh / hard refresh / device switch the pool is empty except
-  // for the one restored session, so other still-streaming server-side agents
-  // would vanish from the session list. The server marks them isStreaming on
-  // the sessions endpoint (sourced from the agent pool), so union those in —
-  // the session list then shows the live dot and the user can click to
-  // reattach (which opens a WS and the client-pool entry takes over).
-  for (const s of sessions) {
-    if (s.isStreaming && s.id) {
-      streamingSessionIds.add(s.id);
-      if (selectedProject?.id) streamingProjectIds.add(selectedProject.id);
+    for (const s of sessions) if (s.isStreaming && s.id) parts.push(`s:${s.id}`);
+    if (selectedProject?.id) parts.push(`proj:${selectedProject.id}`);
+    return parts.sort().join(",");
+  })();
+  const streamingSessionIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const [, conn] of wsPool.pool.entries()) {
+      if (conn.isActive && conn.state?.sessionId) ids.add(conn.state.sessionId);
     }
-  }
+    // #LIVE: the client pool only knows about sessions it has an open WS to.
+    // After a refresh / hard refresh / device switch the pool is empty except
+    // for the one restored session, so other still-streaming server-side agents
+    // would vanish from the session list. The server marks them isStreaming on
+    // the sessions endpoint (sourced from the agent pool), so union those in —
+    // the session list then shows the live dot and the user can click to
+    // reattach (which opens a WS and the client-pool entry takes over).
+    for (const s of sessions) if (s.isStreaming && s.id) ids.add(s.id);
+    return ids;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [_streamingSig]);
+  const streamingProjectIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const [key, conn] of wsPool.pool.entries()) {
+      if (conn.isActive && conn.state?.sessionId) {
+        // Pool key format: `${projectId}::${sessionPath}::${newSessionId}`.
+        // Project IDs are UUIDs (no colons), so split on "::" is safe.
+        const projectId = key.split("::")[0];
+        if (projectId) ids.add(projectId);
+      }
+    }
+    for (const s of sessions) if (s.isStreaming && s.id && selectedProject?.id) ids.add(selectedProject.id);
+    return ids;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [_streamingSig]);
 
   // When the WS connection reports session info (from get_state or session_loaded),
   // stabilize the active session by updating filePath and clearing newSessionId
@@ -375,12 +392,13 @@ export default function App() {
       .catch(() => {});
   }, [selectedProject, setPreviews]);
 
+  // ponytail: only poll previews when the preview panel is open
   useEffect(() => {
+    if (!previewOpen) return;
     fetchPreviews();
-    // Poll every 3 seconds
     const interval = setInterval(fetchPreviews, 3000);
     return () => clearInterval(interval);
-  }, [fetchPreviews]);
+  }, [fetchPreviews, previewOpen]);
 
   // Handle @element mention from picker
   const handleElementSelected = useCallback((token: string, _context: string) => {
@@ -455,9 +473,13 @@ export default function App() {
   // mid-run and when no session is open. Cheap mtime-cached poll closes the gap.
   useEffect(() => {
     if (!selectedProject) return;
-    const id = setInterval(fetchSessions, SESSIONS_POLL_MS);
+    // ponytail: skip while streaming — WS push (sessions_refreshed) covers live updates
+    const id = setInterval(() => {
+      if (ws?.isConnected && ws?.isStreaming) return;
+      fetchSessions();
+    }, SESSIONS_POLL_MS);
     return () => clearInterval(id);
-  }, [fetchSessions, selectedProject]);
+  }, [fetchSessions, selectedProject, ws]);
 
   // #LIVE: restore the last active session so a refresh reconnects to the
   // running PI instead of dropping the user on the empty projects view. Runs
@@ -895,16 +917,18 @@ export default function App() {
       title: "Preview",
       icon: <Icon name="preview" size={12} />,
       children: (
-        <PreviewPanel
-          projectId={selectedProject.id}
-          projectName={selectedProject.name}
-          projectPath={selectedProject.path}
-          preview={activePreview || null}
-          onElementSelected={handleElementSelected}
-          onRefresh={fetchPreviews}
-          embedded
-          compactHeader
-        />
+        <Suspense fallback={null}>
+          <PreviewPanel
+            projectId={selectedProject.id}
+            projectName={selectedProject.name}
+            projectPath={selectedProject.path}
+            preview={activePreview || null}
+            onElementSelected={handleElementSelected}
+            onRefresh={fetchPreviews}
+            embedded
+            compactHeader
+          />
+        </Suspense>
       ),
       onClose: () => rightPanel.close("preview"),
     }] : []),
@@ -913,13 +937,15 @@ export default function App() {
       title: "Git",
       icon: <Icon name="git" size={12} />,
       children: (
-        <GitPanel
-          cwd={selectedProject.path}
-          visible={true}
-          onClose={() => rightPanel.close("git")}
-          embedded
-          projectId={selectedProject.id}
-        />
+        <Suspense fallback={null}>
+          <GitPanel
+            cwd={selectedProject.path}
+            visible={true}
+            onClose={() => rightPanel.close("git")}
+            embedded
+            projectId={selectedProject.id}
+          />
+        </Suspense>
       ),
       onClose: () => rightPanel.close("git"),
     }] : []),
@@ -928,13 +954,15 @@ export default function App() {
       title: "Files",
       icon: <Icon name="file" size={12} />,
       children: (
-        <FilesPanel
-          cwd={selectedProject.path}
-          projectId={selectedProject.id}
-          visible={true}
-          onClose={() => rightPanel.close("files")}
-          embedded
-        />
+        <Suspense fallback={null}>
+          <FilesPanel
+            cwd={selectedProject.path}
+            projectId={selectedProject.id}
+            visible={true}
+            onClose={() => rightPanel.close("files")}
+            embedded
+          />
+        </Suspense>
       ),
       onClose: () => rightPanel.close("files"),
     }] : []),
@@ -943,12 +971,14 @@ export default function App() {
       title: "Extensions",
       icon: <Icon name="puzzle" size={12} />,
       children: (
-        <ExtensionsPanel
-          visible={true}
-          onClose={() => rightPanel.close("extensions")}
-          embedded
-          project={selectedProject}
-        />
+        <Suspense fallback={null}>
+          <ExtensionsPanel
+            visible={true}
+            onClose={() => rightPanel.close("extensions")}
+            embedded
+            project={selectedProject}
+          />
+        </Suspense>
       ),
       onClose: () => rightPanel.close("extensions"),
     }] : []),
@@ -957,12 +987,14 @@ export default function App() {
       title: "Skills",
       icon: <Icon name="spark" size={12} />,
       children: (
-        <SkillsPanel
-          visible={true}
-          onClose={() => rightPanel.close("skills")}
-          embedded
-          project={selectedProject}
-        />
+        <Suspense fallback={null}>
+          <SkillsPanel
+            visible={true}
+            onClose={() => rightPanel.close("skills")}
+            embedded
+            project={selectedProject}
+          />
+        </Suspense>
       ),
       onClose: () => rightPanel.close("skills"),
     }] : []),
@@ -971,13 +1003,15 @@ export default function App() {
       title: "Subagents",
       icon: <Icon name="fork" size={12} />,
       children: (
-        <SubagentsPanel
-          visible={true}
-          project={selectedProject}
-          onSendPrompt={(text) => { if (ws) ws.send({ type: "prompt", message: text }); }}
-          onClose={() => rightPanel.close("subagents")}
-          embedded
-        />
+        <Suspense fallback={null}>
+          <SubagentsPanel
+            visible={true}
+            project={selectedProject}
+            onSendPrompt={(text) => { if (ws) ws.send({ type: "prompt", message: text }); }}
+            onClose={() => rightPanel.close("subagents")}
+            embedded
+          />
+        </Suspense>
       ),
       onClose: () => rightPanel.close("subagents"),
     }] : []),
@@ -1155,17 +1189,21 @@ export default function App() {
           onCancel={() => setConfirmDialog(s => ({ ...s, open: false }))}
         />
       {showAddProject && (
-        <AddProjectExplorer
-          onAdd={(path, name, create) => { handleAddProject(path, name, create); setShowAddProject(false); }}
-          onCancel={() => setShowAddProject(false)}
-        />
+        <Suspense fallback={null}>
+          <AddProjectExplorer
+            onAdd={(path, name, create) => { handleAddProject(path, name, create); setShowAddProject(false); }}
+            onCancel={() => setShowAddProject(false)}
+          />
+        </Suspense>
       )}
       {showSettings && (
-        <SettingsModal
-          onClose={() => setShowSettings(false)}
-          onResetWorkspace={requestWorkspaceReset}
-          projectId={selectedProject?.id}
-        />
+        <Suspense fallback={null}>
+          <SettingsModal
+            onClose={() => setShowSettings(false)}
+            onResetWorkspace={requestWorkspaceReset}
+            projectId={selectedProject?.id}
+          />
+        </Suspense>
       )}
     </div>
   );

@@ -210,7 +210,7 @@ export type WSClientMessage =
   | { type: "get_available_models" }
   | { type: "get_commands" }
   | { type: "get_fork_messages" }
-  | { type: "get_messages" }
+  | { type: "get_messages"; since?: number }
   | { type: "get_last_assistant_text" }
   | { type: "get_session_stats" }
   | { type: "set_session_name"; name: string }
@@ -261,7 +261,7 @@ export type WSServerMessage =
   | { type: "extension_error"; extensionPath: string; event: string; error: string }
   | { type: "export_html_result"; path: string }
   | { type: "clone_result"; cancelled: boolean; sessionPath?: string }
-  | { type: "messages_result"; messages: ChatMessage[] }
+  | { type: "messages_result"; messages: ChatMessage[]; fromIndex?: number }
   | { type: "last_assistant_text_result"; text: string | null };
 
 // Extension UI protocol

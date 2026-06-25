@@ -42,7 +42,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-Set-Location -LiteralPath (Split-Path $PSScriptRoot -Parent)
+# Only cd to repo root when run from a file (not via `irm | iex` where PSScriptRoot is empty).
+if ($PSScriptRoot) { Set-Location -LiteralPath (Split-Path $PSScriptRoot -Parent) }
 
 $App = @{
   Name       = "pi-web"

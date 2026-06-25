@@ -1,4 +1,4 @@
-import { normalize } from "node:path";
+import { normalize, resolve } from "node:path";
 import { realpathSync } from "node:fs";
 import type { WSServerMessage } from "@pi-web/shared";
 import type { ServerWebSocket } from "bun";
@@ -10,6 +10,7 @@ import {
 	Theme,
 	createAgentSessionServices,
 	createAgentSessionFromServices,
+	type AgentSessionServices,
 	createAgentSessionRuntime,
 	getAgentDir,
 	initTheme,
@@ -261,17 +262,13 @@ export class PooledAgent {
     for (const m of queued) this.agent.doSend(m);
     this.startWatchdog();
     // Send initial state to any already-attached clients
-    setTimeout(() => this.agent.getState(), 300);
+    this.agent.getState();
   }
 
   /** Attach a WebSocket client. Cancels idle timer if running. */
   attach(ws: ServerWebSocket) {
     this.clients.add(ws);
     this.cancelIdleTimer();
-    // Send current state to the newly attached client — but NOT while booting:
-    // start() pushes get_state to all clients once ready, and a pre-boot probe
-    // here would only answer "Agent not ready".
-    if (!this.booting) setTimeout(() => this.agent.getState(), 100);
     // #LIVE: replay any blocking dialog PI is still waiting on. Without this,
     // a refresh while a modal is open leaves PI blocked forever — the dialog
     // was broadcast to the now-gone client and never re-delivered (the
@@ -873,6 +870,34 @@ function getSharedModelRegistry() {
   return sharedModelRegistry;
 }
 
+// ponytail: per-cwd cache of SDK services. The SDK designs services as shareable
+// infrastructure (AgentSession is created separately per session), so the expensive
+// resourceLoader.reload() jiti transpilation runs once per cwd, not once per start.
+const servicesCache = new Map<string, Promise<AgentSessionServices>>();
+function getOrCreateServices(cwd: string): Promise<AgentSessionServices> {
+  const key = resolve(cwd);
+  let cached = servicesCache.get(key);
+  if (!cached) {
+    cached = createAgentSessionServices({
+      cwd,
+      agentDir: getAgentDir(),
+      authStorage: getSharedAuth(),
+      modelRegistry: getSharedModelRegistry(),
+    }).catch((err) => {
+      servicesCache.delete(key); // don't cache failures — let the next start retry
+      throw err;
+    });
+    servicesCache.set(key, cached);
+  }
+  return cached;
+}
+
+/** Invalidate cached SDK services for a cwd (or all). Call when settings/extensions/skills change. */
+export function invalidateServicesCache(cwd?: string) {
+  if (cwd) servicesCache.delete(resolve(cwd));
+  else servicesCache.clear();
+}
+
 export class SDKAgent implements IPIAgent {
   private onMessage: ((msg: WSServerMessage) => void) | null = null;
   private onExit: ((code: number | null) => void) | null = null;
@@ -924,12 +949,7 @@ export class SDKAgent implements IPIAgent {
   private buildRuntimeFactory(): CreateAgentSessionRuntimeFactory {
     const opts = this.options;
     return async ({ cwd, sessionManager, sessionStartEvent }) => {
-      const services = await createAgentSessionServices({
-        cwd,
-        agentDir: getAgentDir(),
-        authStorage: getSharedAuth(),
-        modelRegistry: getSharedModelRegistry(),
-      });
+      const services = await getOrCreateServices(cwd);
       return {
         ...(await createAgentSessionFromServices({
           services,
@@ -1408,9 +1428,19 @@ export class SDKAgent implements IPIAgent {
       case "get_state":
         this.onMessage?.({ type: "state", data: this.snapshotState() });
         break;
-      case "get_messages":
-        this.onMessage?.({ type: "messages_result", messages: session.messages as any });
+      case "get_messages": {
+        const msgs = session.messages as any[];
+        const since = (msg as any).since;
+        // ponytail: send only the tail the client doesn't already have. `since`
+        // is the client's message count; within bounds we slice (cheap), else
+        // fall back to the full array (first connect, or compaction shrank history).
+        if (typeof since === "number" && since >= 0 && since <= msgs.length) {
+          this.onMessage?.({ type: "messages_result", messages: msgs.slice(since), fromIndex: since });
+        } else {
+          this.onMessage?.({ type: "messages_result", messages: msgs as any, fromIndex: 0 });
+        }
         break;
+      }
       case "get_last_assistant_text":
         this.onMessage?.({ type: "last_assistant_text_result", text: session.getLastAssistantText() ?? null });
         break;

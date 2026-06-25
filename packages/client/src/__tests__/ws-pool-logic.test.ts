@@ -23,10 +23,13 @@ describe("reconnectDelay (#3: never give up)", () => {
 
   it("stops growing (caps at the slow cadence) after MAX_RECONNECT attempts", () => {
     // The OLD code gave up entirely after MAX_RECONNECT (leaving the session dead).
-    // The fix: keep retrying forever at SLOW_RECONNECT_MS.
-    expect(reconnectDelay(MAX_RECONNECT)).toBe(SLOW_RECONNECT_MS);
-    expect(reconnectDelay(MAX_RECONNECT + 1)).toBe(SLOW_RECONNECT_MS);
-    expect(reconnectDelay(1000)).toBe(SLOW_RECONNECT_MS); // still trying, not null/Infinity
+    // The fix: keep retrying forever at ~SLOW_RECONNECT_MS (±20% jitter to avoid
+    // thundering-herd when many clients reconnect after a shared server restart).
+    for (const attempt of [MAX_RECONNECT, MAX_RECONNECT + 1, 1000]) {
+      const d = reconnectDelay(attempt);
+      expect(d).toBeGreaterThanOrEqual(SLOW_RECONNECT_MS * 0.8);
+      expect(d).toBeLessThanOrEqual(SLOW_RECONNECT_MS * 1.2); // still trying, not null/Infinity
+    }
   });
 
   it("never returns a non-finite or zero/negative delay", () => {

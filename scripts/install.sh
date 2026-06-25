@@ -195,6 +195,24 @@ parse_source() {
   SOURCE="git:$REF"
 }
 
+# Persist the install source so `update` knows whether to git-pull or re-copy.
+STATE_FILE="$ENV_DIR/source"
+save_source() {
+  mkdir -p "$ENV_DIR"
+  echo "$SOURCE" > "$STATE_FILE"
+}
+load_source() {
+  # CLI --source wins; otherwise recall what install recorded.
+  [ -n "$SOURCE" ] && return
+  if [ -f "$STATE_FILE" ]; then
+    SOURCE="$(cat "$STATE_FILE")"
+    ok "recall source: $SOURCE"
+  else
+    err "Don't know how this was installed ($STATE_FILE missing). Re-run with --source git or --source local:/path"
+    exit 1
+  fi
+}
+
 fetch_code() {
   step "Acquiring source"
   mkdir -p "$(dirname "$INSTALL_DIR")"
@@ -488,6 +506,7 @@ do_install() {
   ensure_bun
   parse_source
   fetch_code
+  save_source
   build_app
   gather_deploy_config
   write_env_file
@@ -519,7 +538,8 @@ do_update() {
   detect_platform
   resolve_bun_bin
   if [ ! -d "$INSTALL_DIR" ]; then err "Not installed at $INSTALL_DIR — run install first"; exit 1; fi
-  # refresh wrapper (bun path may have moved)
+  # recall how we installed, then refresh the code
+  load_source
   write_wrapper
   fetch_code
   build_app
@@ -595,9 +615,17 @@ print_summary() {
   echo
 }
 
+# Read from /dev/tty so interactive prompts work under `curl | bash`
+# (where stdin is the script source, not your terminal). Falls back to stdin
+# when /dev/tty is unavailable (CI, no controlling terminal).
+read_tty() {
+  if [ -e /dev/tty ]; then read -r "$@" </dev/tty
+  else read -r "$@"; fi
+}
+
 # ── Interactive menu ─────────────────────────────────────────
-ask() { local q=$1 d=$2 v=$3; echo -en "\n  ${BLD}?${RST} ${q} ${DIM}[${d}]${RST}: "; read -r r; printf -v "$v" '%s' "${r:-$d}"; }
-confirm() { echo -en "\n  ${BLD}?${RST} $1 ${DIM}[y/N]${RST}: "; read -r a; [[ "${a,,}" == "y" ]]; }
+ask() { local q=$1 d=$2 v=$3; echo -en "\n  ${BLD}?${RST} ${q} ${DIM}[${d}]${RST}: "; read_tty r; printf -v "$v" '%s' "${r:-$d}"; }
+confirm() { echo -en "\n  ${BLD}?${RST} $1 ${DIM}[y/N]${RST}: "; read_tty a; [[ "${a,,}" == "y" ]]; }
 
 interactive_menu() {
   echo
@@ -607,7 +635,7 @@ interactive_menu() {
   local opts=( "Install (git)" "Install (local path)" "Update" "Uninstall" \
                "Start" "Stop" "Restart" "Status" "Logs" "Doctor" "Exit" )
   for i in "${!opts[@]}"; do echo -e "    ${CYN}$((i+1))${RST}) ${opts[$i]}"; done
-  echo -en "\n  Choice [11]: "; read -r c; c="${c:-11}"
+  echo -en "\n  Choice [11]: "; read_tty c; c="${c:-11}"
   case "$c" in
     1) SOURCE="git:main"; do_install ;;
     2) ask "Path to local pi-web checkout" "$(pwd)" p; SOURCE="local:$p"; do_install ;;
@@ -634,7 +662,7 @@ while [ $# -gt 0 ]; do
     --port)              OPT_PORT="$2"; shift ;;
     --host)              OPT_HOST="$2"; shift ;;
     --domain)            DEPLOY_DOMAIN="$2"; DEPLOY_FLAG=true; shift ;;
-    --no-domain)         DEPLOY_DOMAIN=""; DEPLOY_FLAG=true; shift ;;
+    --no-domain)         DEPLOY_DOMAIN=""; DEPLOY_FLAG=true ;;
     --dry-run)           DRY_RUN=true ;;
     --no-deps)           NO_DEPS=true ;;
     --purge)             PURGE=true ;;

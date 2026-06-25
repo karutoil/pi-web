@@ -1,12 +1,10 @@
-import { stat, readFile, writeFile, mkdir, rename } from "node:fs/promises";
+import { stat, readFile, writeFile, mkdir, rename, readdir } from "node:fs/promises";
 import { join, resolve, normalize, basename } from "node:path";
-import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import {
   getAgentDir,
   SessionManager,
   type SessionEntry,
-  type SessionInfo,
   type SessionHeader,
   type SessionMessageEntry,
 } from "@earendil-works/pi-coding-agent";
@@ -34,6 +32,23 @@ interface SessionIndex {
   version: number;
   updatedAt: string;
   entries: Record<string, IndexEntry>; // filePath -> { mtime, summary }
+}
+
+// In-memory TTL cache for listProjectSessions. /api/projects enriches every
+// project with session/token/cost totals and is hit on every WS reconnect
+// (the client's auth-expiry probe fetches /api/projects). Without this, each
+// call re-reads every session header via SessionManager.list() synchronously,
+// blocking the Bun event loop, stalling WS upgrades, and climbing the client's
+// reconnect backoff — the "30s to reconnect" regression. The on-disk index
+// cache already skips re-parsing unchanged files; this skips even the header
+// scan for repeated calls within the window.
+const LIST_CACHE_TTL_MS = 60_000; // ponytail: 60s — client polls every 5s; on-disk mtime index + refreshRecentlyActive handle freshness
+const listCache = new Map<string, { at: number; result: SessionSummary[] }>();
+
+/** Invalidate the in-memory session-list cache (call when sessions change). */
+export function invalidateProjectSessionsCache(cwd?: string): void {
+  if (cwd) listCache.delete(cwd);
+  else listCache.clear();
 }
 
 const INDEX_VERSION = 1;
@@ -78,26 +93,36 @@ function getAgentSessionsDir(): string {
   return join(getAgentDir(), "sessions");
 }
 
-async function collectSessionInfos(cwd: string): Promise<SessionInfo[]> {
-  const sessions: SessionInfo[] = [];
-  try {
-    const defaultSessions = await SessionManager.list(cwd);
-    sessions.push(...defaultSessions);
-  } catch (err) {
-    console.warn(`[sessions] failed to list default sessions for ${cwd}:`, err);
-  }
+// ponytail: compute per-cwd session dir without importing SDK's getDefaultSessionDir
+// (not re-exported from the main package). Same encoding as the SDK.
+function getDefaultSessionDir(cwd: string): string {
+  const safePath = `--${cwd.replace(/^[\/\\]/, "").replace(/[\\/:]/g, "-")}--`;
+  return join(getAgentDir(), "sessions", safePath);
+}
 
-  const localSessionDir = join(cwd, ".pi", "sessions");
-  if (existsSync(localSessionDir)) {
+// List session .jsonl file paths from default + local dirs WITHOUT reading file content.
+// Replaces collectSessionInfos which used SessionManager.list (reads every file async).
+// Deduplicates by path in case both dirs contain the same file.
+async function listSessionFilePaths(cwd: string): Promise<string[]> {
+  const dirs = [getDefaultSessionDir(cwd), join(cwd, ".pi", "sessions")];
+  const seen = new Set<string>();
+  const paths: string[] = [];
+  for (const dir of dirs) {
     try {
-      const localSessions = await SessionManager.list(cwd, localSessionDir);
-      sessions.push(...localSessions);
-    } catch (err) {
-      console.warn(`[sessions] failed to list local sessions for ${cwd}:`, err);
+      const entries = await readdir(dir);
+      for (const entry of entries) {
+        if (!entry.endsWith(".jsonl")) continue;
+        const fullPath = join(dir, entry);
+        if (!seen.has(fullPath)) {
+          seen.add(fullPath);
+          paths.push(fullPath);
+        }
+      }
+    } catch {
+      // dir doesn't exist or unreadable — skip
     }
   }
-
-  return sessions;
+  return paths;
 }
 
 function extractText(content: string | (TextContent | ImageContent)[] | unknown): string | null {
@@ -181,28 +206,49 @@ function deriveSummaryMetrics(entries: SessionEntry[], mtime: string): SummaryMe
   };
 }
 
-async function buildSessionSummary(filePath: string, mtime: string, info: SessionInfo): Promise<SessionSummary | null> {
+// Reads the session file ASYNC (fs/promises) and derives all summary metrics
+// from a single in-memory parse. Replaces the old SessionManager.open(filePath)
+// which did a synchronous readFileSync + parse, blocking the Bun event loop.
+async function buildSessionSummary(filePath: string, mtime: string): Promise<SessionSummary | null> {
   try {
-    const manager = SessionManager.open(filePath);
-    const header = manager.getHeader();
-    const entries = manager.getEntries();
+    const content = await readFile(filePath, "utf-8");
+    const allEntries: unknown[] = [];
+    for (const line of content.trim().split("\n")) {
+      if (!line.trim()) continue;
+      try { allEntries.push(JSON.parse(line)); } catch { /* skip malformed */ }
+    }
+    if (allEntries.length === 0) return null;
 
+    const header = allEntries.find(e => (e as { type?: string }).type === "session") as SessionHeader | undefined;
+    if (!header || typeof header.id !== "string") return null;
+
+    const entries = allEntries.filter(e => (e as { type?: string }).type !== "session") as SessionEntry[];
     const derived = deriveSummaryMetrics(entries, mtime);
-    const timestamp = header?.timestamp ?? info.created.toISOString();
+
+    // Extract session name from the latest non-empty session_info entry.
+    let sessionName: string | undefined;
+    for (const entry of entries) {
+      if (entry.type === "session_info") {
+        const name = (entry as { name?: string }).name?.trim();
+        if (name) sessionName = name;
+      }
+    }
+
+    const timestamp = header.timestamp ?? new Date().toISOString();
     const lastActive = derived.lastActiveAt || timestamp;
     const isRecentlyActive = Date.now() - new Date(lastActive).getTime() < 5 * 60 * 1000;
 
     return {
-      id: info.id || basename(filePath, ".jsonl"),
-      filePath: info.path,
-      cwd: info.cwd || "",
+      id: header.id || basename(filePath, ".jsonl"),
+      filePath,
+      cwd: header.cwd || "",
       timestamp,
-      name: info.name ?? null,
-      messageCount: info.messageCount ?? derived.messageCount,
+      name: sessionName ?? null,
+      messageCount: derived.messageCount,
       lastMessage: derived.lastMessage,
       model: derived.model,
-      firstMessage: derived.firstMessage ?? info.firstMessage ?? null,
-      createdAt: derived.createdAt || info.created.toISOString(),
+      firstMessage: derived.firstMessage ?? null,
+      createdAt: derived.createdAt || timestamp,
       lastActiveAt: lastActive,
       tokenCount: derived.tokenCount,
       cost: derived.cost,
@@ -225,17 +271,19 @@ function refreshRecentlyActive(summary: SessionSummary): SessionSummary {
 // ─── List Project Sessions ───
 
 export async function listProjectSessions(projectPath: string): Promise<SessionSummary[]> {
-  const infos = await collectSessionInfos(projectPath);
-
-  // Unique by path; SDK list may overlap between default and local dirs.
-  const byPath = new Map<string, SessionInfo>();
-  for (const info of infos) {
-    byPath.set(info.path, info);
+  const cached = listCache.get(projectPath);
+  if (cached && Date.now() - cached.at < LIST_CACHE_TTL_MS) {
+    // isRecentlyActive is time-sensitive; refresh it against now. Everything
+    // else is immutable within the TTL window.
+    return cached.result.map(refreshRecentlyActive);
   }
+  // List session files WITHOUT reading their content — just paths.
+  // This replaces collectSessionInfos which used SessionManager.list (reads every file async).
+  const filePaths = await listSessionFilePaths(projectPath);
 
   // Collect mtimes for cache keying
   const mtimes = new Map<string, string>();
-  for (const filePath of byPath.keys()) {
+  for (const filePath of filePaths) {
     try {
       const s = await stat(filePath);
       mtimes.set(filePath, s.mtime.toISOString());
@@ -246,37 +294,36 @@ export async function listProjectSessions(projectPath: string): Promise<SessionS
 
   const index = await loadIndex(projectPath);
   const results: SessionSummary[] = [];
-  const toParse: SessionInfo[] = [];
+  const toParse: string[] = [];
 
-  for (const info of byPath.values()) {
-    const filePath = info.path;
+  for (const filePath of filePaths) {
     const mtime = mtimes.get(filePath) || new Date().toISOString();
     const cached = index.entries[filePath];
     if (cached && cached.mtime === mtime) {
       results.push(refreshRecentlyActive(cached.summary));
     } else {
-      toParse.push(info);
+      toParse.push(filePath);
     }
   }
 
   if (toParse.length > 0) {
     const parsed = await Promise.all(
-      toParse.map((info) => buildSessionSummary(info.path, mtimes.get(info.path) || new Date().toISOString(), info))
+      toParse.map((filePath) => buildSessionSummary(filePath, mtimes.get(filePath) || new Date().toISOString()))
     );
     for (let i = 0; i < parsed.length; i++) {
       const summary = parsed[i];
       if (!summary) continue;
       results.push(summary);
-      index.entries[toParse[i].path] = { mtime: mtimes.get(toParse[i].path) || summary.timestamp, summary };
+      index.entries[toParse[i]] = { mtime: mtimes.get(toParse[i]) || summary.timestamp, summary };
     }
     await saveIndex(projectPath, index);
   }
 
   // Remove stale index entries
-  const filePaths = new Set(byPath.keys());
+  const filePathSet = new Set(filePaths);
   let indexChanged = false;
   for (const key of Object.keys(index.entries)) {
-    if (!filePaths.has(key)) {
+    if (!filePathSet.has(key)) {
       delete index.entries[key];
       indexChanged = true;
     }
@@ -284,6 +331,7 @@ export async function listProjectSessions(projectPath: string): Promise<SessionS
   if (indexChanged) await saveIndex(projectPath, index);
 
   results.sort((a, b) => new Date(b.lastActiveAt || b.timestamp).getTime() - new Date(a.lastActiveAt || a.timestamp).getTime());
+  listCache.set(projectPath, { at: Date.now(), result: results });
   return results;
 }
 
@@ -489,21 +537,20 @@ export function computeProjectUsage(sessions: SessionSummary[]): ProjectSessionU
  * Reuses the per-project session index cache so repeated calls are cheap.
  */
 export async function buildUsageSummary(projects: { id: string; name: string; path: string }[]): Promise<UsageSummary> {
-  const perProject: ProjectUsage[] = [];
   let totalTokens = 0;
   let totalCost = 0;
   let totalSessions = 0;
   const byModel = new Map<string, { tokens: number; cost: number; sessions: number }>();
 
-  for (const p of projects) {
-    let sessions: SessionSummary[] = [];
-    try {
-      sessions = await listProjectSessions(p.path);
-    } catch {
-      sessions = [];
-    }
-    const u: ProjectSessionUsage = computeProjectUsage(sessions);
-    perProject.push({ id: p.id, name: p.name, path: p.path, sessionCount: u.sessionCount, totalTokens: u.totalTokens, totalCost: u.totalCost, totalMessages: u.totalMessages });
+  // ponytail: Promise.all instead of serial for...of — in-memory cache makes
+  // concurrent reads of the same key idempotent.
+  const projectSessions = await Promise.all(
+    projects.map(p => listProjectSessions(p.path).catch(() => [] as SessionSummary[]))
+  );
+
+  const perProject: ProjectUsage[] = projects.map((p, i) => {
+    const sessions = projectSessions[i];
+    const u = computeProjectUsage(sessions);
     totalTokens += u.totalTokens;
     totalCost += u.totalCost;
     totalSessions += u.sessionCount;
@@ -515,7 +562,8 @@ export async function buildUsageSummary(projects: { id: string; name: string; pa
       entry.sessions += 1;
       byModel.set(model, entry);
     }
-  }
+    return { id: p.id, name: p.name, path: p.path, sessionCount: u.sessionCount, totalTokens: u.totalTokens, totalCost: u.totalCost, totalMessages: u.totalMessages };
+  });
 
   perProject.sort((a, b) => b.totalTokens - a.totalTokens);
   const byModelList = Array.from(byModel.entries())

@@ -238,7 +238,7 @@ describe("useWebSocketPool — multi-session regression (the user's bug)", () =>
 });
 
 describe("useWebSocketPool — reconnect / keepalive client behavior", () => {
-  it("requests history and last assistant text after opening", async () => {
+  it("requests state, history and commands after opening", async () => {
     vi.useFakeTimers();
     const { result } = renderHook(() => useWebSocketPool());
     act(() => { result.current.getOrConnect("p1", "/A.json", null); });
@@ -251,7 +251,6 @@ describe("useWebSocketPool — reconnect / keepalive client behavior", () => {
     });
     expect(types).toContain("get_state");
     expect(types).toContain("get_messages");
-    expect(types).toContain("get_last_assistant_text");
     expect(types).toContain("get_available_models");
     expect(types).toContain("get_commands");
 
@@ -367,7 +366,6 @@ describe("useWebSocketPool — reconnect / keepalive client behavior", () => {
       try { return JSON.parse(s).type; } catch { return null; }
     });
     expect(types).toContain("get_messages");
-    expect(types).toContain("get_last_assistant_text");
 
     act(() => { result.current.disconnect(conn.key); });
     vi.useRealTimers();

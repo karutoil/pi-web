@@ -119,7 +119,7 @@ function summarizeToolCall(name: string, args: Record<string, unknown>): string 
  * as siblings of the markdown wrapper, so they keep their own borders
  * and don't fight the prose styles.
  */
-function TextWithSkills({ text, isStreaming }: { text: string; isStreaming?: boolean }) {
+function TextWithSkillsImpl({ text, isStreaming }: { text: string; isStreaming?: boolean }) {
   const segments = parseSkillBlocks(text);
   // Fast path: no skill blocks → render as a single markdown block
   if (segments.length === 1 && segments[0].type === "text") {
@@ -195,6 +195,11 @@ function TextWithSkills({ text, isStreaming }: { text: string; isStreaming?: boo
     </div>
   );
 }
+
+// ponytail: memoize so historical messages with stable text skip ReactMarkdown re-parsing.
+const TextWithSkills = memo(TextWithSkillsImpl, (prev, next) =>
+  prev.text === next.text && prev.isStreaming === next.isStreaming
+);
 
 function MessageBubbleImpl({ message, showThinking, chatPrefs, toolResultsMap, inlineToolCallIds, runningTools, isHistorical, isStreaming, entryId, onFork, onCopyTurn }: MessageBubbleProps) {
   const role = message.role;

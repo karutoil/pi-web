@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
 import type { Project, SessionSummary, ChatMessage, SessionEntry, ContentBlock } from "@pi-web/shared";
 import type { ToolEvent, WSBridge } from "../lib/types";
 import { SCROLL_THRESHOLD, SCROLL_THROTTLE_MS } from "../lib/constants";
@@ -99,7 +99,7 @@ function renderSubagentNotice(entry: SessionEntry) {
     </div>
   );
 }
-export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar, showSidebar, onBack, onToggleTerminal, onTogglePreview, onToggleGit, onToggleFiles, onToggleExtensions, onToggleSkills, onToggleSubagents, terminalOpen, previewOpen, gitOpen, filesOpen, extensionsOpen, skillsOpen, subagentsOpen }: ChatViewProps) {
+function ChatViewImpl({ ws, sessionDetail, project, session, onToggleSidebar, showSidebar, onBack, onToggleTerminal, onTogglePreview, onToggleGit, onToggleFiles, onToggleExtensions, onToggleSkills, onToggleSubagents, terminalOpen, previewOpen, gitOpen, filesOpen, extensionsOpen, skillsOpen, subagentsOpen }: ChatViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showThinking, setShowThinking] = useState(true);
   const [chatPrefs] = useChatPrefs();
@@ -456,17 +456,23 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
       })
       .catch(() => {});
   }, [cwd]);
+  // ponytail: only poll git status when the git panel is open
   useEffect(() => {
+    if (!gitOpen) return;
     refreshGitStatus();
     const t = setInterval(refreshGitStatus, 15000);
     return () => clearInterval(t);
-  }, [refreshGitStatus]);
+  }, [refreshGitStatus, gitOpen]);
 
   const hasHistoricalMessages = sessionDetail?.entries?.some(e => e.message) || false;
 
-  // Map entry IDs for fork support on historical messages
-  const entryMap = new Map<string, string>();
-  sessionDetail?.entries?.forEach(e => { if (e.id && e.message?.role === "user") entryMap.set(e.id, e.id); });
+  // Map entry IDs for fork support on historical messages. Memoized so a
+  // per-token forceUpdate (streaming) doesn't rebuild it on every render.
+  const entryMap = useMemo(() => {
+    const m = new Map<string, string>();
+    sessionDetail?.entries?.forEach(e => { if (e.id && e.message?.role === "user") m.set(e.id, e.id); });
+    return m;
+  }, [sessionDetail?.entries]);
 
   // Group messages into turns for context menu copy
   // A turn = user message + all toolResults + final assistant response
@@ -525,7 +531,9 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
     return map;
   }, [allChatMsgs]);
 
-  // Collect toolCallIds that have inline tool calls in assistant messages (to skip standalone result bubbles)
+  // Historical tool call IDs — stable across per-token re-renders.
+  // ponytail: live message tool calls are merged separately (see
+  // liveToolCallIds below) to avoid busting this memo on every token.
   const inlineToolCallIds = useMemo(() => {
     const ids = new Set<string>();
     for (const msg of allChatMsgs) {
@@ -535,7 +543,18 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
         }
       }
     }
-    // Also check the live streaming message
+    return ids;
+  }, [allChatMsgs]);
+
+  // Live message's tool call IDs — keyed on a content-derived string, not the
+  // liveMessages Map ref (which changes every token). The key only changes
+  // when a tool call is added/removed, so this Set stays stable during text streaming.
+  const _liveToolCallKey = (() => {
+    if (!liveMsg || liveMsg.role !== "assistant" || !Array.isArray(liveMsg.content)) return "";
+    return liveMsg.content.filter(b => b.type === "toolCall" && b.id).map(b => b.id!).join(",");
+  })();
+  const liveToolCallIds = useMemo(() => {
+    const ids = new Set<string>();
     const live = ws.liveMessages.get("current");
     if (live && live.role === "assistant" && Array.isArray(live.content)) {
       for (const block of live.content) {
@@ -543,7 +562,16 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
       }
     }
     return ids;
-  }, [allChatMsgs, ws.liveMessages]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [_liveToolCallKey]);
+
+  // Merge historical + live tool call IDs at render time.
+  // When there are no live tool calls, returns the historical Set directly
+  // (same reference) so historical MessageBubble memos don't bust.
+  const mergedInlineToolCallIds = useMemo(() => {
+    if (liveToolCallIds.size === 0) return inlineToolCallIds;
+    return new Set([...inlineToolCallIds, ...liveToolCallIds]);
+  }, [inlineToolCallIds, liveToolCallIds]);
 
   const turnGroups = useMemo(() => {
     const groups: Map<number, ChatMessage[]> = new Map(); // index -> turn messages
@@ -713,7 +741,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
                 showThinking={showThinking}
                 chatPrefs={chatPrefs}
                 toolResultsMap={toolResultsMap}
-                inlineToolCallIds={inlineToolCallIds}
+                inlineToolCallIds={mergedInlineToolCallIds}
                 // Historical bubbles never have in-flight tools; passing undefined
                 // keeps this prop stable so tool events don't re-render history.
                 runningTools={undefined}
@@ -733,7 +761,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
               showThinking={showThinking}
               chatPrefs={chatPrefs}
               toolResultsMap={toolResultsMap}
-              inlineToolCallIds={inlineToolCallIds}
+              inlineToolCallIds={mergedInlineToolCallIds}
               runningTools={ws.runningTools}
               isHistorical={false}
               onCopyTurn={handleCopyTurnForMsg}
@@ -744,7 +772,7 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
           {liveMsg && (
             <MessageBubble
               toolResultsMap={toolResultsMap}
-              inlineToolCallIds={inlineToolCallIds}
+              inlineToolCallIds={mergedInlineToolCallIds}
               runningTools={ws.runningTools}
               message={liveMsg}
               showThinking={showThinking}
@@ -938,5 +966,23 @@ export function ChatView({ ws, sessionDetail, project, session, onToggleSidebar,
     </div>
   );
 }
+
+// ponytail: custom comparator ignores inline callback props (they're recreated
+// every render by the parent's panels useMemo body). Only re-renders when
+// the data props that actually affect ChatView's output change.
+export const ChatView = memo(ChatViewImpl, (prev, next) =>
+  prev.ws === next.ws
+  && prev.sessionDetail === next.sessionDetail
+  && prev.project === next.project
+  && prev.session === next.session
+  && prev.showSidebar === next.showSidebar
+  && prev.skillsOpen === next.skillsOpen
+  && prev.subagentsOpen === next.subagentsOpen
+  && prev.terminalOpen === next.terminalOpen
+  && prev.previewOpen === next.previewOpen
+  && prev.gitOpen === next.gitOpen
+  && prev.filesOpen === next.filesOpen
+  && prev.extensionsOpen === next.extensionsOpen
+);
 
 

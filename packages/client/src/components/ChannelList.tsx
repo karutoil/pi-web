@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback, memo } from "react";
 import type { Project, SessionSummary } from "@pi-web/shared";
 import { Icon } from "./Icon";
 import { ContextMenuPortal, ContextMenuItem, ContextMenuDivider, useLongPress } from "./ContextMenu";
@@ -256,7 +256,7 @@ function IconButton({
 
 // ─── Session item (channel) ───
 
-function ChannelItem({
+function ChannelItemImpl({
   session: s,
   isActive,
   isStreaming,
@@ -435,6 +435,9 @@ function ChannelItem({
   );
 }
 
+// ponytail: memo so per-item re-renders are skipped when props are stable
+const ChannelItem = memo(ChannelItemImpl);
+
 // ─── Footer "user panel" — version info ───
 
 import { VersionChecker } from "./VersionChecker";
@@ -498,6 +501,13 @@ export function ChannelList({
     }
     return result;
   }, [groupedSessions]);
+
+  // ponytail: precompute id→index map to avoid O(n²) findIndex in the render loop
+  const idxById = useMemo(() => {
+    const m = new Map<string, number>();
+    flatSessions.forEach((s, i) => m.set(s.id, i));
+    return m;
+  }, [flatSessions]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
@@ -598,7 +608,7 @@ export function ChannelList({
               </div>
               <div className="space-y-px">
                 {items.map((s) => {
-                  const globalIdx = flatSessions.findIndex(x => x.id === s.id);
+                  const globalIdx = idxById.get(s.id) ?? -1;
                   return (
                     <div key={s.id} data-channel-idx={globalIdx}>
                       <ChannelItem

@@ -7,7 +7,7 @@ import type { ChatMessage } from "@pi-web/shared";
 import { messageSignature } from "@pi-web/shared";
 
 export const MAX_RECONNECT = 10;        // fast exponential-backoff attempts
-export const SLOW_RECONNECT_MS = 30_000; // #3: then keep trying slowly forever
+export const SLOW_RECONNECT_MS = 10_000; // #3: then keep trying slowly forever
 export const BASE_DELAY = 1000;
 
 /**
@@ -18,9 +18,15 @@ export const BASE_DELAY = 1000;
  */
 export function reconnectDelay(attempt: number): number {
   if (attempt < MAX_RECONNECT) {
-    return BASE_DELAY * Math.pow(1.5, attempt);
+    // Cap the fast phase at SLOW_RECONNECT_MS — without this, attempt 9 is
+    // 1000 * 1.5^9 ≈ 38s, which is SLOWER than the "slow" cadence it's
+    // supposed to graduate into. A backgrounded tab whose sockets died and
+    // climbed the attempt count would then strand the user for ~38s on return.
+    return Math.min(BASE_DELAY * Math.pow(1.5, attempt), SLOW_RECONNECT_MS);
   }
-  return SLOW_RECONNECT_MS;
+  // ponytail: ±20% jitter avoids thundering-herd when many clients reconnect
+  // after a shared server restart.
+  return SLOW_RECONNECT_MS * (0.8 + Math.random() * 0.4);
 }
 
 export { messageSignature } from "@pi-web/shared";

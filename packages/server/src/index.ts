@@ -10,9 +10,9 @@ import { homedir, platform } from "node:os";
 
 import { addProject, removeProject, listProjects, getProject, touchProject, getLayout, saveLayout, deleteLayout, getProjectSettings, saveProjectSettings, getAllAppSettings, setAppSetting, deleteAppSetting, clearAppSettings } from "./db";
 import { listSubagentRuns, interruptSubagentRun, readSubagentRunOutput, isSubagentExtensionAvailable } from "./pi-subagents";
-import { listProjectSessions, getSessionDetail, buildUsageSummary, computeProjectUsage, renameSession } from "./pi-sessions";
+import { listProjectSessions, getSessionDetail, buildUsageSummary, computeProjectUsage, renameSession, invalidateProjectSessionsCache } from "./pi-sessions";
 import { buildSessionHtmlPretty } from "./sessionExportPretty";
-import { getOrCreateAgent, stopAllAgents, getPoolStats, lookupAgent, detachFromAgent, deleteFromPool, stopAgentsForCwd, setProjectSessionsChangedHandler, broadcastToProjectClients, getLiveSessionsForCwd, sweepPool } from "./pi-agent";
+import { getOrCreateAgent, stopAllAgents, getPoolStats, lookupAgent, detachFromAgent, deleteFromPool, stopAgentsForCwd, setProjectSessionsChangedHandler, broadcastToProjectClients, getLiveSessionsForCwd, sweepPool, invalidateServicesCache } from "./pi-agent";
 import { createTerminal, getTerminal, listTerminals, killTerminal } from "./pi-terminal";
 import { getGitStatus, getGitDiff, getGitDiffForCommit, gitStage, gitStageAll, gitUnstage, gitCommit, gitLog, gitCheckout, gitDiscard, gitBranches, gitPush, gitPull, gitFetch, gitCreateBranch, gitDeleteBranch, gitRenameBranch, gitTags, gitCreateTag, gitDeleteTag, gitStashList, gitStashShow, gitStashPush, gitStashPop, gitStashApply, gitStashDrop, gitAmend, gitCherryPick, gitRevert, gitResolveConflict, getGitDiffStats, gitDiffWithRef, gitShowCommit, gitLogSearch, gitBlame, gitRemotes, gitUnstageAll } from "./pi-git";
 import type { GitResult } from "./pi-git";
@@ -258,12 +258,15 @@ function normalizeLayout(input: unknown): WorkspaceLayout {
 // List projects
 app.get("/api/projects", async (c) => {
   const projects = listProjects();
-  // Enrich with real session/token/cost totals (index cache keeps this cheap).
-  const enriched = await Promise.all(projects.map(async p => {
-    let sessions: import("@pi-web/shared").SessionSummary[] = [];
-    try { sessions = await listProjectSessions(p.path); } catch {}
-    const u = computeProjectUsage(sessions);
-    return { ...p, sessionCount: u.sessionCount, totalTokens: u.totalTokens, totalCost: u.totalCost };
+  // ponytail: return cached/zero totals — live per-project scans happen lazily
+  // via /api/projects/:id/sessions when a project is selected. This endpoint is
+  // hit on app mount AND every WS reconnect (auth-expiry probe), so N live scans
+  // per reconnect is unacceptable.
+  const enriched = projects.map(p => ({
+    ...p,
+    sessionCount: 0,
+    totalTokens: 0,
+    totalCost: 0,
   }));
   return c.json({ projects: enriched });
 });
@@ -2887,6 +2890,10 @@ app.get("*", async (c) => {
 
 async function refreshProjectSessions(cwd: string) {
   try {
+    // Sessions changed — drop the in-memory list cache so the next read sees
+    // the new session instead of the stale (pre-change) result.
+    invalidateProjectSessionsCache(cwd);
+    invalidateServicesCache(cwd);
     const sessions = await listProjectSessions(cwd);
     broadcastToProjectClients(cwd, { type: "sessions_refreshed", sessions });
   } catch (e: any) {
@@ -2909,7 +2916,7 @@ const server = import.meta.main ? Bun.serve({
   // timeout, suspended tab) are detected and closed instead of lingering with
   // clients.size > 0 and blocking idle reaping. Bun applies these defaults
   // already; set them explicitly so behavior isn't default-dependent.
-  websocket: { ...websocket, sendPings: true, idleTimeout: 120 },
+  websocket: { ...websocket, sendPings: true, idleTimeout: 45 },
 }) : null;
 if (server) {
 

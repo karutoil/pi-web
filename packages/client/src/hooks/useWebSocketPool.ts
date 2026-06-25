@@ -110,10 +110,6 @@ function createConnection(
   let reconnectAttempts = 0;
   const MAX_RECONNECT = 10;          // fast exponential-backoff attempts; then slow-forever (see ws-pool-logic)
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  // C1: the 200ms onopen timer. Cancelled on close so a WS that drops during
-  // the window can't fire a late flush into a dead socket (and spin the
-  // pendingQueue loop).
-  let onopenTimer: ReturnType<typeof setTimeout> | null = null;
   let intentionallyClosed = false;
   // #LIVE: last time we received a WS frame. A long gap while the socket still
   // reads OPEN (readyState==1) means the OS silently killed it (iOS PWA
@@ -168,24 +164,25 @@ function createConnection(
       // disconnect leaves a stale 'retrying' indicator.
       data.autoRetry = null;
       notify();
-      // Request current state, message history, and commands on connect
-      onopenTimer = setTimeout(() => {
-        send({ type: "get_state" });
-        send({ type: "get_messages" });
-        send({ type: "get_last_assistant_text" });
-        send({ type: "get_available_models" });
-        send({ type: "get_commands" });
-        // #LIVE: flush anything queued while the socket was down (prompts,
-        // steers, follow-ups) AFTER get_messages so the server's history
-        // snapshot (the messages_result merge baseline) is captured first —
-        // otherwise a flushed prompt already in server history would show twice.
-        // C1: guard the flush — if the WS dropped again during this 200ms window,
-        // send() re-queues the prompt and the while-loop would spin forever
-        // (re-queue → shift → re-queue), freezing the tab. Only flush while OPEN.
-        if (ws?.readyState === WebSocket.OPEN) {
-          while (pendingQueue.length) send(pendingQueue.shift()!);
-        }
-      }, 200);
+      // Request current state, message history, and commands on connect.
+      // ponytail: no 200ms delay — the server's boot guard queues early RPCs
+      // until the agent is ready, and get_state is idempotent.
+      send({ type: "get_state" });
+      // ponytail: ask only for the tail we don't have (since = our message count).
+      // Server slices when in bounds, else returns full (first connect / compaction).
+      send({ type: "get_messages", since: messagesRef.length });
+      send({ type: "get_available_models" });
+      send({ type: "get_commands" });
+      // #LIVE: flush anything queued while the socket was down (prompts,
+      // steers, follow-ups) AFTER get_messages so the server's history
+      // snapshot (the messages_result merge baseline) is captured first —
+      // otherwise a flushed prompt already in server history would show twice.
+      // C1: guard the flush — if the WS dropped again during this window,
+      // send() re-queues the prompt and the while-loop would spin forever
+      // (re-queue → shift → re-queue), freezing the tab. Only flush while OPEN.
+      if (ws?.readyState === WebSocket.OPEN) {
+        while (pendingQueue.length) send(pendingQueue.shift()!);
+      }
     };
     ws.onclose = (ev) => {
       // F2: a 4401 close means the upgrade was rejected for auth — surface it
@@ -194,9 +191,6 @@ function createConnection(
       data.isConnected = false;
       data.isStreaming = false;
       notify();
-      // C1: cancel a pending onopen flush so it can't fire into this (now-closed)
-      // socket and spin the pendingQueue loop.
-      if (onopenTimer) { clearTimeout(onopenTimer); onopenTimer = null; }
       // Auto-reconnect unless intentionally closed
       // #3: Auto-reconnect forever — fast exponential backoff for the first
       // MAX_RECONNECT attempts, then a slow fixed cadence so a long server
@@ -248,11 +242,27 @@ function createConnection(
     };
     ws.onmessage = (event) => {
       lastMessageAt = Date.now();
+      // ponytail: reset backoff on any inbound frame — a partial reconnect that
+      // receives a message shouldn't leave the counter stuck high (so the next
+      // drop starts fast again, not at the slow cadence).
+      if (reconnectAttempts > 0) reconnectAttempts = 0;
       try { handleMessage(JSON.parse(event.data)); } catch (e) { console.error("WS parse error:", e); }
     };
   }
 
   connect();
+
+  // ponytail: proactive dead-connection probe. Without this a half-open socket
+  // on an active tab (NAT timeout, WiFi flap, suspend) isn't detected until the
+  // server's idleTimeout closes it. The server sends pings (sendPings), so a
+  // healthy connection updates lastMessageAt via pong frames and won't
+  // false-positive.
+  const healthCheck = setInterval(() => {
+    if (intentionallyClosed) return;
+    if (ws?.readyState === WebSocket.OPEN && Date.now() - lastMessageAt > 45_000) {
+      try { ws.close(); } catch {}  // triggers onclose -> reconnect at attempt 0
+    }
+  }, 15_000);
 
   // #LIVE: detect a silently-dead socket (iOS PWA suspend / half-open TCP) —
   // onclose never fires for these, so the reconnect backoff never arms and
@@ -260,19 +270,30 @@ function createConnection(
   // in a multi-session pool never tears down a sibling session.
   const onVisible = () => {
     if (intentionallyClosed) return;
-    // H3/M6: on foreground, force-close a likely-dead socket. Two triggers: no
-    // frame in 60s (the old heuristic), OR the tab was hidden >10s — iOS kills
-    // backgrounded WS sockets in ~30s, and the 60s-from-lastMessageAt check
-    // alone misses a short freeze during active streaming (lastMessageAt is
-    // recent). bfcache restores of any meaningful duration warrant a probe.
-    if (document.visibilityState === "visible") {
-      const hiddenFor = Date.now() - lastHiddenAt;
-      if (ws && ws.readyState === WebSocket.OPEN && (Date.now() - lastMessageAt > 60_000 || hiddenFor > 10_000)) {
-        try { ws.close(); } catch {}
-      }
-    } else {
+    if (document.visibilityState !== "visible") {
       lastHiddenAt = Date.now();
+      return;
     }
+    // The user is back. Any backoff that accumulated while the tab was hidden
+    // (backgrounded sockets dying → reconnectAttempts climbing toward MAX_RECONNECT)
+    // is meaningless now — reset it so we reconnect promptly instead of waiting
+    // the full SLOW_RECONNECT_MS the pending timer was sitting at (the "30s to
+    // reconnect" regression after returning to a backgrounded tab).
+    reconnectAttempts = 0;
+    // H3/M6: force-close a likely-dead socket. Two triggers: no frame in 60s,
+    // OR the tab was hidden >10s (iOS kills backgrounded WS sockets in ~30s).
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      const hiddenFor = Date.now() - lastHiddenAt;
+      if (Date.now() - lastMessageAt > 60_000 || hiddenFor > 10_000) {
+        try { ws.close(); } catch {}  // onclose schedules a reconnect at the (now 0) attempt → ~1s
+      }
+      return;
+    }
+    // Socket isn't OPEN (died while hidden). If a slow reconnect timer is
+    // pending, fire immediately instead of making the user wait up to 30s.
+    if (ws && ws.readyState === WebSocket.CONNECTING) return; // in-flight; give it a chance
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    connect();
   };
   const onOffline = () => { if (!intentionallyClosed && ws) { try { ws.close(); } catch {} } };
   const onOnline = () => {
@@ -507,10 +528,23 @@ function createConnection(
         // Restore history after reconnect so the user sees everything that
         // happened while the WebSocket was away.
         const restored = (msg.messages || []).filter((m) => m.role === "user" || m.role === "assistant" || m.role === "toolResult");
-        // #7: merge instead of replace — keep any user messages we added locally
-        // that PI hasn't persisted yet (e.g. a prompt sent right before the WS
-        // dropped). Server messages come first; local-only user messages append.
-        messagesRef = mergeMessagesOnReconnect(restored, messagesRef);
+        const from = (msg as any).fromIndex ?? 0;
+        if (from > 0 && from <= messagesRef.length) {
+          // ponytail: server sent only the tail (from `from` onward). Our head
+          // [0,from) is already server-persisted and unchanged (append-only
+          // history), so dedup-append the genuinely-new server messages and keep
+          // any client-side messages beyond `from` (interleaved events / local
+          // user msgs). from>0 implies no local-only msgs at send time (else the
+          // server would have fallen back to full), so this never drops data.
+          const have = new Set(messagesRef.map(messageSignature));
+          const additions = restored.filter((m) => !have.has(messageSignature(m)));
+          messagesRef = [...messagesRef, ...additions];
+        } else {
+          // #7: full reload (first connect, compaction fallback, or local-only
+          // msgs pending) — merge: keep any user messages we added locally that
+          // PI hasn't persisted yet. Server messages come first; local-only append.
+          messagesRef = mergeMessagesOnReconnect(restored, messagesRef);
+        }
         data.messages = [...messagesRef];
         break;
       }
@@ -728,7 +762,7 @@ function createConnection(
       intentionallyClosed = true;
       removeLifecycleListeners();
       if (reconnectTimer) clearTimeout(reconnectTimer);
-      if (onopenTimer) { clearTimeout(onopenTimer); onopenTimer = null; }
+      clearInterval(healthCheck);
       pendingQueue.length = 0; // E13: drop queued messages on terminal close
       const timer = (data as { notifyTimer?: ReturnType<typeof setTimeout> }).notifyTimer;
       if (timer) { clearTimeout(timer); delete (data as { notifyTimer?: ReturnType<typeof setTimeout> }).notifyTimer; }
